@@ -180,3 +180,37 @@ it from day one.
 - Not frozen. When scriptc lands integer inference, generic classes, or
   callback FFI, fences lift; this doc tracks the pinned scriptc version in
   versions.json and gets re-audited on every pin bump.
+
+
+## Editor setup
+
+`tsconfig.json` wires an editor to scriptc's own ambient declarations, so it
+sees the same surface the compiler does: ES2023 with **no DOM**, plus the
+supported subset of `console`, `process`, `node:fs` and `Buffer`. Without
+those declarations a checker reports hundreds of phantom errors on code that
+compiles cleanly.
+
+```sh
+./scripts/typecheck.sh    # ~0.4s, versus ~7s for a build
+```
+
+It assumes a sibling `scriptc` checkout, the same default `build.sh` uses.
+Nothing in the build reads `tsconfig.json`.
+
+### Why there is no lint preset
+
+An ESLint configuration was considered and deliberately skipped. The fences
+that actually bite in this dialect are scriptc-specific:
+
+| Code | What it rejects |
+| --- | --- |
+| `SC1090` | compound assignment through an indexed receiver; calling a function-typed field; assigning to `globalThis` |
+| `SC2001` | values whose type cannot be compiled, e.g. a union of function types |
+| `SC1016` | circular imports |
+| `SC2020` | a standard-library method with no lowering |
+| `SC2012` | a fenced transcendental (`sqrt`, `sin`, `pow`) |
+
+No generic lint rule models any of these, so a preset would add a dependency
+tree to a project that has none while catching almost nothing the compiler
+does not already catch, with better messages and rewrite hints. `tsc` covers
+ordinary type mistakes quickly; `scriptc build` remains the only authority.

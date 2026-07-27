@@ -121,6 +121,7 @@ Run the two vendor steps once, then build:
 ./scripts/build-webaudio.sh        # vendor/<target>/libwebaudio.a
 ./scripts/build.sh examples/dodge  # -> build/dodge
 ./scripts/dev.sh examples/dodge    # rebuild + relaunch on every save
+./scripts/typecheck.sh             # tsc only, ~0.4s
 ./scripts/test.sh                  # every suite, headless
 ```
 
