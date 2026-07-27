@@ -85,6 +85,45 @@ export const AXIS_LEFT_Y = 1;
 export const AXIS_RIGHT_X = 2;
 export const AXIS_RIGHT_Y = 3;
 
+/* GamepadHapticActuator, web-shaped.
+ *
+ * playEffect takes the effect NAME and an options record, as the spec does,
+ * rather than three positional numbers. The dialect has no optional object
+ * properties, so `GamepadEffectParameters` is a class with the spec's
+ * defaults; `new GamepadEffectParameters()` then setting what you care about
+ * is the closest readable equivalent of the web's object literal.
+ *
+ * Returns a resolved Promise like the spec. There is nothing to await -- the
+ * effect either starts or the pad has no motors -- but returning the same
+ * shape means web code reads identically, and it leaves room to resolve on
+ * completion later without a breaking change.
+ */
+export class GamepadEffectParameters {
+  duration = 0;
+  startDelay = 0;
+  strongMagnitude = 0;
+  weakMagnitude = 0;
+}
+
+export class VibrationActuator {
+  /** The spec's `type`; only dual-rumble is supported by SDL's API. */
+  type = "dual-rumble";
+  private slot = 0;
+
+  constructor(slot: number) { this.slot = slot; }
+
+  playEffect(type: string, params: GamepadEffectParameters): Promise<string> {
+    if (type !== "dual-rumble") return Promise.resolve("invalid-effect-type");
+    ffi.padRumble(this.slot, params.weakMagnitude, params.strongMagnitude, params.duration);
+    return Promise.resolve("complete");
+  }
+
+  reset(): Promise<string> {
+    ffi.padRumble(this.slot, 0, 0, 0);
+    return Promise.resolve("complete");
+  }
+}
+
 /** One button's state, as the web API reports it. */
 export class GamepadButton {
   pressed = false;
@@ -102,17 +141,14 @@ export class Gamepad {
   /** True when the pad has motors; playEffect is a no-op otherwise. */
   hasRumble = false;
 
+  /** The web's `gamepad.vibrationActuator`. */
+  vibrationActuator = new VibrationActuator(0);
+
   constructor(index: number) {
     this.index = index;
+    this.vibrationActuator = new VibrationActuator(index);
     for (let i = 0; i < AXIS_COUNT; i++) this.axes.push(0);
     for (let i = 0; i < BUTTON_COUNT; i++) this.buttons.push(new GamepadButton());
-  }
-
-  /* The web's vibrationActuator.playEffect("dual-rumble", {...}). Synchronous
-   * here rather than promise-returning: there is nothing to await, and the
-   * effect either starts or the pad has no motors. */
-  playEffect(weakMagnitude: number, strongMagnitude: number, durationMs: number): void {
-    ffi.padRumble(this.index, weakMagnitude, strongMagnitude, durationMs);
   }
 }
 
@@ -191,8 +227,33 @@ export function pollGamepads(): void {
   }
 }
 
-/** Connected pads only, in slot order. Mirrors navigator.getGamepads(). */
-export function gamepads(): Gamepad[] {
+/* navigator.getGamepads(): INDEX-ADDRESSED, not compacted.
+ *
+ * The web returns a slot-indexed list where a disconnected pad is a hole, so
+ * `getGamepads()[1]` is the pad at index 1 no matter what happened to index
+ * 0. Compacting would silently renumber every pad when one unplugs -- the
+ * exact bug the slot design exists to prevent -- so the hole is preserved.
+ * The dialect has no sparse arrays, so an empty slot is `null`, which reads
+ * the same at a call site (`if (pad !== null)`) as the web's undefined hole.
+ *
+ * The array is trimmed to the highest occupied slot so the common
+ * "one pad, length 1" case does not hand back six trailing nulls.
+ */
+export function gamepads(): (Gamepad | null)[] {
+  ensurePool();
+  let highest = -1;
+  for (let i = 0; i < MAX_PADS; i++) {
+    if (pool[i].connected) highest = i;
+  }
+  const out: (Gamepad | null)[] = [];
+  for (let i = 0; i <= highest; i++) {
+    out.push(pool[i].connected ? pool[i] : null);
+  }
+  return out;
+}
+
+/** Connected pads only, compacted. Convenience over the spec-shaped list. */
+export function connectedGamepads(): Gamepad[] {
   ensurePool();
   const out: Gamepad[] = [];
   for (let i = 0; i < MAX_PADS; i++) {

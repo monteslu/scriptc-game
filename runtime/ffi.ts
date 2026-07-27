@@ -45,6 +45,25 @@ declare function sgEvtI32(field: number): number;
 declare function sgStrLen(unused: number): number;
 declare function sgStrByte(i: number): number;
 
+/* Math: the static tier fences every transcendental function (SC2012), so
+ * they cross to libm. `abs`/`floor`/`ceil`/`round`/`trunc`/`min`/`max` are
+ * NOT here: those compile natively and should be called as Math.* directly. */
+declare function sgSqrt(x: number): number;
+declare function sgSin(x: number): number;
+declare function sgCos(x: number): number;
+declare function sgTan(x: number): number;
+declare function sgAsin(x: number): number;
+declare function sgAcos(x: number): number;
+declare function sgAtan(x: number): number;
+declare function sgAtan2(y: number, x: number): number;
+declare function sgPow(x: number, y: number): number;
+declare function sgExp(x: number): number;
+declare function sgLog(x: number): number;
+declare function sgLog2(x: number): number;
+declare function sgLog10(x: number): number;
+declare function sgHypot(x: number, y: number): number;
+declare function sgFmod(x: number, y: number): number;
+
 // input lifecycle
 declare function sgInputInit(unused: number): number;
 declare function sgInputQuit(unused: number): void;
@@ -147,6 +166,22 @@ export function evtI32(field: number): number { return sgEvtI32(field); }
 
 export function strLen(): number { return sgStrLen(0); }
 export function strByte(i: number): number { return sgStrByte(i); }
+
+export function mathSqrt(x: number): number { return sgSqrt(x); }
+export function mathSin(x: number): number { return sgSin(x); }
+export function mathCos(x: number): number { return sgCos(x); }
+export function mathTan(x: number): number { return sgTan(x); }
+export function mathAsin(x: number): number { return sgAsin(x); }
+export function mathAcos(x: number): number { return sgAcos(x); }
+export function mathAtan(x: number): number { return sgAtan(x); }
+export function mathAtan2(y: number, x: number): number { return sgAtan2(y, x); }
+export function mathPow(x: number, y: number): number { return sgPow(x, y); }
+export function mathExp(x: number): number { return sgExp(x); }
+export function mathLog(x: number): number { return sgLog(x); }
+export function mathLog2(x: number): number { return sgLog2(x); }
+export function mathLog10(x: number): number { return sgLog10(x); }
+export function mathHypot(x: number, y: number): number { return sgHypot(x, y); }
+export function mathFmod(x: number, y: number): number { return sgFmod(x, y); }
 
 export function inputInit(): number { return sgInputInit(0); }
 export function inputQuit(): void { sgInputQuit(0); }

@@ -11,7 +11,7 @@ import { Game, GameOptions } from "../../runtime/loop/run.js";
 import { Context2D } from "../../runtime/canvas/context.js";
 import * as ffi from "../../runtime/ffi.js";
 import {
-  BUTTON_COUNT, AXIS_COUNT, BTN_A,
+  BUTTON_COUNT, AXIS_COUNT, GamepadEffectParameters,
 } from "../../runtime/input/gamepad.js";
 import { MOUSE_LEFT, MOUSE_MIDDLE, MOUSE_RIGHT } from "../../runtime/input/events.js";
 
@@ -54,7 +54,13 @@ class InputDemo extends Game {
     }
     if (this.input.wasPressed("KeyR")) {
       const pad = this.input.gamepad(0);
-      if (pad !== null && pad.connected) pad.playEffect(0.6, 0.9, 300);
+      if (pad !== null && pad.connected) {
+        const fx = new GamepadEffectParameters();
+        fx.duration = 300;
+        fx.weakMagnitude = 0.6;
+        fx.strongMagnitude = 0.9;
+        pad.vibrationActuator.playEffect("dual-rumble", fx);
+      }
     }
 
     // Text arrives as a per-frame queue, since it is a sequence not a state.
@@ -133,7 +139,7 @@ class InputDemo extends Game {
   private drawPads(ctx: Context2D, x: number, y: number): void {
     ctx.fillStyle = "#e8eef4";
     ctx.font = `14px ${FONT}`;
-    const pads = this.input.gamepads();
+    const pads = this.input.connectedGamepads();
     ctx.fillText(`gamepads (${pads.length} connected)`, x, y);
 
     if (pads.length === 0) {
@@ -149,7 +155,7 @@ class InputDemo extends Game {
   }
 
   private drawPad(ctx: Context2D, x: number, y: number, listIndex: number): void {
-    const pads = this.input.gamepads();
+    const pads = this.input.connectedGamepads();
     const pad = pads[listIndex];
 
     ctx.font = `12px ${FONT}`;

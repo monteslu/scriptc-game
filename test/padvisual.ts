@@ -33,13 +33,13 @@ function main(): void {
 
   const input = new Input();
   input.pump();
-  const preexisting = input.gamepads().length;
+  const preexisting = input.connectedGamepads().length;
 
   const device = ffi.padAttachVirtual(6, 15);
   if (device < 0) { console.log("FATAL: attach virtual pad"); process.exit(2); }
   input.pump();
 
-  const pads = input.gamepads();
+  const pads = input.connectedGamepads();
   if (pads.length !== preexisting + 1) { console.log("FATAL: pad did not appear"); process.exit(1); }
   const pad = pads[pads.length - 1];
   const slot = pad.index;

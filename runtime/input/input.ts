@@ -11,7 +11,7 @@
 import * as ffi from "../ffi.js";
 import { readTextEvent } from "../mailbox.js";
 import { scancodeOf, SCANCODE_TO_CODE } from "./keycodes.js";
-import { pollGamepads, gamepads, gamepad, Gamepad } from "./gamepad.js";
+import { pollGamepads, gamepads, connectedGamepads, gamepad, Gamepad } from "./gamepad.js";
 import {
   EV_NONE, EV_QUIT, EV_KEYDOWN, EV_KEYUP, EV_MOUSEMOVE, EV_MOUSEDOWN,
   EV_MOUSEUP, EV_MOUSEWHEEL, EV_TEXT, EV_WINDOW, EV_PADADDED, EV_PADREMOVED,
@@ -236,6 +236,9 @@ export class Input {
 
   /* ---- gamepads ---- */
 
-  gamepads(): Gamepad[] { return gamepads(); }
+  /** Slot-indexed, with nulls for empty slots, like navigator.getGamepads(). */
+  gamepads(): (Gamepad | null)[] { return gamepads(); }
+  /** Connected pads only, compacted. The convenient shape for iteration. */
+  connectedGamepads(): Gamepad[] { return connectedGamepads(); }
   gamepad(slot: number): Gamepad | null { return gamepad(slot); }
 }

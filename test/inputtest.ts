@@ -79,7 +79,7 @@ function main(): void {
   // Count pads present BEFORE attaching, so a real controller plugged into
   // the dev box does not make the virtual one land in slot 0.
   input.pump();
-  const preexisting = input.gamepads().length;
+  const preexisting = input.connectedGamepads().length;
   console.log(`pads already connected: ${preexisting}`);
 
   /* 6 axes and 15 buttons is the shape SDL's default mapping expects of a
@@ -90,7 +90,7 @@ function main(): void {
   // The add event arrives through the normal queue.
   input.pump();
 
-  const pads = input.gamepads();
+  const pads = input.connectedGamepads();
   check(pads.length === preexisting + 1, `pad count went ${preexisting} -> ${pads.length}, want ${preexisting + 1}`);
   if (pads.length !== preexisting + 1) {
     console.log("cannot continue without the virtual pad");
@@ -192,7 +192,7 @@ function main(): void {
   input.pump();
   check(!pad.connected, "pad reports disconnected after unplug");
   check(!pad.buttons[BTN_A].pressed, "held button cleared on unplug (no stuck input)");
-  check(input.gamepads().length === preexisting, "pad list back to its original length");
+  check(input.connectedGamepads().length === preexisting, "pad list back to its original length");
 
   ffi.inputQuit();
   ffi.quit();

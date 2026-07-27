@@ -894,6 +894,130 @@
       "returns": "u32"
     },
     {
+      "name": "sgSqrt",
+      "symbol": "sg_sqrt",
+      "params": [
+        "f64"
+      ],
+      "returns": "f64"
+    },
+    {
+      "name": "sgSin",
+      "symbol": "sg_sin",
+      "params": [
+        "f64"
+      ],
+      "returns": "f64"
+    },
+    {
+      "name": "sgCos",
+      "symbol": "sg_cos",
+      "params": [
+        "f64"
+      ],
+      "returns": "f64"
+    },
+    {
+      "name": "sgTan",
+      "symbol": "sg_tan",
+      "params": [
+        "f64"
+      ],
+      "returns": "f64"
+    },
+    {
+      "name": "sgAsin",
+      "symbol": "sg_asin",
+      "params": [
+        "f64"
+      ],
+      "returns": "f64"
+    },
+    {
+      "name": "sgAcos",
+      "symbol": "sg_acos",
+      "params": [
+        "f64"
+      ],
+      "returns": "f64"
+    },
+    {
+      "name": "sgAtan",
+      "symbol": "sg_atan",
+      "params": [
+        "f64"
+      ],
+      "returns": "f64"
+    },
+    {
+      "name": "sgAtan2",
+      "symbol": "sg_atan2",
+      "params": [
+        "f64",
+        "f64"
+      ],
+      "returns": "f64"
+    },
+    {
+      "name": "sgPow",
+      "symbol": "sg_pow",
+      "params": [
+        "f64",
+        "f64"
+      ],
+      "returns": "f64"
+    },
+    {
+      "name": "sgExp",
+      "symbol": "sg_exp",
+      "params": [
+        "f64"
+      ],
+      "returns": "f64"
+    },
+    {
+      "name": "sgLog",
+      "symbol": "sg_log",
+      "params": [
+        "f64"
+      ],
+      "returns": "f64"
+    },
+    {
+      "name": "sgLog2",
+      "symbol": "sg_log2",
+      "params": [
+        "f64"
+      ],
+      "returns": "f64"
+    },
+    {
+      "name": "sgLog10",
+      "symbol": "sg_log10",
+      "params": [
+        "f64"
+      ],
+      "returns": "f64"
+    },
+    {
+      "name": "sgHypot",
+      "symbol": "sg_hypot",
+      "params": [
+        "f64",
+        "f64"
+      ],
+      "returns": "f64"
+    },
+    {
+      "name": "sgFmod",
+      "symbol": "sg_fmod",
+      "params": [
+        "f64",
+        "f64"
+      ],
+      "returns": "f64"
+    },
+    {
       "name": "sgInputInit",
       "symbol": "sg_input_init",
       "params": [
