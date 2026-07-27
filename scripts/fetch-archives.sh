@@ -7,8 +7,27 @@
 # is never linked. Verified with nm; see docs/SPIKE-RESULTS.md.
 set -euo pipefail
 TARGET="${1:-linux-x86_64}"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+DEST="$ROOT/vendor/$TARGET"
 SRC="${LIBCANVAS_OUT:-$HOME/code/cliemu/build-libcanvas/out/$TARGET}"
-DEST="$(cd "$(dirname "$0")/.." && pwd)/vendor/$TARGET"
+
+# A local build-libcanvas checkout wins when present (that is the inner-loop
+# case, and it picks up unreleased changes). Otherwise download the pinned
+# release: CI runners have no checkout, and requiring one would mean every
+# platform in the matrix builds Skia from source for no reason.
+if [ ! -d "$SRC" ]; then
+  TAG="${LIBCANVAS_TAG:-$(python3 -c "import json;print(json.load(open('$ROOT/versions.json'))['canvas'].get('release_tag',''))")}"
+  [ -n "$TAG" ] || { echo "no local build-libcanvas at $SRC and no canvas.release_tag in versions.json" >&2; exit 1; }
+  URL="https://github.com/monteslu/build-libcanvas/releases/download/$TAG/libcanvas-$TARGET.tar.gz"
+  echo "fetching $URL"
+  DL="$(mktemp -d)"; trap 'rm -rf "$DL"' EXIT
+  curl -fsSL "$URL" -o "$DL/a.tar.gz" || { echo "download failed: $URL" >&2; exit 1; }
+  mkdir -p "$DL/x" && tar -xzf "$DL/a.tar.gz" -C "$DL/x"
+  # The tarball may or may not carry a top-level directory.
+  SRC="$DL/x"
+  [ -f "$SRC/libcanvas.a" ] || SRC="$(find "$DL/x" -maxdepth 2 -name libcanvas.a -printf '%h\n' -quit)"
+  [ -n "$SRC" ] && [ -d "$SRC" ] || { echo "libcanvas.a not found in $URL" >&2; exit 1; }
+fi
 
 [ -d "$SRC" ] || { echo "build-libcanvas output not found: $SRC" >&2; exit 1; }
 mkdir -p "$DEST/skia" "$DEST/include"

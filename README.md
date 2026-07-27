@@ -77,7 +77,12 @@ real URLs rather than filenames.
 | **Engine** (optional) | Fixed-step loop with interpolation, and an asset loader with progress. Pure web API underneath; skippable |
 | **Build** | One command from a game directory to a self-contained native binary |
 
-Not yet: WebGL and 3D, a cross-compile matrix, and CI.
+Not yet: WebGL and 3D.
+
+Builds on linux-x86_64, linux-aarch64, macos-aarch64 and windows-x86_64, each
+on its own CI runner. Cross-compiling is not used: scriptc can, but Skia, SDL2
+and the audio graph are per-platform binaries, so only a native runner links a
+real result.
 
 ### Verified
 

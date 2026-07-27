@@ -8,8 +8,9 @@
   },
   "canvas": {
     "CANVAS_VERSION": "1.0.0",
-    "source": "build-libcanvas out/linux-x86_64",
-    "skia_gl_standard": "gl"
+    "source": "build-libcanvas release (local out/ checkout wins when present)",
+    "skia_gl_standard": "gl",
+    "release_tag": "v1.0.0-jsg8"
   },
   "sdl": {
     "version": "2.32.10",

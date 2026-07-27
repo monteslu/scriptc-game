@@ -181,6 +181,46 @@ if (problems.length > 0) {
 const target = process.argv[2] ?? "linux-x86_64";
 const vendor = `../vendor/${target}`;
 
+/* What Skia and SDL need from the SYSTEM, per platform.
+ *
+ * Skia links against platform graphics and text stacks rather than bundling
+ * them, so this list is genuinely different per OS: fontconfig/freetype and
+ * GL on Linux, the equivalent frameworks on macOS, and the Win32 GDI/user
+ * libraries on Windows. Getting it wrong surfaces as thousands of undefined
+ * symbols at link time, not as a clean error. */
+function systemLibraries(t) {
+  if (t.startsWith("macos")) {
+    return [
+      "SDL2", "m", "pthread",
+      // libc++ is the system default on macOS; c++abi is inside it.
+      "c++",
+      // Skia's macOS backend: CoreGraphics/CoreText for fonts and images,
+      // OpenGL for the GL surface. Frameworks, not -l libraries.
+      "framework:CoreFoundation", "framework:CoreGraphics", "framework:CoreText",
+      "framework:CoreServices", "framework:OpenGL",
+    ];
+  }
+  if (t.startsWith("windows")) {
+    return [
+      "SDL2", "m",
+      "c++",
+      // Skia on Windows: GDI for fonts, OpenGL32 for the GL surface, plus
+      // the usual Win32 support libraries.
+      "gdi32", "user32", "opengl32", "ole32", "oleaut32", "uuid",
+    ];
+  }
+  // Linux (x86_64 and aarch64).
+  return [
+    "SDL2", "m", "pthread", "dl",
+    /* libc++, NOT libstdc++: build-libcanvas compiles Skia against LLVM's
+     * libc++ (every symbol is `std::__1::`), so linking libstdc++ leaves
+     * thousands of undefined std:: references. shim/*.cpp is compiled
+     * -stdlib=libc++ for the same reason. */
+    "c++", "c++abi",
+    "GL", "fontconfig", "freetype",
+  ];
+}
+
 /* Skia ships ~28 MUTUALLY dependent archives (libsvg needs SkColorMatrix
  * and SkParse from libskia; libskia pulls codec/image archives back), and
  * GNU ld resolves each static archive exactly once, left to right. The
@@ -199,15 +239,7 @@ const manifest = {
    * Order matters to the linker, and sggfx (which calls into the engine) must
    * come first. */
   libraries: [`${vendor}/libsggfx.a`, `${vendor}/libwebaudio.a`],
-  /* libc++, NOT libstdc++: build-libcanvas compiles Skia against LLVM's
-   * libc++ (every symbol is `std::__1::`), so linking libstdc++ leaves
-   * thousands of undefined std:: references. c++abi and unwind follow it.
-   * shim/*.cpp is compiled -stdlib=libc++ for the same reason. */
-  system_libraries: [
-    "SDL2", "m", "pthread", "dl",
-    "c++", "c++abi",
-    "GL", "fontconfig", "freetype",
-  ],
+  system_libraries: systemLibraries(target),
 };
 
 mkdirSync(join(root, "ffi"), { recursive: true });
