@@ -51,6 +51,26 @@ export function resolveUrl(url: string): string {
   return joinPath(webRoot, url);
 }
 
+/* Asset failures WARN.
+ *
+ * A rejected promise with no `.catch` attached is silent, and game code
+ * rarely attaches one to an asset load. That is how a broken music path went
+ * unnoticed through a whole release: the file was fine, the decode was fine,
+ * and the promise chain simply never ran. A missing or unreadable asset is
+ * almost always a bug in the game, so it says so once, on stderr, naming the
+ * path it actually tried.
+ *
+ * Deduplicated by path: a loader retrying every frame should not scroll the
+ * terminal. */
+const warned = new Set<string>();
+
+export function warnAsset(kind: string, url: string, detail: string): void {
+  const key = `${kind}:${url}`;
+  if (warned.has(key)) return;
+  warned.add(key);
+  console.log(`[scriptc-game] ${kind} failed: ${url}${detail === "" ? "" : ` (${detail})`}`);
+}
+
 /** Reads a file, or null when it is missing or unreadable. */
 export function readBinary(path: string): Buffer | null {
   if (isExternalUrl(path)) return null;   // no network stack in this build

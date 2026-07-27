@@ -326,10 +326,10 @@ window.onLoad(() => {
       const f = fallers[i];
       if (!f.alive) continue;
       if (f.coin) {
-        if (coin.bitmap !== null) {
+        if (coin.complete) {
           // One strip, four 16px frames: the source rect picks the frame.
           const frameIdx = Math.floor(coinAnimMs / 90) % 4;
-          ctx.drawImageRect(coin.bitmap, frameIdx * 16, 0, 16, 16,
+          ctx.drawImageRect(coin, frameIdx * 16, 0, 16, 16,
                             f.x - f.size / 2, f.y - f.size / 2, f.size, f.size);
         } else {
           ctx.fillStyle = "#ffd257";
@@ -337,8 +337,8 @@ window.onLoad(() => {
           ctx.arc(f.x, f.y, f.size / 2, 0, TAU, false);
           ctx.fill("nonzero");
         }
-      } else if (hazard.bitmap !== null) {
-        ctx.drawImageScaled(hazard.bitmap, f.x - f.size / 2, f.y - f.size / 2,
+      } else if (hazard.complete) {
+        ctx.drawImageScaled(hazard, f.x - f.size / 2, f.y - f.size / 2,
                             f.size, f.size);
       } else {
         ctx.fillStyle = "#e5484d";
@@ -348,7 +348,7 @@ window.onLoad(() => {
 
     const blink = invulnMs > 0 && (invulnMs % 200) > 100;
     if (!blink) {
-      if (player.bitmap !== null) {
+      if (player.complete) {
         /* 3.2x the collision radius, not 2x: the art has transparent margin
          * and a narrow nose, so a frame sized to the hitbox renders a ship
          * visibly smaller than the hazards it dodges. */
@@ -356,7 +356,7 @@ window.onLoad(() => {
         ctx.save();
         ctx.translate(px, py);
         ctx.rotate(heading + Math.PI / 2);   // the art faces up
-        ctx.drawImageScaled(player.bitmap, -size / 2, -size / 2, size, size);
+        ctx.drawImageScaled(player, -size / 2, -size / 2, size, size);
         ctx.restore();
         if (dashMs > 0) {
           ctx.globalAlpha = 0.45;

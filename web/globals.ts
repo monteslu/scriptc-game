@@ -35,11 +35,11 @@
  */
 import * as ffi from "../host/ffi.js";
 import { Context2D } from "./canvas/context.js";
-import { GameImage, decodeImage } from "./canvas/image.js";
+import { Image } from "./canvas/image.js";
 import { Input } from "./input/input.js";
 import { Gamepad, gamepads as sparseGamepads } from "./input/gamepad.js";
 import { SgMath } from "./math.js";
-import { resolveUrl, readBinary, fileExists, isExternalUrl } from "../host/resources.js";
+import { resolveUrl, readBinary, fileExists, isExternalUrl, warnAsset } from "../host/resources.js";
 import { queueTask } from "../host/tasks.js";
 
 /* ---- the task queue ----
@@ -336,69 +336,11 @@ export const navigator = new SgNavigator();
 
 /* ---- Image ----
  *
- * `new Image()`, set `.src`, get `onload`. The decode is synchronous
- * underneath, but the callback fires from the task queue so attaching
- * `onload` AFTER setting `src` still works -- which is how most real code is
- * written.
+ * Defined in web/canvas/image.ts (Context2D needs the type, and importing it
+ * from here would be circular) and re-exported so a game gets it from the
+ * same place as every other global.
  */
-export class Image {
-  width = 0;
-  height = 0;
-  complete = false;
-  onload: (() => void) | null = null;
-  onerror: (() => void) | null = null;
-  /** The decoded bitmap; drawImage takes this. */
-  bitmap: GameImage | null = null;
-  private srcUrl = "";
-
-  get src(): string { return this.srcUrl; }
-
-  set src(url: string) {
-    this.srcUrl = url;
-    const path = resolveUrl(url);
-    // Decode NOW (it is a native call) but report LATER, so ordering matches
-    // a browser: the assignment returns before any handler runs.
-    const bytes = readBinary(path);
-    if (bytes === null) {
-      queueTask(() => { this.fireError(); });
-      return;
-    }
-    const img = decodeImage(bytes);
-    if (!img.valid) {
-      queueTask(() => { this.fireError(); });
-      return;
-    }
-    this.bitmap = img;
-    this.width = img.width;
-    this.height = img.height;
-    queueTask(() => {
-      this.complete = true;
-      this.fireLoad();
-    });
-  }
-
-  /* A field holding a function cannot be called as `this.onload()` (SC1090
-   * reads it as a method call), so it is copied to a local first. */
-  private fireLoad(): void {
-    const fn = this.onload;
-    if (fn !== null) fn();
-  }
-
-  private fireError(): void {
-    const fn = this.onerror;
-    if (fn !== null) fn();
-  }
-
-  /** The modern promise form. Settles on a later turn, as the spec requires. */
-  decode(): Promise<void> {
-    return new Promise<void>((resolve, reject) => {
-      queueTask(() => {
-        if (this.bitmap !== null) resolve();
-        else reject(new Error(`could not decode ${this.srcUrl}`));
-      });
-    });
-  }
-}
+export { Image };
 
 /* ---- fetch ----
  *
@@ -468,10 +410,13 @@ export class Response {
 export function fetch(url: string): Promise<Response> {
   return new Promise<Response>((resolve) => {
     if (isExternalUrl(url)) {
+      warnAsset("fetch", url, "this build has no network stack");
       queueTask(() => { resolve(Response.networkError(url)); });
       return;
     }
-    const bytes = readBinary(resolveUrl(url));
+    const path = resolveUrl(url);
+    const bytes = readBinary(path);
+    if (bytes === null) warnAsset("fetch", url, `not found at ${path}`);
     // Resolves on a later turn even though the read already happened.
     queueTask(() => { resolve(new Response(url, bytes)); });
   });
@@ -545,7 +490,9 @@ export class FontFace {
 
   load(): Promise<FontFace> {
     return new Promise<FontFace>((resolve, reject) => {
-      const rc = ffi.fontRegister(resolveUrl(this.url));
+      const path = resolveUrl(this.url);
+      const rc = ffi.fontRegister(path);
+      if (rc !== 0) warnAsset("font", this.url, `not found or unreadable at ${path}`);
       queueTask(() => {
         if (rc === 0) { this.status = "loaded"; resolve(this); }
         else { this.status = "error"; reject(new Error(`could not load font ${this.url}`)); }

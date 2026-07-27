@@ -46,7 +46,7 @@ import {
 import { blendMode } from "./enums.js";
 import { Gradient } from "./gradient.js";
 import { Pattern } from "./pattern.js";
-import { GameImage } from "./image.js";
+import { Image } from "./image.js";
 import { parseFont } from "./font.js";
 import { TextMetrics } from "./metrics.js";
 
@@ -555,17 +555,17 @@ export class Context2D {
   /* ---- images ---- */
 
   /** drawImage's 3-argument form: natural size at (dx, dy). */
-  drawImage(img: GameImage, dx: number, dy: number): void {
+  drawImage(img: Image, dx: number, dy: number): void {
     this.drawImageRect(img, 0, 0, img.width, img.height, dx, dy, img.width, img.height);
   }
 
   /** 5-argument form: scaled to (dw, dh). */
-  drawImageScaled(img: GameImage, dx: number, dy: number, dw: number, dh: number): void {
+  drawImageScaled(img: Image, dx: number, dy: number, dw: number, dh: number): void {
     this.drawImageRect(img, 0, 0, img.width, img.height, dx, dy, dw, dh);
   }
 
   /** 9-argument form: source rect to destination rect. */
-  drawImageRect(img: GameImage, sx: number, sy: number, sw: number, sh: number,
+  drawImageRect(img: Image, sx: number, sy: number, sw: number, sh: number,
                 dx: number, dy: number, dw: number, dh: number): void {
     this.applyCommon();
     sk.paintSetStyle(this.paint, STYLE_FILL);

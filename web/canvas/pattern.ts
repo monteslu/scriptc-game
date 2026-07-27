@@ -7,12 +7,12 @@
 import * as ffi from "../../host/ffi.js";
 import * as sk from "../../host/skia-ffi.js";
 import { TILE_CLAMP, TILE_REPEAT, TILE_DECAL } from "../../host/skia-enums.js";
-import { GameImage } from "./image.js";
+import { Image } from "./image.js";
 
 export class Pattern {
   private shader = 0;
 
-  constructor(img: GameImage, repeat: string) {
+  constructor(img: Image, repeat: string) {
     // "no-repeat" is DECAL (draw once, transparent outside) rather than
     // CLAMP (smear the edge pixels forever), which is what canvas means.
     let rx = TILE_REPEAT;
@@ -30,6 +30,6 @@ export class Pattern {
   }
 }
 
-export function createPattern(img: GameImage, repeat: string): Pattern {
+export function createPattern(img: Image, repeat: string): Pattern {
   return new Pattern(img, repeat);
 }

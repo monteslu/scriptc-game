@@ -143,8 +143,13 @@ cell:
 
 ```ts
 const frame = Math.floor(elapsed / 90) % 4;
-ctx.drawImage(sheet, frame * 16, 0, 16, 16, x, y, size, size);
+ctx.drawImageRect(sheet, frame * 16, 0, 16, 16, x, y, size, size);
 ```
+
+The dialect has no function overloads, so each `drawImage` arity is a separate
+method: `drawImage(img, x, y)`, `drawImageScaled(img, x, y, w, h)` and
+`drawImageRect(img, sx, sy, sw, sh, dx, dy, dw, dh)`. The image passed is the
+`Image` itself, exactly as in a browser.
 
 ### Audio
 
@@ -252,6 +257,22 @@ console.log(ready);                      // false -- the handler has not run yet
 
 Genuinely synchronous web APIs (`ctx.fillRect`, `canvas.width`) stay synchronous.
 
+`test/asynctest.ts` asserts this rather than trusting it, across images, fetch,
+`decode()`, `FontFace.load()` and `decodeAudioData`. It exists because a promise
+chain once silently never ran, and nothing caught it.
+
+### Asset failures are reported
+
+A missing or undecodable asset warns to the terminal, naming the path it tried:
+
+```
+[scriptc-game] image failed: player.png (not found at examples/mygame/public/player.png)
+```
+
+Attaching `onerror` or `.catch` is still up to you. The warning exists because a
+rejected promise with no handler is otherwise completely silent, and that is
+exactly how a broken asset path hides.
+
 ---
 
 ## What differs from a browser
@@ -288,13 +309,60 @@ source: `SG_MAX_FRAMES`, `SG_SHOT`, `SG_SHOT_FRAME`, `SG_NO_VSYNC`,
 
 ## The optional engine
 
-`engine/` holds conveniences. A game must be able to skip it entirely, and the
-`minimal` and `bounce` examples do.
+`engine/` holds conveniences. **A game must be able to skip it entirely**, and
+`examples/minimal` and `examples/dodge` do: they drive `requestAnimationFrame`
+and count their own `onload` callbacks. Nothing in `web/` or `host/` imports
+`engine/`.
+
+Everything in it is written against the same web APIs your game uses, so it
+runs in a browser too. There is no privileged access.
+
+### `engine/loop.ts` -- fixed-step loop
+
+Physics on a fixed timestep, rendering interpolated between steps, so a game
+behaves identically at 60Hz and 144Hz. `examples/bounce` uses it.
+
+```ts
+import { createGameLoop, LoopOptions } from "../../engine/loop.js";
+
+const loop = new LoopOptions();
+loop.update = (dt) => { /* dt is ALWAYS the same value */ };
+loop.render = (alpha) => { /* alpha 0..1 between the last two updates */ };
+createGameLoop(loop);
+```
+
+Interpolating by `alpha` is what removes step-boundary stutter: keep the
+previous position, and draw at `prev + (cur - prev) * alpha`.
+
+Two clamps guard against a stall. A long pause (a breakpoint, a dragged window)
+is discarded rather than replayed as hundreds of catch-up updates, which is the
+spiral of death that locks a naive loop up.
+
+### `engine/assets.ts` -- load everything, then start
+
+```ts
+import { createResourceLoader } from "../../engine/assets.js";
+
+const loader = createResourceLoader(audio);
+loader.addImage("player", "player.png");
+loader.addSound("music", "music.mp3");
+
+loader.load().then((res) => {
+  const img = res.getImage("player");     // draw it directly
+  startGame();
+});
+```
+
+`getPercentComplete()` drives a progress bar. **A failed asset does not reject
+the batch**: `load()` still settles, `failed()` names what did not arrive, and
+the terminal gets a warning. A game that loses one sound should still boot, and
+one bad path should never leave a loading screen spinning with no explanation.
+
+`examples/loader` shows the whole shape, including a deliberately missing file.
+
+### `engine/sfx.ts` -- oscillator sound effects
 
 ```ts
 import { pickup, hit, dash, gameOver } from "../../engine/sfx.js";
 pickup(audio, 0.9);
 ```
-
-Everything in `engine/` is written against the same web APIs your game uses. It
-imports from `web/globals.js`, not from internals.

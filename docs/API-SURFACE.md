@@ -102,14 +102,17 @@ isPointInPath isPointInStroke`
   line-metrics call).
 - `font` shorthand parsing, `textAlign textBaseline`: S.
 - `direction letterSpacing wordSpacing`: D.
-- `sg.fonts.register(path, family?)`: S (typeface load; replaces
-  GlobalFonts).
+- `new FontFace(family, "url(file.ttf)").load()` + `document.fonts.add(face)`:
+  S. The spec path; the promise settles on a later turn.
 
 ### Images
 
-- `sg.assets.image(path) -> GameImage` (decode via Skia codecs: png, jpg,
-  webp, gif-first-frame): S.
-- `drawImage(img, dx, dy)` / 5-arg / 9-arg: S. Draws of another canvas
+- `new Image()` with `src` / `onload` / `onerror` / `decode()` (Skia codecs:
+  png, jpg, webp, bmp, gif-first-frame): S. `Image` IS the drawable, as in a
+  browser; there is no separate bitmap type on the game-facing surface.
+- `drawImage(img, dx, dy)` / `drawImageScaled` (5-arg) / `drawImageRect`
+  (9-arg): S. The dialect has no overloads, so each arity is its own method
+  name. Draws of another canvas
   (offscreen surface): S via `sg.createCanvas(w, h)` returning a
   Context2D whose backing surface can be a drawImage source
   (skiac_canvas_draw_surface exists).
@@ -117,7 +120,7 @@ isPointInPath isPointInStroke`
   direction; skiac_canvas_put_image_data exists).
 - `getImageData`: D-tier ergonomics, S-tier existence: implemented via the
   per-pixel readback protocol, documented as debug-speed. Real use cases
-  get `sg.screenshot(path)` (native-side PNG write): S.
+  get a host-side PNG write, driven by `SG_SHOT`: S.
 - `imageSmoothingEnabled/Quality`: S.
 
 ### X (out, with reasons)
@@ -199,16 +202,22 @@ preserved (`current_sample` counters render-side).
 
 ---
 
-## Assets (`sg.assets`)
+## Assets (web APIs, web root)
 
-- `sg.assets.image(path)`, `sg.assets.audio(path)`, `sg.assets.json(path)`,
-  `sg.assets.text(path)`, `sg.assets.bytes(path)`: S, synchronous (native
-  decode is fast; load screens can chunk over frames if needed).
-- Paths resolve relative to the binary's directory (`process.argv[1]`
-  dirname per scriptc's documented argv shape), overridable with
-  `SG_ASSETS_DIR` env var: S.
-- `comptime()` baking helpers for metadata: S (documented pattern, not
-  framework magic).
+The game directory is the web root, with `public/` preferred when present, the
+same rule jsgamelauncher uses. There is no `sg.assets`: assets load through the
+same APIs a page uses.
+
+- `new Image()` + `src`, `fetch(url)` -> `arrayBuffer` / `text` / `json`,
+  `FontFace.load()`, `decodeAudioData`: S.
+- Relative paths resolve against the web root; `http://`, `https://`, `//`,
+  `data:` and `blob:` are treated as real URLs. This build has no network
+  stack, so those report `ok === false` rather than reading a file: S.
+- The web root is baked at build time and overridable with `SG_GAME_DIR`: S.
+- Failures warn to the terminal naming the resolved path, since an unhandled
+  rejection is otherwise silent: S.
+- `engine/assets.ts` adds an optional batching loader with progress and a
+  `failed()` list. Optional: a game can skip it entirely.
 - Single-file pak mode: D.
 
 ---

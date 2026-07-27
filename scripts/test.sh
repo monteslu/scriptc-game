@@ -28,7 +28,7 @@ run() {
 }
 
 echo "==> building test programs"
-for entry in test/conformance.ts test/readbackprobe.ts test/inputtest.ts test/padvisual.ts test/audiotest.ts test/decodetest.ts test/imagetest.ts test/spritetest.ts; do
+for entry in test/conformance.ts test/readbackprobe.ts test/inputtest.ts test/padvisual.ts test/audiotest.ts test/decodetest.ts test/imagetest.ts test/spritetest.ts test/asynctest.ts; do
   ./scripts/build.sh "$entry" >/dev/null || { echo "build failed: $entry"; exit 1; }
 done
 
@@ -37,6 +37,9 @@ run "pixel readback"     env SDL_VIDEODRIVER=dummy ./build/readbackprobe
 run "input + gamepads"   env SDL_VIDEODRIVER=dummy ./build/inputtest
 run "pad visual"         env SDL_VIDEODRIVER=dummy ./build/padvisual test/out/padvisual.png
 run "sprite sheets"      env SDL_VIDEODRIVER=dummy ./build/spritetest test/out
+# Event-loop ordering: async-shaped APIs must settle on a LATER turn. Guards
+# the class of bug where a promise chain silently never runs.
+run "async ordering"     env SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./build/asynctest
 # Audio runs OFFLINE (no device): renders graphs to float WAVs and checks the
 # samples. test/beeptest.ts is the live-device check and is deliberately not
 # here -- it needs a sound card and makes noise.

@@ -11,6 +11,7 @@
  */
 import * as ffi from "../../host/ffi.js";
 import { queueTask as queueAudioTask } from "../../host/tasks.js";
+import { warnAsset } from "../../host/resources.js";
 import {
   P_FREQUENCY, P_DETUNE, P_GAIN, P_Q, P_DELAY_TIME, P_PAN, P_OFFSET, P_TYPE,
   P_LOOP, P_THRESHOLD, P_KNEE, P_RATIO, P_ATTACK, P_RELEASE,
@@ -353,6 +354,10 @@ export class AudioContext {
     const graph = ffi.audioGraphId();
     const id = ffi.audioNextBufferId();
     const rc = graph < 0 ? -1 : ffi.audioDecodeBytes(graph, id, audioData);
+    if (rc < 0) {
+      warnAsset("audio decode", `${audioData.length} bytes`,
+                graph < 0 ? "no audio device" : "unrecognised format");
+    }
     const frames = ffi.decodeFrames();
     const channels = ffi.decodeChannels();
     const rate = ffi.decodeRate();

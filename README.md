@@ -49,7 +49,7 @@ deployment shape and run the same source in a browser.
 | Tier | Rule |
 | --- | --- |
 | `web/` | Browser API shims: Canvas 2D, Web Audio, Gamepad, `globals.ts`. **Games see only this.** |
-| `engine/` | Opinionated conveniences (sound effects, helpers). Optional, and a game must be able to skip it entirely. |
+| `engine/` | Opinionated conveniences: fixed-step loop, asset loader, sound effects. Optional, and a game must be able to skip it entirely. |
 | `host/` | The FFI wall, frame loop, handle tables, mailbox, ABI tables, URL resolution. Games never touch it. |
 | `shim/` | The C/C++ side: SDL window, Skia wrappers, audio thread, decoders. |
 
@@ -74,6 +74,7 @@ real URLs rather than filenames.
 | **Audio** | Web Audio graph with 15 node types, `AudioParam` scheduling, `decodeAudioData` for mp3 / wav / ogg / flac, plus a live SDL device |
 | **Input** | `keydown` / `keyup` with W3C `code` names, mouse events, `navigator.getGamepads()` with the Standard Mapping, hot-plug, and rumble |
 | **Loop** | Real `requestAnimationFrame` (a queue, not a single slot), `load` event, genuinely async asset loading |
+| **Engine** (optional) | Fixed-step loop with interpolation, and an asset loader with progress. Pure web API underneath; skippable |
 | **Build** | One command from a game directory to a self-contained native binary |
 
 Not yet: WebGL and 3D, a cross-compile matrix, and CI.
@@ -90,10 +91,12 @@ Every number below comes from `./scripts/test.sh`, which runs headless.
 | Audio decoders | **17/17** checks across mp3, wav, ogg and flac |
 | Image formats | **20/20** checks across png, jpg, webp, bmp and gif |
 | Sprite sheets | **10/10** checks |
+| Async ordering | **26/26** checks that async-shaped APIs settle on a later turn |
 | Pixel readback | passing |
 
 `./scripts/build.sh examples/dodge` builds the reference game: sprites, looping
-music, sound effects, and gamepad input with rumble.
+music, sound effects, and gamepad input with rumble. `examples/loader` is the
+same stack driven through the optional engine, with a loading screen.
 
 ## Credits
 

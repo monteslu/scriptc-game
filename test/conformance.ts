@@ -9,7 +9,7 @@
 import * as ffi from "../host/ffi.js";
 import * as sk from "../host/skia-ffi.js";
 import { Context2D } from "../web/canvas/context.js";
-import { decodeImage } from "../web/canvas/image.js";
+import { imageFromBytes } from "../web/canvas/image.js";
 import { readFileSync } from "node:fs";
 import {
   SCENE_NAMES, SCENE_W, SCENE_H, TEST_FONT_PATHS, TEST_IMAGE_PATH, drawScene,
@@ -31,8 +31,8 @@ function main(): void {
 
   // readFileSync gives a Buffer, which is exactly what a `bytes` FFI param
   // wants: the asset path never crosses the boundary, only its contents.
-  const img = decodeImage(readFileSync(TEST_IMAGE_PATH));
-  if (!img.valid) {
+  const img = imageFromBytes(readFileSync(TEST_IMAGE_PATH));
+  if (!img.complete) {
     console.log(`FATAL: could not decode ${TEST_IMAGE_PATH}`);
     process.exit(2);
   }
