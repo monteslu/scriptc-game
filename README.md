@@ -103,11 +103,12 @@ Assets shared by more than one example live once in `examples/shared/` and are
 symlinked into each game's `public/`. Windows clones need `core.symlinks`
 enabled; see [examples/shared/README.md](examples/shared/README.md).
 
-Seven examples: `minimal` (no engine, no assets), `bounce` (the engine's
+Eight examples: `minimal` (no engine, no assets), `bounce` (the engine's
 fixed-step loop), `inputs` (keyboard, mouse and gamepad state), `loader`
 (the optional asset loader with a progress bar), `dodge` (the reference
-game), `paddle` (swept collision and a CPU opponent) and `synth` (a playable
-Web Audio graph). Every one of them also runs in a browser, checked by
+game), `paddle` (swept collision and a CPU opponent), `scroller` (tilemap
+platformer with a scrolling camera) and `synth` (a playable Web Audio
+graph). Every one of them also runs in a browser, checked by
 `./browser/test.sh`.
 
 `./scripts/build.sh examples/dodge` builds the reference game: sprites, looping
