@@ -6,10 +6,10 @@
  *
  * Usage: conformance <outDir>
  */
-import * as ffi from "../runtime/ffi.js";
-import * as sk from "../runtime/canvas/skia-ffi.js";
-import { Context2D } from "../runtime/canvas/context.js";
-import { decodeImage } from "../runtime/canvas/image.js";
+import * as ffi from "../host/ffi.js";
+import * as sk from "../host/skia-ffi.js";
+import { Context2D } from "../web/canvas/context.js";
+import { decodeImage } from "../web/canvas/image.js";
 import { readFileSync } from "node:fs";
 import {
   SCENE_NAMES, SCENE_W, SCENE_H, TEST_FONT_PATHS, TEST_IMAGE_PATH, drawScene,

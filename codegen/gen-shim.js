@@ -4,7 +4,7 @@
  * cannot drift from each other:
  *
  *   shim/sg_skia_gen.cpp        handle-flattened extern "C" wrappers
- *   runtime/canvas/skia-ffi.ts  the matching `declare` block + wrappers
+ *   host/skia-ffi.ts  the matching `declare` block + wrappers
  *   (the manifest is derived from the .ts by gen-ffi.js, as before)
  *
  * The parser is deliberately dumb: skia_c.hpp is machine-regular, and any
@@ -266,9 +266,9 @@ for (const p of plans) {
 }
 
 tsLines.push(...declLines, "", ...wrapLines, "");
-writeFileSync(join(root, "runtime/canvas/skia-ffi.ts"), tsLines.join("\n"));
+writeFileSync(join(root, "host/skia-ffi.ts"), tsLines.join("\n"));
 
 console.log(
   `gen-shim: ${plans.length} generated, ${Object.keys(allow.manual).length} manual ` +
-    `-> shim/sg_skia_gen.cpp, runtime/canvas/skia-ffi.ts`,
+    `-> shim/sg_skia_gen.cpp, host/skia-ffi.ts`,
 );

@@ -14,7 +14,7 @@ OBJ="$DEST/obj"
 mkdir -p "$OBJ"
 
 SDL_CFLAGS="$(pkg-config --cflags sdl2)"
-INC="-I$DEST/include -I$ROOT/shim"
+INC="-I$DEST/include -I$ROOT/shim -I${WEBAUDIO_SRC:-$ROOT/../webaudio-node}/src/vendor"
 
 # sg_core is C++ (skiac is a C ABI over a C++ library and the shim uses
 # extern "C" blocks); sg_tables is plain C.
@@ -26,7 +26,7 @@ INC="-I$DEST/include -I$ROOT/shim"
 clang -O2 -std=c11 -c "$ROOT/shim/sg_tables.c" -o "$OBJ/sg_tables.o" $INC
 
 SHIM_OBJS="$OBJ/sg_tables.o"
-for cpp in sg_core sg_skia_gen sg_skia_extra; do
+for cpp in sg_core sg_input sg_audio sg_audio_decode sg_skia_gen sg_skia_extra; do
   clang++ -O2 -std=c++17 -stdlib=libc++ -fno-exceptions \
           -c "$ROOT/shim/$cpp.cpp" -o "$OBJ/$cpp.o" $INC $SDL_CFLAGS
   SHIM_OBJS="$SHIM_OBJS $OBJ/$cpp.o"

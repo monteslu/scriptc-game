@@ -1,4 +1,4 @@
-/* Generate ffi/core.ffi.json from runtime/ffi.ts.
+/* Generate ffi/core.ffi.json from host/ffi.ts.
  *
  * The manifest is all-or-nothing (every entry needs a declaration and vice
  * versa), so deriving it from the declarations removes the whole class of
@@ -8,7 +8,7 @@
  * is the only truth about widths.
  */
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -57,6 +57,9 @@ const shimSrc = [
   "shim/sg_tables.c",
   "shim/sg_skia_gen.cpp",
   "shim/sg_skia_extra.cpp",
+  "shim/sg_input.cpp",
+  "shim/sg_audio.cpp",
+  "shim/sg_audio_decode.cpp",
 ]
   .map((f) => readFileSync(join(root, f), "utf8"))
   .join("\n");
@@ -75,12 +78,50 @@ for (let m; (m = sigRe.exec(shimSrc)); ) {
   cSigs.set(symbol, { ret: ret.trim(), params: collapseSpans(paramList) });
 }
 
-/* Parse the TS declarations. They live in two files: the hand-written core
- * plus the generated skia block. The manifest is all-or-nothing, so BOTH
- * must be scanned or the build fails on whichever set is missing. */
-const tsSrc = ["runtime/ffi.ts", "runtime/canvas/skia-ffi.ts"]
-  .map((f) => readFileSync(join(root, f), "utf8"))
-  .join("\n");
+/* Parse the TS declarations.
+ *
+ * The manifest is ALL-OR-NOTHING PER PROGRAM: every entry must have a
+ * matching `declare` in the compiled program, and a program only contains
+ * what it transitively imports. A test that never touches the canvas has no
+ * skia declares, so a manifest listing them fails to build.
+ *
+ * So the declaration set is the union over the entry file's IMPORT GRAPH,
+ * not over the whole repo. With no entry given (a bare `gen-ffi.js` run),
+ * every declaration file is scanned, which is the right default for
+ * regenerating the full manifest.
+ */
+const entry = process.argv[3];
+const declFiles = entry
+  ? reachableFiles(resolve(entry))
+  : ["host/ffi.ts", "host/skia-ffi.ts"].map((f) => join(root, f));
+
+/** Every .ts file reachable from `start` through relative imports. */
+function reachableFiles(start) {
+  const seen = new Set();
+  const queue = [start];
+  while (queue.length > 0) {
+    const file = queue.pop();
+    if (seen.has(file)) continue;
+    let text;
+    try {
+      text = readFileSync(file, "utf8");
+    } catch {
+      continue; // a missing import is the compiler's error to report, not ours
+    }
+    seen.add(file);
+    // Relative specifiers only: bare ones are node builtins, which cannot
+    // contain FFI declarations.
+    const importRe = /from\s+["'](\.[^"']*)["']/g;
+    for (let m; (m = importRe.exec(text)); ) {
+      // Source imports are written ".js" (ESM style) but resolve to ".ts".
+      const spec = m[1].replace(/\.js$/, ".ts");
+      queue.push(resolve(dirname(file), spec));
+    }
+  }
+  return [...seen];
+}
+
+const tsSrc = declFiles.map((f) => readFileSync(f, "utf8")).join("\n");
 const declRe = /^declare function (sg[A-Za-z0-9]*)\s*\(([^)]*)\)\s*:\s*([A-Za-z]+);/gm;
 
 const functions = [];
@@ -152,7 +193,12 @@ const vendor = `../vendor/${target}`;
 const manifest = {
   ffi_format: 1,
   functions,
-  libraries: [`${vendor}/libsggfx.a`],
+  /* libwebaudio.a is SEPARATE from libsggfx.a on purpose: it is fetched and
+   * built from webaudio-node by scripts/build-webaudio.sh, and keeping it its
+   * own archive means a webaudio bump does not force the 30-second Skia merge.
+   * Order matters to the linker, and sggfx (which calls into the engine) must
+   * come first. */
+  libraries: [`${vendor}/libsggfx.a`, `${vendor}/libwebaudio.a`],
   /* libc++, NOT libstdc++: build-libcanvas compiles Skia against LLVM's
    * libc++ (every symbol is `std::__1::`), so linking libstdc++ leaves
    * thousands of undefined std:: references. c++abi and unwind follow it.

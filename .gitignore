@@ -24,3 +24,8 @@ spike/ffi/*
 # bump into a binary-diff review.
 test/out/
 test/golden/png/
+
+# Example assets (art, music) ARE committed: an example that cannot run from
+# a fresh clone is not an example. Test FIXTURES are generated instead --
+# see scripts/make-decode-fixtures.sh.
+test/fixtures/images/

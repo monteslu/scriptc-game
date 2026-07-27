@@ -342,3 +342,204 @@ does not exist yet. That refusal is the feature; keep it.
   draw/measure call, rather than 26 arguments per call. The same shape will
   suit the audio graph's command ring in Phase 4.
 - `Math.round`/`Math.floor` compile in the static tier; `Math.PI` does not.
+
+---
+
+# Phase 3 Results: Input
+
+Run 2026-07-27, same host. **Phase 3 acceptance met**, with the hardware half
+confirmed on a real Xbox 360 pad and the mechanical half automated.
+
+`./scripts/test.sh` now runs every automated suite headless: canvas
+conformance (55), readback, input (89 checks), and the pad visual proof.
+
+## The acceptance gate, and how it was actually met
+
+The plan asked for "a test page showing live state of every axis/button of
+two physical pads + keyboard + mouse; hot-plug works; rumble works". No CI
+machine has two pads, so the gate is split:
+
+- **`examples/inputs/`** is the live display: keyboard (held keys, mods,
+  focus), mouse (position, wheel, buttons), and every connected pad with all
+  17 standard-mapping buttons and 4 axes. Run on this box it detects the
+  real controller as `slot 0: X360 Controller, rumble: yes`.
+- **`test/inputtest.ts`** is the mechanical proof, using SDL's VIRTUAL
+  JOYSTICK. A synthetic controller goes through the identical path -- device
+  add event, slot assignment, standard-mapping accessors, disconnect -- so
+  89 checks cover every button, every axis extreme, analog triggers, and
+  hot-plug with no hardware at all. Verified it FAILS when the mapping is
+  wrong: swapping A and B in the table trips seven checks, including the
+  "no mapping bleed" assertion that catches a shifted table.
+- **`test/padvisual.ts`** closes the gap between "the accessors return the
+  right numbers" and "the screen shows them". A display can pass every
+  numeric check while rendering a static layout, so this drives a synthetic
+  pad into a known pose (A + dpad-right held, stick on a diagonal, trigger
+  half-pulled) and saves the frame. All four are distinct code paths:
+  digital button, dpad, analog axis, analog trigger.
+
+Virtual pads are shipped in the runtime rather than kept test-only, because
+the same entry points are how replay and remote input would be fed in.
+
+## Bugs found
+
+1. **One physical pad appeared TWICE.** `sg_input_init` opens the pads
+   present at startup, and initialising the subsystem ALSO queues a
+   CONTROLLERDEVICEADDED for each of them, so the same device landed in two
+   slots and `getGamepads()` returned it twice. `pad_open` now rejects a
+   device whose instance id is already open. Caught by the input test
+   reporting "pads already connected: 2" on a box with one controller.
+2. **`Number.toString(radix)` is fenced** (SC2012: it runs in the embedded
+   dynamic engine, which static builds never include). Hex formatting in the
+   input demo is hand-rolled. Worth knowing before Phase 5 writes any
+   debug UI.
+3. **The manifest is all-or-nothing PER PROGRAM**, which only bit once the
+   test programs stopped importing the canvas: a manifest listing skia
+   bindings fails to build for a program with no skia declares. `gen-ffi.js`
+   now walks the entry file's IMPORT GRAPH and emits only the declarations
+   that program actually contains (65 bindings for the input test, 146 for
+   the full demo). This was a latent Phase 0 finding that had never been
+   exercised.
+
+## The virtual trigger quirk (not a bug)
+
+SDL's default virtual-controller mapping declares the trigger axes FULL
+RANGE, so it rescales -32768..32767 onto the trigger's 0..32767: a raw
+joystick value of 0 reads as HALF PULLED, and -1 is what releases it. A real
+pad reports its resting trigger correctly. The test speaks the virtual
+device's language rather than pretending otherwise, and says so in a comment
+where it would otherwise look wrong.
+
+## Design notes
+
+- Keys are named the way the web names them (`isDown("ArrowLeft")`), never by
+  scancode. `codegen/gen-keycodes.js` generates the 132-entry mapping from
+  `SDL_scancode.h`: SDL scancodes ARE USB HID usage ids, the same physical-key
+  basis W3C `KeyboardEvent.code` uses, so the two map 1:1 and the table is
+  transcription a generator should own.
+- Pads are addressed by SLOT, not by SDL instance id (unbounded, reused) and
+  not by list position (shifts when a pad unplugs). A disconnected pad leaves
+  its slot empty rather than compacting, so an index already handed to game
+  code never silently refers to a different device.
+- Gamepad records are POOLED, not rebuilt per frame: a game holding
+  `gamepads()[0]` across frames sees it update, and 17 button records per pad
+  per frame would be pure garbage.
+- Losing window focus RELEASES everything held. Otherwise alt-tabbing
+  mid-move leaves the key stuck down and the character runs into a wall
+  forever. Same on pad disconnect.
+- A key REPEAT is not a fresh press, so `wasPressed` stays a true edge.
+- Text input is off by default (SDL emits TEXTINPUT for every keystroke and
+  may show an IME) and drains as a QUEUE, because text is a sequence rather
+  than a state. Multi-byte UTF-8 is decoded properly, including surrogate
+  pairs for astral-plane input.
+
+---
+
+# Phase 4 Results: Audio
+
+Run 2026-07-27, same host. webaudio-node's C++ graph runs NATIVE, driven from
+an SDL audio thread. 16/16 offline checks; live playback verified on the real
+device (PipeWire) via test/beeptest.ts.
+
+## 4.1 The emscripten audit: better than hoped
+
+6,641 lines across 25 files, and the engine uses **nothing** from emscripten
+except the `EMSCRIPTEN_KEEPALIVE` attribute: zero `EM_ASM`, zero
+`EMSCRIPTEN_BINDINGS`, zero `emscripten_*` calls, zero try/throw/catch. The
+export surface is already `extern "C"` with plain scalar/pointer signatures,
+and the graph API is already integer-handle-based
+(`createAudioGraph`/`createNode`/`processGraph`), which maps almost directly
+onto FFI format 1.
+
+So the port is a RECOMPILE, and the vendored source stays BYTE-IDENTICAL to
+upstream. Two stub headers do the whole job:
+
+- `shim/emscripten.h` supplies KEEPALIVE as a visibility attribute.
+- `shim/wasm_simd128.h` is EMPTY. Two files include it unconditionally even
+  though every use is guarded by `#ifdef __wasm_simd128__`; off-target that
+  macro is never defined, so the contents are never referenced, but the
+  include still has to resolve and clang's real header explodes off-target.
+
+Keeping upstream unpatched is what makes a webaudio-node bump a re-fetch
+rather than a re-port, and it is what makes the parity test meaningful: both
+sides run the same code, not a fork.
+
+Not built: `audio_decoders.cpp` hard-includes opusfile and libxaac headers
+with no guard, so it needs ~600 codec sources. Games ship wav/ogg; that file
+is skipped and the header-only decoders (dr_wav/dr_mp3/dr_flac, stb_vorbis)
+remain available.
+
+**Trap:** `src/wasm/webaudio.cpp` is a single-module AMALGAMATION that
+redefines every node and util. Linking it alongside the individual files is a
+wall of duplicate symbols. The source list mirrors upstream's own build
+script exactly.
+
+## 4.3 Threading
+
+SDL calls the audio callback on its own thread; the engine is not thread-safe
+against concurrent mutation, and scriptc's runtime must never be touched off
+the main thread. One lock-free SPSC ring bridges them: the main thread
+enqueues command records, and the audio thread drains the WHOLE ring at a
+QUANTUM BOUNDARY before rendering. Draining only between quanta is what makes
+it correct without a mutex -- a command never lands mid-render.
+
+Calls that must RETURN a value (create a node, register a buffer) run on the
+main thread instead. That is safe because a fresh node is unconnected: the
+audio thread cannot reach it until a connect command is drained.
+
+**Bug this design caused, and the fix:** offline rendering has no callback, so
+nothing drained the ring and every graph rendered silence. The C-level probe
+had worked because it called the engine directly while the TS path queued its
+whole graph. `sg_audio_render_offline` now drains first; it is the only
+consumer in offline mode, so it is safe there.
+
+## The argument-order trap
+
+`scheduleParamEvent` is `(graph, node, param, kind, VALUE, TIME, timeConstant)`
+-- value BEFORE time. The natural reading is the opposite, and getting it
+backwards silently corrupts every envelope: a ramp to 0.8 at t=2 becomes a
+ramp to 2 at t=0.8. Transcribed from the definition, not guessed.
+
+## What the offline test actually checks
+
+Rendering to a 32-bit float WAV checks the parts that can be wrong -- wiring,
+parameter ids, scheduling, node behaviour -- and produces a file comparable
+against the WASM build. Measured, not eyeballed:
+
+| check | result |
+| --- | --- |
+| nothing connected | peak 0 (the control) |
+| 440Hz sine at gain 0.5 | peak 0.5000, mean 0.3183 (= 2/pi x 0.5, a perfect sine) |
+| gain 0.5 -> 0.1 | peak 0.1000 |
+| 440Hz -> 880Hz | 87 -> 177 zero crossings, exactly double |
+| disconnect() | peak 0 |
+
+Zero crossings are the check that matters most: amplitude looks perfect when
+a frequency lands in the wrong parameter slot, and only counting cycles
+catches it.
+
+## Fixed upstream
+
+`disconnectNodes` was a no-op stub, so a disconnected node fed its destination
+forever. `src/javascript/AudioNode.js` already called the engine with both the
+"one destination" and "everything" shapes, so that path was dead code.
+Implemented in monteslu/webaudio-node (commit 1a1aea7, pushed): removes one
+edge per call, since connecting a pair twice is legal and disconnect() undoes
+one connect(). Also added `disconnectOutput` and `disconnectFromParam`, which
+AudioNode.js called but the engine never defined (they would have thrown).
+Upstream suite: 68/68, including three new disconnect tests; verified the old
+no-op body fails two of them.
+
+## Live playback
+
+`test/beeptest.ts` opens the real device and plays five effects. It reports
+the ENGINE CLOCK, which only advances when the callback runs, so "the device
+is silent" is distinguishable from "the device never started": 2.432s
+advanced, 0 commands dropped. Deliberately NOT in scripts/test.sh -- it needs
+a sound card and makes noise.
+
+`runtime/audio/sfx.ts` synthesises blip/pickup/hit/dash/gameOver from
+oscillators and filters; a game ships a few numbers rather than a sample
+library. Effects are scheduled against `ctx.currentTime` rather than fired
+immediately, because the audio thread renders AHEAD: "now" on the main thread
+is already past for the mixer, and scheduling is what preserves an envelope's
+shape.

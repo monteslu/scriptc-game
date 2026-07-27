@@ -11,10 +11,40 @@
  */
 #include <stdint.h>
 #include <stdio.h>
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "sg_skia.h"
+
+/* ---- math ----
+ *
+ * scriptc's static tier keeps only the Math functions that lower to a single
+ * instruction or a trivial comparison: abs, floor, ceil, round, trunc, min,
+ * max. Everything TRANSCENDENTAL -- sqrt, sin, cos, tan, atan2, pow, exp,
+ * log, hypot -- is fenced (SC2012: "runs in the embedded dynamic engine")
+ * and would drag a ~620KB interpreter into the binary.
+ *
+ * Games need those constantly (vector length, rotation, easing), so they
+ * cross the FFI to libm instead. At the measured ~3ns of call overhead this
+ * costs about as much as the libm call itself, and it keeps the fully-static
+ * guarantee intact. runtime/math.ts wraps these.
+ */
+extern "C" double sg_sqrt(double x)  { return sqrt(x); }
+extern "C" double sg_sin(double x)   { return sin(x); }
+extern "C" double sg_cos(double x)   { return cos(x); }
+extern "C" double sg_tan(double x)   { return tan(x); }
+extern "C" double sg_asin(double x)  { return asin(x); }
+extern "C" double sg_acos(double x)  { return acos(x); }
+extern "C" double sg_atan(double x)  { return atan(x); }
+extern "C" double sg_atan2(double y, double x) { return atan2(y, x); }
+extern "C" double sg_pow(double x, double y)   { return pow(x, y); }
+extern "C" double sg_exp(double x)   { return exp(x); }
+extern "C" double sg_log(double x)   { return log(x); }
+extern "C" double sg_log2(double x)  { return log2(x); }
+extern "C" double sg_log10(double x) { return log10(x); }
+extern "C" double sg_hypot(double x, double y) { return hypot(x, y); }
+extern "C" double sg_fmod(double x, double y)  { return fmod(x, y); }
 
 /* ---- scratch: gradient stops ----
  * A gradient is built by pushing stops one at a time, then making the shader.
