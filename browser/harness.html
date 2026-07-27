@@ -1,0 +1,102 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>browser proof</title>
+<body style="margin:0;background:#fff;color:#000;font:13px ui-monospace,monospace">
+<canvas id="game-canvas" width="__W__" height="__H__" style="border:1px solid #888"></canvas>
+<pre id="log"></pre>
+
+<script type="importmap">
+{
+  "imports": {
+    "../../web/globals.js": "/browser/globals.js",
+    "../web/globals.js": "/browser/globals.js"
+  }
+}
+</script>
+
+<script type="module">
+/* Runs one game in a real browser and reports a verdict as TEXT.
+ *
+ * Text, not a picture, because the verdict has to be machine-readable: a
+ * human squinting at a screenshot is exactly the review step that let four
+ * invented APIs ship. The runner greps this output.
+ *
+ * The game runs its REAL requestAnimationFrame loop; browser/drive.py waits
+ * for the verdict rather than screenshotting immediately, so there is no
+ * need to substitute a hand-pumped queue. What runs here is what a player
+ * would run.
+ */
+const el = document.getElementById("log");
+const out = [];
+const say = (m) => { out.push(m); el.textContent = out.join("\n"); };
+const fail = (m) => { say("FAIL: " + m); say("VERDICT: FAIL"); };
+
+addEventListener("error", (e) => fail("uncaught: " + (e.message || e.error)));
+addEventListener("unhandledrejection", (e) => fail("rejected: " + e.reason));
+
+const canvas = document.getElementById("game-canvas");
+
+/* Count real frames by wrapping rAF rather than replacing it: the game's
+ * loop stays genuinely asynchronous and browser-scheduled. */
+let frameCount = 0;
+const realRAF = window.requestAnimationFrame.bind(window);
+window.requestAnimationFrame = (cb) => realRAF((t) => { frameCount++; cb(t); });
+
+/* Preload the images the game will request. Their onload must have fired
+ * before frames are pumped, since nothing here waits on the network. */
+const ASSETS = __ASSETS__;
+const preload = ASSETS.map((u) => new Promise((res) => {
+  const i = new Image();
+  i.onload = () => res(true);
+  i.onerror = () => { say("asset FAILED to load: " + u); res(false); };
+  i.src = "/" + u;
+}));
+
+Promise.all(preload)
+  .then((loaded) => {
+    if (ASSETS.length > 0) {
+      say(`assets: ${loaded.filter(Boolean).length}/${ASSETS.length} loaded`);
+    }
+    return import("__ENTRY__");
+  })
+  .then(() => {
+    say("module: loaded");
+
+    /* The native host fires `load` after the window exists. A page has
+     * already fired it before a module evaluates, so re-dispatch it: this
+     * is the ONE ordering difference between the two worlds, and it is why
+     * games put setup in a load handler. */
+    dispatchEvent(new Event("load"));
+    say("load: dispatched");
+
+    /* Let the game's own loop run for a while, then judge. Two seconds is
+     * ~120 frames at 60Hz, enough for assets to arrive and for motion to
+     * put something on screen. */
+    return new Promise((res) => setTimeout(res, 2000));
+  })
+  .then(() => {
+    say("frames: " + frameCount + " rendered by the browser's own loop");
+    if (frameCount === 0) {
+      fail("the game never rendered a frame");
+      return;
+    }
+
+    /* Did anything actually get drawn? A game that throws inside its frame
+     * callback leaves the canvas blank, and a blank canvas is the failure
+     * this whole harness exists to catch. */
+    const ctx = canvas.getContext("2d");
+    const px = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    const colors = new Set();
+    for (let i = 0; i < px.length; i += 4) {
+      colors.add(px[i] + "," + px[i + 1] + "," + px[i + 2]);
+    }
+    say("colors: " + colors.size + " distinct");
+
+    if (colors.size < 2) {
+      fail("canvas is blank after 120 frames");
+      return;
+    }
+    say("VERDICT: PASS");
+  })
+  .catch((e) => fail(String((e && e.stack) || e)));
+</script>

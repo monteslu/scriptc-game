@@ -61,6 +61,21 @@ else
   echo; echo "==> audio decoders"; echo "    SKIP (ffmpeg not installed)"
 fi
 
+# The browser proof: does the SAME game source run in a real browser?
+#
+# Native suites cannot catch an invented API -- AudioContextOrNull,
+# window.onLoad, canPlay(), ctx.clear() and the drawImage arity split all
+# passed everything above while being guaranteed TypeErrors in a page.
+# Skips loudly when firefox/geckodriver are absent.
+echo
+echo "==> browser proof"
+if "$ROOT/browser/test.sh"; then
+  echo "    PASS"
+else
+  echo "    FAIL"
+  fails=$((fails + 1))
+fi
+
 echo
 if [ "$fails" -eq 0 ]; then
   echo "all suites passed"
