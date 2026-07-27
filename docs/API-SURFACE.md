@@ -4,13 +4,21 @@ Three support tiers, marked throughout:
 
 - **S** shipped in v1, conformance-tested
 - **D** deferred (post-v1, path known)
-- **X** intentionally out (with reason); "web-shaped, not web-compatible"
+- **X** intentionally out, with a reason
 
-The public module (working name `sg`) exposes: `sg.run`, `sg.screen`,
-`sg.input`, `sg.audio`, `sg.assets`, `sg.fonts`, plus the `Context2D`
-object handed to `draw()`.
+The goal is web COMPATIBILITY, not merely web shape: where a spec exists we
+match it, and a deviation is a bug with a comment at the site explaining why
+it has not been fixed yet. Where the web defines nothing (the Standard
+Gamepad names no button constants), we do not invent a global either --
+conveniences belong in `engine/`, which is optional.
 
-The 3D surface (WebGL2RenderingContext via `sg.gl()`, and the
+Games import from **`web/globals.js`** and get the browser surface:
+`document`, `window`, `navigator`, `requestAnimationFrame`, `Image`, `fetch`,
+`FontFace`, `AudioContext` (and every Web Audio node type), `Math`, and the
+Gamepad interfaces. See [WRITING-GAMES.md](WRITING-GAMES.md) for the
+author-facing guide.
+
+The 3D surface (`canvas.getContext("webgl2")`, and the
 threeTS-lite library) is specified separately in
 [WEBGL-AND-3D.md](WEBGL-AND-3D.md); it is D-tier by schedule (Phases 8/9,
 post-v0.1), S-tier by design commitment.
@@ -19,24 +27,29 @@ post-v0.1), S-tier by design commitment.
 
 ## Entry point
 
+There is no framework entry point to call. A game registers a `load` handler
+and drives itself with `requestAnimationFrame`, exactly as in a page:
+
 ```ts
-sg.run({
-  width: 640, height: 360,        // logical size; window scales integer-ly
-  title: "my game",
-  scale: 0,                        // 0 = auto integer scale to display
-  vsync: true,
-  fixedStep: 1000 / 60,            // ms; update() cadence
-  update(dtMs: number): void,      // fixed-step simulation
-  draw(ctx: Context2D, alpha: number): void,  // alpha = interpolation 0..1
-  onQuit(): boolean,               // return false to veto (S)
+window.addEventListener("load", () => {
+  const canvas = document.getElementById("game-canvas");
+  const ctx = canvas.getContext("2d");
+
+  function frame(time: number): void {
+    // update + draw
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
 });
-sg.quit(): void
-sg.screen.width / height / scale  // logical + actual
 ```
 
-The framework owns the loop. There is no requestAnimationFrame. (X: rAF,
-setTimeout-driven frames; reason: no callbacks across FFI and no reason to
-pretend, the loop contract is explicit.)
+Canvas size and title come from the game's `game.json`, which is the native
+equivalent of what a page expresses in HTML. The HOST owns the outer loop and
+drives rAF callbacks (`host/runtime.ts`); nothing about it appears in game
+source.
+
+`requestAnimationFrame` is a proper QUEUE: two independent systems
+registering in the same frame both run, as a browser does.
 
 ---
 
@@ -125,7 +138,9 @@ preserved (`current_sample` counters render-side).
 
 ### S in v1
 
-- `AudioContext` (one, created by `sg.run`; `sampleRate`, `currentTime`,
+- `AudioContext` (`new AudioContext()`; the device is a process-wide
+  singleton, so a second construction returns the same context). `sampleRate`,
+  `currentTime`,
   `destination`, `state`, `suspend/resume`).
 - Nodes (all 15 engine types): Gain, Oscillator, BufferSource, BiquadFilter,
   Delay, StereoPanner, Panner, DynamicsCompressor, WaveShaper, Convolver,

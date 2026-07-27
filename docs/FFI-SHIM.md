@@ -188,9 +188,9 @@ One source of truth: `skia_c.hpp` (pinned via CANVAS_VERSION) plus
    the 237 skiac functions (allowlist lives in `overrides.json`; not all
    237 are needed for v1: skottie/pdf/svg/document families are Phase 7).
 2. `ffi/skia.ffi.json`.
-3. `runtime/canvas/ffi.d.ts`: the `declare function` block, names matched
+3. `host/skia-ffi.ts`: the `declare function` block, names matched
    1:1 to the manifest.
-4. `runtime/input/events.ts` + `shim/sg_events_gen.h`: the shared event
+4. `host/input-events.ts` + `shim/sg_events_gen.h`: the shared event
    field-index enums from `events.json`.
 
 Generator behavior:

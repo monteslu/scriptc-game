@@ -130,7 +130,7 @@ questions until the scriptc ecosystem settles. Revisit at v0.2.
 
 ## Developer loop
 
-`scripts/dev.sh <example>`: watch runtime/ + example dir, on change re-run
+`scripts/dev.sh <example>`: watch web/ + engine/ + host/ + example dir, on change re-run
 build.sh (shim rebuild skipped unless shim/ changed) and relaunch the
 binary. scriptc compile speed for a game-sized program is a Phase 1
 measurement; if the edit-run loop exceeds ~3s, add `--emit-ir`-level
