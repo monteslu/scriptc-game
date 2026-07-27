@@ -32,7 +32,7 @@ jobs:
             runner: windows-2022
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # scriptc is the compiler; it is not published to npm, so it is built
       # from the pinned fork named in versions.json.
@@ -49,25 +49,29 @@ jobs:
           print(f"webaudio_commit={v['webaudio']['commit']}")
           PY
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
 
       - name: Checkout scriptc (the compiler)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: monteslu/scriptc
           ref: ${{ steps.pins.outputs.scriptc_branch }}
           path: scriptc
 
+      # scriptc is a pnpm workspace (pnpm-workspace.yaml, pnpm-lock.yaml).
+      # `npm ci` fails outright: there is no package-lock.json to install from.
       - name: Build scriptc
         working-directory: scriptc
+        shell: bash
         run: |
-          npm ci
-          npm run build
+          corepack enable
+          pnpm install --frozen-lockfile
+          pnpm run build
 
       - name: Checkout webaudio-node (the audio graph source)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: monteslu/webaudio-node
           ref: ${{ steps.pins.outputs.webaudio_commit }}
