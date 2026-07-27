@@ -94,6 +94,10 @@ Every number below comes from `./scripts/test.sh`, which runs headless.
 | Async ordering | **26/26** checks that async-shaped APIs settle on a later turn |
 | Pixel readback | passing |
 
+Assets shared by more than one example live once in `examples/shared/` and are
+symlinked into each game's `public/`. Windows clones need `core.symlinks`
+enabled; see [examples/shared/README.md](examples/shared/README.md).
+
 `./scripts/build.sh examples/dodge` builds the reference game: sprites, looping
 music, sound effects, and gamepad input with rumble. `examples/loader` is the
 same stack driven through the optional engine, with a loading screen.
@@ -122,6 +126,13 @@ Run the two vendor steps once, then build:
 Skipping either vendor step fails at link time with a missing-archive error
 (`ar: ... libskiac.a: No such file or directory`, or an FFI manifest complaint
 about `libwebaudio.a`) rather than anything self-explanatory.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
+
+Every dependency below is permissively licensed and nothing linked into the
+output binary imposes a copyleft obligation.
 
 ## Credits
 
