@@ -28,6 +28,8 @@ declare function sgScreenCanvas(unused: number): number;
 declare function sgScreenWidth(unused: number): number;
 declare function sgScreenHeight(unused: number): number;
 declare function sgDisplayHz(unused: number): number;
+declare function sgSetFullscreen(on: number): number;
+declare function sgIsFullscreen(unused: number): number;
 declare function sgPresent(unused: number): number;
 declare function sgSurfaceSavePng(hs: number, path: string): number;
 declare function sgSurfaceCreate(w: number, h: number): number;
@@ -188,6 +190,8 @@ export function screenWidth(): number { return sgScreenWidth(0); }
 export function screenHeight(): number { return sgScreenHeight(0); }
 /** Display refresh in Hz, or 0 when unknown (headless). */
 export function displayHz(): number { return sgDisplayHz(0); }
+export function setFullscreen(on: number): number { return sgSetFullscreen(on); }
+export function isFullscreen(): number { return sgIsFullscreen(0); }
 export function present(): number { return sgPresent(0); }
 /** Encodes a surface to a PNG file; handle 0 means the screen. 0 on success. */
 export function surfaceSavePng(hs: number, path: string): number { return sgSurfaceSavePng(hs, path); }

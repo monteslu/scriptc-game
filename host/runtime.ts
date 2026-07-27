@@ -113,7 +113,18 @@ export function boot(opts: HostOptions): number {
   return 0;
 }
 
-export function run(opts: HostOptions): number {
+/* ASYNC on purpose.
+ *
+ * Promise continuations run when the current synchronous turn ENDS, not when
+ * a queue is drained. A plain `for(;;)` loop is one unbroken turn, so a
+ * `.then` chain never advances inside it: fetch resolves, and the handler
+ * that would decode the audio simply never runs. (Found exactly that way --
+ * dodge's music went silent when it moved to fetch + decodeAudioData, with
+ * no error anywhere.)
+ *
+ * `await` at the bottom of each iteration ends the turn, which is precisely
+ * what a browser's event loop does between frames. */
+export async function run(opts: HostOptions): Promise<number> {
   /* `load` fires once, after the window exists and before the first frame --
    * the moment a browser fires it for a page. Game setup that needs the
    * canvas hangs off this. */
@@ -172,9 +183,9 @@ export function run(opts: HostOptions): number {
 
     if (opts.maxFrames > 0 && stats.frames >= opts.maxFrames) break;
 
-    /* A game that registers no callback and has no pending work has nothing
-     * left to do -- but it may still be waiting on input, so the loop keeps
-     * running. Only an explicit quit ends it. */
+    /* End the turn so promise continuations run before the next frame. This
+     * one line is what makes `fetch().then()` and `img.decode()` work. */
+    await Promise.resolve(0);
   }
 
   ffi.inputQuit();

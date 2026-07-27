@@ -83,7 +83,19 @@ extern "C" int32_t sg_init(uint32_t w, uint32_t h, uint32_t flags) {
     g_renderer = SDL_CreateRenderer(g_window, -1, rflags);
   }
   if (!g_renderer) { mail_set(SDL_GetError()); return SG_ESDL; }
+  /* Logical size letterboxes: the game always draws in w x h, and SDL fits
+   * that into whatever the window actually is, with bars on the short axis.
+   *
+   * Integer scale on top means whole-pixel multiples only (1x, 2x, 3x...),
+   * so a 800x600 game on a 4K panel is crisp rather than resampled at 2.7x.
+   * The cost is slightly thicker bars, which is the right trade for pixel
+   * art and for text: a non-integer scale makes both look soft. */
   SDL_RenderSetLogicalSize(g_renderer, (int)w, (int)h);
+  SDL_RenderSetIntegerScale(g_renderer, SDL_TRUE);
+
+  /* Bars are drawn in the renderer's clear colour, so make them black rather
+   * than whatever was left in the buffer. */
+  SDL_SetRenderDrawColor(g_renderer, 0, 0, 0, 255);
 
   g_texture = SDL_CreateTexture(g_renderer, SDL_PIXELFORMAT_ABGR8888,
                                 SDL_TEXTUREACCESS_STREAMING, (int)w, (int)h);
@@ -145,6 +157,30 @@ extern "C" uint32_t sg_display_hz(int32_t unused) {
   if (idx < 0) idx = 0;
   if (SDL_GetCurrentDisplayMode(idx, &dm) != 0) return 0;
   return dm.refresh_rate > 0 ? (uint32_t)dm.refresh_rate : 0u;
+}
+
+/* ---- fullscreen ----
+ *
+ * Backs the web Fullscreen API. DESKTOP fullscreen (borderless at the
+ * desktop resolution) rather than a real mode switch: the logical-size
+ * letterbox already fits the game to whatever it gets, and a mode switch is
+ * slow, can fail, and disturbs other windows. This is what a browser going
+ * fullscreen feels like from the game's side. */
+extern "C" int32_t sg_set_fullscreen(uint32_t on) {
+  if (!g_window) { mail_set("fullscreen before init"); return SG_ESDL; }
+  Uint32 flag = on ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0;
+  if (SDL_SetWindowFullscreen(g_window, flag) != 0) {
+    mail_set(SDL_GetError());
+    return SG_ESDL;
+  }
+  return SG_OK;
+}
+
+extern "C" uint32_t sg_is_fullscreen(int32_t unused) {
+  (void)unused;
+  if (!g_window) return 0;
+  Uint32 f = SDL_GetWindowFlags(g_window);
+  return (f & (SDL_WINDOW_FULLSCREEN | SDL_WINDOW_FULLSCREEN_DESKTOP)) ? 1u : 0u;
 }
 
 /* ---- present ----

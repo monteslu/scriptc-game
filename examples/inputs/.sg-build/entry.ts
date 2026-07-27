@@ -31,4 +31,4 @@ if (brc !== 0) process.exit(brc);
 
 import "../main.js";
 
-process.exit(run(opts));
+run(opts).then((rc) => { process.exit(rc); });

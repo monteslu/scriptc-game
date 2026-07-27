@@ -136,6 +136,26 @@ export class HTMLCanvasElement {
 
   /** Style is accepted and ignored, as in a launcher with no CSS. */
   style = new CanvasStyle();
+
+  /* Element.requestFullscreen(): Promise<void>.
+   *
+   * Only the screen canvas can go fullscreen; an offscreen surface has no
+   * window, so the promise rejects as the spec says it should for an element
+   * that cannot be presented. Resolution is deferred like every other async
+   * shim here. */
+  requestFullscreen(): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      if (this.surface !== 0) {
+        queueTask(() => { reject(new Error("only the screen canvas can be fullscreened")); });
+        return;
+      }
+      const rc = ffi.setFullscreen(1);
+      queueTask(() => {
+        if (rc === 0) { __setFullscreenElement(this); resolve(); }
+        else reject(new Error("fullscreen request failed"));
+      });
+    });
+  }
 }
 
 export class CanvasStyle {
@@ -207,6 +227,7 @@ export function addEventListener(type: string, listener: (e: KeyboardEvent) => v
 /** `window.addEventListener("load", fn)` -- the no-argument event shape. */
 export function addEventListenerNoArg(type: string, listener: () => void): void {
   if (type === "load" || type === "DOMContentLoaded") addLoadListener(listener);
+  else if (type === "fullscreenchange") fullscreenListeners.push(listener);
 }
 
 export function removeEventListener(type: string, listener: (e: KeyboardEvent) => void): void {
@@ -563,6 +584,17 @@ import { surfaceGetCanvas as __skSurfaceGetCanvas } from "../host/skia-ffi.js";
  */
 let screenCanvas: HTMLCanvasElement | null = null;
 let documentInstance: SgDocument | null = null;
+let fullscreenEl: HTMLCanvasElement | null = null;
+
+/** Tracks document.fullscreenElement and fires `fullscreenchange`. */
+export function __setFullscreenElement(el: HTMLCanvasElement | null): void {
+  const changed = fullscreenEl !== el;
+  fullscreenEl = el;
+  if (!changed) return;
+  for (let i = 0; i < fullscreenListeners.length; i++) fullscreenListeners[i]();
+}
+
+let fullscreenListeners: (() => void)[] = [];
 
 /* The canvas the game will draw into.
  *
@@ -607,6 +639,26 @@ class DocumentProxy {
   get body(): DocumentBody { return doc().body; }
   get readyState(): string { return "complete"; }
   get fonts(): FontFaceSet { return fonts; }
+
+  /* The Fullscreen API's document half. `fullscreenElement` is the canvas
+   * when fullscreen and null otherwise, exactly as in a page, so the usual
+   * toggle idiom works unchanged:
+   *
+   *   if (document.fullscreenElement === null) canvas.requestFullscreen();
+   *   else document.exitFullscreen();
+   */
+  get fullscreenElement(): HTMLCanvasElement | null { return fullscreenEl; }
+  get fullscreenEnabled(): boolean { return true; }
+
+  exitFullscreen(): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      const rc = ffi.setFullscreen(0);
+      queueTask(() => {
+        if (rc === 0) { __setFullscreenElement(null); resolve(); }
+        else reject(new Error("exiting fullscreen failed"));
+      });
+    });
+  }
 }
 
 export const document = new DocumentProxy();

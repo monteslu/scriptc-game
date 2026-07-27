@@ -409,7 +409,8 @@ window.onLoad(() => {
     ctx.fillText(p === null ? "keyboard: arrows/WASD, space to dash" : `pad: ${p.id}`,
                  16, H - 14);
     ctx.textAlign = "right";
-    ctx.fillText(musicOn ? "M: music on" : "M: music off", W - 16, H - 14);
+    ctx.fillText(`${musicOn ? "M: music on" : "M: music off"}    F: fullscreen`,
+                 W - 16, H - 14);
     ctx.textAlign = "left";
   }
 
@@ -433,6 +434,13 @@ window.onLoad(() => {
     let dt = last === 0 ? 16 : time - last;
     last = time;
     if (dt > 250) dt = 250;
+
+    /* Fullscreen through the web API, exactly as in a page. The canvas keeps
+     * its logical size; the host letterboxes and integer-scales it. */
+    if (tap("KeyF")) {
+      if (document.fullscreenElement === null) canvas.requestFullscreen();
+      else document.exitFullscreen();
+    }
 
     if (tap("KeyM")) {
       musicOn = !musicOn;
