@@ -44,8 +44,11 @@ for gamedir in "$ROOT"/examples/*/; do
 
   printf '  %-10s ' "$BASE"
 
-  if ! "$ROOT/browser/build.sh" "examples/$BASE" >/dev/null 2>&1; then
+  # Keep the build output: "FAIL (browser build)" with no reason is a
+  # diagnosis-free failure, which is what this suite exists to avoid.
+  if ! BUILD_OUT=$("$ROOT/browser/build.sh" "examples/$BASE" 2>&1); then
     echo "FAIL (browser build)"
+    echo "$BUILD_OUT" | tail -8 | sed 's/^/      /'
     fails=$((fails + 1))
     continue
   fi

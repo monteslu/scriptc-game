@@ -27,7 +27,15 @@ OUT="$ROOT/browser/out"
 
 TSC="${TSC_BIN:-}"
 if [ -z "$TSC" ]; then
-  for c in "$ROOT/node_modules/.bin/tsc" "$ROOT/../scriptc/node_modules/.bin/tsc"; do
+  # A sibling checkout is the local layout; scriptc/ INSIDE the repo is what
+  # CI produces. SCRIPTC_BIN, when set, names the compiler entry point, so
+  # its package root is the most reliable hint of all.
+  cands="$ROOT/node_modules/.bin/tsc $ROOT/../scriptc/node_modules/.bin/tsc $ROOT/scriptc/node_modules/.bin/tsc"
+  if [ -n "${SCRIPTC_BIN:-}" ]; then
+    scdir="$(cd "$(dirname "$SCRIPTC_BIN")/../../.." 2>/dev/null && pwd || true)"
+    [ -n "$scdir" ] && cands="$scdir/node_modules/.bin/tsc $cands"
+  fi
+  for c in $cands; do
     [ -x "$c" ] && { TSC="$c"; break; }
   done
 fi

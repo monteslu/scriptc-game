@@ -91,7 +91,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             clang-18 libc++-18-dev libc++abi-18-dev libsdl2-dev \
             libfontconfig1-dev libfreetype6-dev pkg-config \
-            firefox xvfb
+            firefox xvfb ffmpeg
           # scriptc emits LLVM IR with opaque pointers (`ptr`), which needs
           # clang 15 or newer; the distro default is older on some images.
           sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-18 100
@@ -100,7 +100,7 @@ jobs:
 
       - name: macOS deps
         if: startsWith(matrix.target, 'macos')
-        run: brew install sdl2 pkg-config
+        run: brew install sdl2 pkg-config ffmpeg
 
       # ---- vendored archives ----
 

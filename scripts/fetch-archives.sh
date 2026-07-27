@@ -39,6 +39,16 @@ cp "$SRC"/skia/*.a "$DEST/skia/"
 cp "$SRC"/include/skia_c.hpp "$DEST/include/"
 cp "$SRC"/CANVAS_VERSION "$DEST/" 2>/dev/null || true
 
+# Counting exported skiac_* symbols is the sanity check that the extraction
+# worked, and it has to survive TWO nm dialects: GNU nm wants
+# --defined-only, BSD nm (macOS) wants -U, and Mach-O prefixes every C
+# symbol with an underscore so the name is _skiac_ there. Getting this wrong
+# reports 0 and the link then fails a step later with no explanation.
+count_skiac() {
+  { nm --defined-only "$1" 2>/dev/null || nm -U "$1" 2>/dev/null || nm "$1"; } \
+    | grep -cE ' T _?skiac_'
+}
+
 # Extract skia_c.o out of libcanvas.a and re-archive it alone.
 work="$(mktemp -d)"; trap 'rm -rf "$work"' EXIT
 ( cd "$work" && ar x "$SRC/libcanvas.a" )
@@ -50,6 +60,6 @@ fi
 ar rcs "$DEST/libskiac.a" "$obj"
 
 { echo "target=$TARGET"; echo "libcanvas_src=$SRC";
-  echo "skiac_symbols=$(nm --defined-only "$DEST/libskiac.a" | grep -c ' T skiac_')";
+  echo "skiac_symbols=$(count_skiac "$DEST/libskiac.a")";
   echo "generated=$(date -u +%Y-%m-%dT%H:%M:%SZ)"; } > "$DEST/MANIFEST"
 cat "$DEST/MANIFEST"
