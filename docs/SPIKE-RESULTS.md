@@ -342,3 +342,92 @@ does not exist yet. That refusal is the feature; keep it.
   draw/measure call, rather than 26 arguments per call. The same shape will
   suit the audio graph's command ring in Phase 4.
 - `Math.round`/`Math.floor` compile in the static tier; `Math.PI` does not.
+
+---
+
+# Phase 3 Results: Input
+
+Run 2026-07-27, same host. **Phase 3 acceptance met**, with the hardware half
+confirmed on a real Xbox 360 pad and the mechanical half automated.
+
+`./scripts/test.sh` now runs every automated suite headless: canvas
+conformance (55), readback, input (89 checks), and the pad visual proof.
+
+## The acceptance gate, and how it was actually met
+
+The plan asked for "a test page showing live state of every axis/button of
+two physical pads + keyboard + mouse; hot-plug works; rumble works". No CI
+machine has two pads, so the gate is split:
+
+- **`examples/inputs/`** is the live display: keyboard (held keys, mods,
+  focus), mouse (position, wheel, buttons), and every connected pad with all
+  17 standard-mapping buttons and 4 axes. Run on this box it detects the
+  real controller as `slot 0: X360 Controller, rumble: yes`.
+- **`test/inputtest.ts`** is the mechanical proof, using SDL's VIRTUAL
+  JOYSTICK. A synthetic controller goes through the identical path -- device
+  add event, slot assignment, standard-mapping accessors, disconnect -- so
+  89 checks cover every button, every axis extreme, analog triggers, and
+  hot-plug with no hardware at all. Verified it FAILS when the mapping is
+  wrong: swapping A and B in the table trips seven checks, including the
+  "no mapping bleed" assertion that catches a shifted table.
+- **`test/padvisual.ts`** closes the gap between "the accessors return the
+  right numbers" and "the screen shows them". A display can pass every
+  numeric check while rendering a static layout, so this drives a synthetic
+  pad into a known pose (A + dpad-right held, stick on a diagonal, trigger
+  half-pulled) and saves the frame. All four are distinct code paths:
+  digital button, dpad, analog axis, analog trigger.
+
+Virtual pads are shipped in the runtime rather than kept test-only, because
+the same entry points are how replay and remote input would be fed in.
+
+## Bugs found
+
+1. **One physical pad appeared TWICE.** `sg_input_init` opens the pads
+   present at startup, and initialising the subsystem ALSO queues a
+   CONTROLLERDEVICEADDED for each of them, so the same device landed in two
+   slots and `getGamepads()` returned it twice. `pad_open` now rejects a
+   device whose instance id is already open. Caught by the input test
+   reporting "pads already connected: 2" on a box with one controller.
+2. **`Number.toString(radix)` is fenced** (SC2012: it runs in the embedded
+   dynamic engine, which static builds never include). Hex formatting in the
+   input demo is hand-rolled. Worth knowing before Phase 5 writes any
+   debug UI.
+3. **The manifest is all-or-nothing PER PROGRAM**, which only bit once the
+   test programs stopped importing the canvas: a manifest listing skia
+   bindings fails to build for a program with no skia declares. `gen-ffi.js`
+   now walks the entry file's IMPORT GRAPH and emits only the declarations
+   that program actually contains (65 bindings for the input test, 146 for
+   the full demo). This was a latent Phase 0 finding that had never been
+   exercised.
+
+## The virtual trigger quirk (not a bug)
+
+SDL's default virtual-controller mapping declares the trigger axes FULL
+RANGE, so it rescales -32768..32767 onto the trigger's 0..32767: a raw
+joystick value of 0 reads as HALF PULLED, and -1 is what releases it. A real
+pad reports its resting trigger correctly. The test speaks the virtual
+device's language rather than pretending otherwise, and says so in a comment
+where it would otherwise look wrong.
+
+## Design notes
+
+- Keys are named the way the web names them (`isDown("ArrowLeft")`), never by
+  scancode. `codegen/gen-keycodes.js` generates the 132-entry mapping from
+  `SDL_scancode.h`: SDL scancodes ARE USB HID usage ids, the same physical-key
+  basis W3C `KeyboardEvent.code` uses, so the two map 1:1 and the table is
+  transcription a generator should own.
+- Pads are addressed by SLOT, not by SDL instance id (unbounded, reused) and
+  not by list position (shifts when a pad unplugs). A disconnected pad leaves
+  its slot empty rather than compacting, so an index already handed to game
+  code never silently refers to a different device.
+- Gamepad records are POOLED, not rebuilt per frame: a game holding
+  `gamepads()[0]` across frames sees it update, and 17 button records per pad
+  per frame would be pure garbage.
+- Losing window focus RELEASES everything held. Otherwise alt-tabbing
+  mid-move leaves the key stuck down and the character runs into a wall
+  forever. Same on pad disconnect.
+- A key REPEAT is not a fresh press, so `wasPressed` stays a true edge.
+- Text input is off by default (SDL emits TEXTINPUT for every keystroke and
+  may show an IME) and drains as a QUEUE, because text is a sequence rather
+  than a state. Multi-byte UTF-8 is decoded properly, including surrogate
+  pairs for astral-plane input.

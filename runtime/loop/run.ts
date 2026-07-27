@@ -6,7 +6,7 @@
  */
 import * as ffi from "../ffi.js";
 import { Context2D } from "../canvas/context.js";
-import { Input, EV_NONE, F_SCANCODE, F_REPEAT, F_X, F_Y } from "../input/input.js";
+import { Input } from "../input/input.js";
 
 export class Stats {
   frames = 0;
@@ -69,6 +69,13 @@ export class Game {
       return -1;
     }
 
+    // Controllers need their own subsystem, and pads already connected at
+    // startup are opened here (SDL only sends ADDED events for hot-plugs
+    // after the subsystem is up). Failure is not fatal: a machine with no
+    // joystick support should still run the game on keyboard.
+    const irc = ffi.inputInit();
+    if (irc !== 0) console.log(`input init warning (${irc}): ${lastError()}`);
+
     // Surface handle 0: the screen context does not own its surface.
     this.ctx = new Context2D(canvasHandle, 0);
     this.running = true;
@@ -89,18 +96,8 @@ export class Game {
     const step = opts.fixedStepMs;
 
     while (this.running) {
-      this.input.beginFrame();
-      let kind = ffi.pollEvent();
-      while (kind !== EV_NONE) {
-        this.input.handle(
-          kind,
-          ffi.evtI32(F_SCANCODE),
-          ffi.evtI32(F_REPEAT),
-          ffi.evtI32(F_X),
-          ffi.evtI32(F_Y),
-        );
-        kind = ffi.pollEvent();
-      }
+      // One call drains the event queue AND refreshes gamepad state.
+      this.input.pump();
       if (this.input.quitRequested) break;
 
       let now = ffi.ticks();
@@ -149,6 +146,7 @@ export class Game {
     }
 
     if (this.ctx !== null) this.ctx.dispose();
+    ffi.inputQuit();
     ffi.quit();
     return 0;
   }

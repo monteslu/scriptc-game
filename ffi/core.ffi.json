@@ -2,459 +2,6 @@
   "ffi_format": 1,
   "functions": [
     {
-      "name": "sgInit",
-      "symbol": "sg_init",
-      "params": [
-        "u32",
-        "u32",
-        "u32"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgQuit",
-      "symbol": "sg_quit",
-      "params": [
-        "i32"
-      ],
-      "returns": "void"
-    },
-    {
-      "name": "sgScreenCanvas",
-      "symbol": "sg_screen_canvas",
-      "params": [
-        "i32"
-      ],
-      "returns": "u32"
-    },
-    {
-      "name": "sgScreenWidth",
-      "symbol": "sg_screen_width",
-      "params": [
-        "i32"
-      ],
-      "returns": "u32"
-    },
-    {
-      "name": "sgScreenHeight",
-      "symbol": "sg_screen_height",
-      "params": [
-        "i32"
-      ],
-      "returns": "u32"
-    },
-    {
-      "name": "sgDisplayHz",
-      "symbol": "sg_display_hz",
-      "params": [
-        "i32"
-      ],
-      "returns": "u32"
-    },
-    {
-      "name": "sgPresent",
-      "symbol": "sg_present",
-      "params": [
-        "i32"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgSurfaceSavePng",
-      "symbol": "sg_surface_save_png",
-      "params": [
-        "u32",
-        "string"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgSurfaceCreate",
-      "symbol": "sg_surface_create",
-      "params": [
-        "u32",
-        "u32"
-      ],
-      "returns": "u32"
-    },
-    {
-      "name": "sgCanvasRelease",
-      "symbol": "sg_canvas_release",
-      "params": [
-        "u32"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgTicks",
-      "symbol": "sg_ticks",
-      "params": [
-        "i32"
-      ],
-      "returns": "f64"
-    },
-    {
-      "name": "sgDelay",
-      "symbol": "sg_delay",
-      "params": [
-        "u32"
-      ],
-      "returns": "void"
-    },
-    {
-      "name": "sgPollEvent",
-      "symbol": "sg_poll_event",
-      "params": [
-        "i32"
-      ],
-      "returns": "u32"
-    },
-    {
-      "name": "sgEvtI32",
-      "symbol": "sg_evt_i32",
-      "params": [
-        "u32"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgStrLen",
-      "symbol": "sg_str_len",
-      "params": [
-        "i32"
-      ],
-      "returns": "u32"
-    },
-    {
-      "name": "sgStrByte",
-      "symbol": "sg_str_byte",
-      "params": [
-        "u32"
-      ],
-      "returns": "u32"
-    },
-    {
-      "name": "sgGradReset",
-      "symbol": "sg_grad_reset",
-      "params": [
-        "i32"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgGradAddStop",
-      "symbol": "sg_grad_add_stop",
-      "params": [
-        "f64",
-        "u32"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgShaderLinearGradient",
-      "symbol": "sg_shader_linear_gradient",
-      "params": [
-        "f64",
-        "f64",
-        "f64",
-        "f64",
-        "i32"
-      ],
-      "returns": "u32"
-    },
-    {
-      "name": "sgShaderRadialGradient",
-      "symbol": "sg_shader_radial_gradient",
-      "params": [
-        "f64",
-        "f64",
-        "f64",
-        "f64",
-        "f64",
-        "f64",
-        "i32"
-      ],
-      "returns": "u32"
-    },
-    {
-      "name": "sgShaderConicGradient",
-      "symbol": "sg_shader_conic_gradient",
-      "params": [
-        "f64",
-        "f64",
-        "f64",
-        "i32"
-      ],
-      "returns": "u32"
-    },
-    {
-      "name": "sgShaderFromBitmap",
-      "symbol": "sg_shader_from_bitmap",
-      "params": [
-        "u32",
-        "i32",
-        "i32"
-      ],
-      "returns": "u32"
-    },
-    {
-      "name": "sgPaintReset",
-      "symbol": "sg_paint_reset",
-      "params": [
-        "u32"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgPaintSetShaderOpt",
-      "symbol": "sg_paint_set_shader_opt",
-      "params": [
-        "u32",
-        "u32"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgPaintSetPathEffectOpt",
-      "symbol": "sg_paint_set_path_effect_opt",
-      "params": [
-        "u32",
-        "u32"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgDashReset",
-      "symbol": "sg_dash_reset",
-      "params": [
-        "i32"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgDashPush",
-      "symbol": "sg_dash_push",
-      "params": [
-        "f64"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgDashMake",
-      "symbol": "sg_dash_make",
-      "params": [
-        "f64"
-      ],
-      "returns": "u32"
-    },
-    {
-      "name": "sgCanvasLatchTransform",
-      "symbol": "sg_canvas_latch_transform",
-      "params": [
-        "u32"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgTsComponent",
-      "symbol": "sg_ts_component",
-      "params": [
-        "u32"
-      ],
-      "returns": "f64"
-    },
-    {
-      "name": "sgCanvasApplyTransform",
-      "symbol": "sg_canvas_apply_transform",
-      "params": [
-        "u32",
-        "f64",
-        "f64",
-        "f64",
-        "f64",
-        "f64",
-        "f64",
-        "u32"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgPathLatchBounds",
-      "symbol": "sg_path_latch_bounds",
-      "params": [
-        "u32"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgRectComponent",
-      "symbol": "sg_rect_component",
-      "params": [
-        "u32"
-      ],
-      "returns": "f64"
-    },
-    {
-      "name": "sgPathRoundRect",
-      "symbol": "sg_path_round_rect",
-      "params": [
-        "u32",
-        "f64",
-        "f64",
-        "f64",
-        "f64",
-        "f64",
-        "f64",
-        "f64",
-        "f64",
-        "u32"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgFontRegister",
-      "symbol": "sg_font_register",
-      "params": [
-        "string"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgTextSetFont",
-      "symbol": "sg_text_set_font",
-      "params": [
-        "string",
-        "f64",
-        "i32",
-        "i32"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgTextSetLayout",
-      "symbol": "sg_text_set_layout",
-      "params": [
-        "i32",
-        "i32",
-        "f64",
-        "f64"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgTextSetString",
-      "symbol": "sg_text_set_string",
-      "params": [
-        "string"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgTextDraw",
-      "symbol": "sg_text_draw",
-      "params": [
-        "u32",
-        "u32",
-        "f64",
-        "f64",
-        "f64"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgTextMeasure",
-      "symbol": "sg_text_measure",
-      "params": [
-        "f64"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgTextMetric",
-      "symbol": "sg_text_metric",
-      "params": [
-        "u32"
-      ],
-      "returns": "f64"
-    },
-    {
-      "name": "sgImageDecode",
-      "symbol": "sg_image_decode",
-      "params": [
-        "bytes"
-      ],
-      "returns": "u32"
-    },
-    {
-      "name": "sgCanvasDrawBitmap",
-      "symbol": "sg_canvas_draw_bitmap",
-      "params": [
-        "u32",
-        "u32",
-        "f64",
-        "f64",
-        "f64",
-        "f64",
-        "f64",
-        "f64",
-        "f64",
-        "f64",
-        "u32",
-        "i32",
-        "u32"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgCanvasPutImageData",
-      "symbol": "sg_canvas_put_image_data",
-      "params": [
-        "u32",
-        "bytes",
-        "u32",
-        "u32",
-        "f64",
-        "f64"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgReadbackBegin",
-      "symbol": "sg_readback_begin",
-      "params": [
-        "u32",
-        "i32",
-        "i32",
-        "u32",
-        "u32"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgReadbackPixel",
-      "symbol": "sg_readback_pixel",
-      "params": [
-        "u32"
-      ],
-      "returns": "u32"
-    },
-    {
-      "name": "sgDebugLive",
-      "symbol": "sg_debug_live",
-      "params": [
-        "u32"
-      ],
-      "returns": "u32"
-    },
-    {
-      "name": "sgDebugHighWater",
-      "symbol": "sg_debug_high_water",
-      "params": [
-        "u32"
-      ],
-      "returns": "u32"
-    },
-    {
       "name": "sgCanvasClear",
       "symbol": "sg_canvas_clear",
       "params": [
@@ -1213,6 +760,605 @@
         "u32"
       ],
       "returns": "i32"
+    },
+    {
+      "name": "sgInit",
+      "symbol": "sg_init",
+      "params": [
+        "u32",
+        "u32",
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgQuit",
+      "symbol": "sg_quit",
+      "params": [
+        "i32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "sgScreenCanvas",
+      "symbol": "sg_screen_canvas",
+      "params": [
+        "i32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "sgScreenWidth",
+      "symbol": "sg_screen_width",
+      "params": [
+        "i32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "sgScreenHeight",
+      "symbol": "sg_screen_height",
+      "params": [
+        "i32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "sgDisplayHz",
+      "symbol": "sg_display_hz",
+      "params": [
+        "i32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "sgPresent",
+      "symbol": "sg_present",
+      "params": [
+        "i32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgSurfaceSavePng",
+      "symbol": "sg_surface_save_png",
+      "params": [
+        "u32",
+        "string"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgSurfaceCreate",
+      "symbol": "sg_surface_create",
+      "params": [
+        "u32",
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "sgCanvasRelease",
+      "symbol": "sg_canvas_release",
+      "params": [
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgTicks",
+      "symbol": "sg_ticks",
+      "params": [
+        "i32"
+      ],
+      "returns": "f64"
+    },
+    {
+      "name": "sgDelay",
+      "symbol": "sg_delay",
+      "params": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "sgPollEvent",
+      "symbol": "sg_poll_event",
+      "params": [
+        "i32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "sgEvtI32",
+      "symbol": "sg_evt_i32",
+      "params": [
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgStrLen",
+      "symbol": "sg_str_len",
+      "params": [
+        "i32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "sgStrByte",
+      "symbol": "sg_str_byte",
+      "params": [
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "sgInputInit",
+      "symbol": "sg_input_init",
+      "params": [
+        "i32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgInputQuit",
+      "symbol": "sg_input_quit",
+      "params": [
+        "i32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "sgTextInput",
+      "symbol": "sg_text_input",
+      "params": [
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgTextLen",
+      "symbol": "sg_text_len",
+      "params": [
+        "i32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "sgTextByte",
+      "symbol": "sg_text_byte",
+      "params": [
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "sgPadConnected",
+      "symbol": "sg_pad_connected",
+      "params": [
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "sgPadButton",
+      "symbol": "sg_pad_button",
+      "params": [
+        "u32",
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "sgPadAxis",
+      "symbol": "sg_pad_axis",
+      "params": [
+        "u32",
+        "u32"
+      ],
+      "returns": "f64"
+    },
+    {
+      "name": "sgPadName",
+      "symbol": "sg_pad_name",
+      "params": [
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "sgPadRumble",
+      "symbol": "sg_pad_rumble",
+      "params": [
+        "u32",
+        "f64",
+        "f64",
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgPadHasRumble",
+      "symbol": "sg_pad_has_rumble",
+      "params": [
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "sgPadAddMapping",
+      "symbol": "sg_pad_add_mapping",
+      "params": [
+        "string"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgPadAttachVirtual",
+      "symbol": "sg_pad_attach_virtual",
+      "params": [
+        "i32",
+        "i32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgPadDetachVirtual",
+      "symbol": "sg_pad_detach_virtual",
+      "params": [
+        "i32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgPadSetVirtualButton",
+      "symbol": "sg_pad_set_virtual_button",
+      "params": [
+        "u32",
+        "u32",
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgPadSetVirtualAxis",
+      "symbol": "sg_pad_set_virtual_axis",
+      "params": [
+        "u32",
+        "u32",
+        "f64"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgPadUpdate",
+      "symbol": "sg_pad_update",
+      "params": [
+        "i32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgGradReset",
+      "symbol": "sg_grad_reset",
+      "params": [
+        "i32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgGradAddStop",
+      "symbol": "sg_grad_add_stop",
+      "params": [
+        "f64",
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgShaderLinearGradient",
+      "symbol": "sg_shader_linear_gradient",
+      "params": [
+        "f64",
+        "f64",
+        "f64",
+        "f64",
+        "i32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "sgShaderRadialGradient",
+      "symbol": "sg_shader_radial_gradient",
+      "params": [
+        "f64",
+        "f64",
+        "f64",
+        "f64",
+        "f64",
+        "f64",
+        "i32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "sgShaderConicGradient",
+      "symbol": "sg_shader_conic_gradient",
+      "params": [
+        "f64",
+        "f64",
+        "f64",
+        "i32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "sgShaderFromBitmap",
+      "symbol": "sg_shader_from_bitmap",
+      "params": [
+        "u32",
+        "i32",
+        "i32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "sgPaintReset",
+      "symbol": "sg_paint_reset",
+      "params": [
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgPaintSetShaderOpt",
+      "symbol": "sg_paint_set_shader_opt",
+      "params": [
+        "u32",
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgPaintSetPathEffectOpt",
+      "symbol": "sg_paint_set_path_effect_opt",
+      "params": [
+        "u32",
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgDashReset",
+      "symbol": "sg_dash_reset",
+      "params": [
+        "i32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgDashPush",
+      "symbol": "sg_dash_push",
+      "params": [
+        "f64"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgDashMake",
+      "symbol": "sg_dash_make",
+      "params": [
+        "f64"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "sgCanvasLatchTransform",
+      "symbol": "sg_canvas_latch_transform",
+      "params": [
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgTsComponent",
+      "symbol": "sg_ts_component",
+      "params": [
+        "u32"
+      ],
+      "returns": "f64"
+    },
+    {
+      "name": "sgCanvasApplyTransform",
+      "symbol": "sg_canvas_apply_transform",
+      "params": [
+        "u32",
+        "f64",
+        "f64",
+        "f64",
+        "f64",
+        "f64",
+        "f64",
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgPathLatchBounds",
+      "symbol": "sg_path_latch_bounds",
+      "params": [
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgRectComponent",
+      "symbol": "sg_rect_component",
+      "params": [
+        "u32"
+      ],
+      "returns": "f64"
+    },
+    {
+      "name": "sgPathRoundRect",
+      "symbol": "sg_path_round_rect",
+      "params": [
+        "u32",
+        "f64",
+        "f64",
+        "f64",
+        "f64",
+        "f64",
+        "f64",
+        "f64",
+        "f64",
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgFontRegister",
+      "symbol": "sg_font_register",
+      "params": [
+        "string"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgTextSetFont",
+      "symbol": "sg_text_set_font",
+      "params": [
+        "string",
+        "f64",
+        "i32",
+        "i32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgTextSetLayout",
+      "symbol": "sg_text_set_layout",
+      "params": [
+        "i32",
+        "i32",
+        "f64",
+        "f64"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgTextSetString",
+      "symbol": "sg_text_set_string",
+      "params": [
+        "string"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgTextDraw",
+      "symbol": "sg_text_draw",
+      "params": [
+        "u32",
+        "u32",
+        "f64",
+        "f64",
+        "f64"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgTextMeasure",
+      "symbol": "sg_text_measure",
+      "params": [
+        "f64"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgTextMetric",
+      "symbol": "sg_text_metric",
+      "params": [
+        "u32"
+      ],
+      "returns": "f64"
+    },
+    {
+      "name": "sgImageDecode",
+      "symbol": "sg_image_decode",
+      "params": [
+        "bytes"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "sgCanvasDrawBitmap",
+      "symbol": "sg_canvas_draw_bitmap",
+      "params": [
+        "u32",
+        "u32",
+        "f64",
+        "f64",
+        "f64",
+        "f64",
+        "f64",
+        "f64",
+        "f64",
+        "f64",
+        "u32",
+        "i32",
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgCanvasPutImageData",
+      "symbol": "sg_canvas_put_image_data",
+      "params": [
+        "u32",
+        "bytes",
+        "u32",
+        "u32",
+        "f64",
+        "f64"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgReadbackBegin",
+      "symbol": "sg_readback_begin",
+      "params": [
+        "u32",
+        "i32",
+        "i32",
+        "u32",
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgReadbackPixel",
+      "symbol": "sg_readback_pixel",
+      "params": [
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "sgDebugLive",
+      "symbol": "sg_debug_live",
+      "params": [
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "sgDebugHighWater",
+      "symbol": "sg_debug_high_water",
+      "params": [
+        "u32"
+      ],
+      "returns": "u32"
     }
   ],
   "libraries": [

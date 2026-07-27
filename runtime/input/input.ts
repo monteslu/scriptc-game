@@ -1,52 +1,55 @@
 /* Polled input state, built by draining the event queue each frame.
  *
  * Games want polled state ("is left held?"), not callbacks, and the FFI has
- * no callbacks anyway, so the event stream feeds state maps that game code
- * reads synchronously.
+ * no callbacks anyway, so the event stream feeds state that game code reads
+ * synchronously. Keys are named the way the web names them
+ * (`isDown("ArrowLeft")`), never by scancode.
+ *
+ * Text input is the exception that proves the rule: it is inherently a
+ * SEQUENCE, so it drains as a queue rather than collapsing into state.
  */
-
-// event kinds, mirrored from shim/sg_core.cpp
-export const EV_NONE = 0;
-export const EV_QUIT = 1;
-export const EV_KEYDOWN = 2;
-export const EV_KEYUP = 3;
-export const EV_MOUSEMOVE = 4;
-export const EV_MOUSEDOWN = 5;
-export const EV_MOUSEUP = 6;
-export const EV_WINDOW = 7;
-
-// event field indices, mirrored from shim/sg_core.cpp
-export const F_SCANCODE = 0;
-export const F_REPEAT = 1;
-export const F_X = 2;
-export const F_Y = 3;
-export const F_BUTTON = 4;
-export const F_WINEVENT = 5;
-
-/* SDL scancodes for the keys the framework names. Kept as a small explicit
- * table rather than the full 512-entry set: game code asks for these. */
-export const KEY_A = 4;
-export const KEY_D = 7;
-export const KEY_S = 22;
-export const KEY_W = 26;
-export const KEY_ESCAPE = 41;
-export const KEY_SPACE = 44;
-export const KEY_RIGHT = 79;
-export const KEY_LEFT = 80;
-export const KEY_DOWN = 81;
-export const KEY_UP = 82;
+import * as ffi from "../ffi.js";
+import { readTextEvent } from "../mailbox.js";
+import { scancodeOf, SCANCODE_TO_CODE } from "./keycodes.js";
+import { pollGamepads, gamepads, gamepad, Gamepad } from "./gamepad.js";
+import {
+  EV_NONE, EV_QUIT, EV_KEYDOWN, EV_KEYUP, EV_MOUSEMOVE, EV_MOUSEDOWN,
+  EV_MOUSEUP, EV_MOUSEWHEEL, EV_TEXT, EV_WINDOW, EV_PADADDED, EV_PADREMOVED,
+  F_SCANCODE, F_REPEAT, F_X, F_Y, F_BUTTON, F_WINEVENT, F_MODS,
+  F_WHEEL_X, F_WHEEL_Y,
+  WIN_FOCUS_GAINED, WIN_FOCUS_LOST, WIN_CLOSE, WIN_RESIZED, WIN_SIZE_CHANGED,
+  MOUSE_LEFT,
+} from "./events.js";
 
 const MAX_SCANCODE = 512;
+const MAX_MOUSE_BUTTON = 8;
 
 export class Input {
   private down: boolean[] = [];
   private pressed: boolean[] = [];
   private released: boolean[] = [];
 
+  private mouseButtons: boolean[] = [];
+  private mousePressed: boolean[] = [];
+  private mouseReleased: boolean[] = [];
+
   mouseX = 0;
   mouseY = 0;
-  mouseDown = false;
+  /** Wheel movement THIS FRAME; positive y is away from the user. */
+  wheelX = 0;
+  wheelY = 0;
+  /** SDL_Keymod bitmask as of the last key event. */
+  mods = 0;
+
   quitRequested = false;
+  focused = true;
+  /** Set when the window was resized this frame; the payload is below. */
+  resized = false;
+  resizeW = 0;
+  resizeH = 0;
+
+  /** Text typed this frame, in order. Empty unless textInput is enabled. */
+  private textQueue: string[] = [];
 
   constructor() {
     for (let i = 0; i < MAX_SCANCODE; i++) {
@@ -54,52 +57,185 @@ export class Input {
       this.pressed.push(false);
       this.released.push(false);
     }
+    for (let i = 0; i < MAX_MOUSE_BUTTON; i++) {
+      this.mouseButtons.push(false);
+      this.mousePressed.push(false);
+      this.mouseReleased.push(false);
+    }
   }
 
-  /** Clears the per-frame edge state. Call before draining events. */
+  /** Clears per-frame edge state. Call before draining events. */
   beginFrame(): void {
     for (let i = 0; i < MAX_SCANCODE; i++) {
       this.pressed[i] = false;
       this.released[i] = false;
     }
+    for (let i = 0; i < MAX_MOUSE_BUTTON; i++) {
+      this.mousePressed[i] = false;
+      this.mouseReleased[i] = false;
+    }
+    this.wheelX = 0;
+    this.wheelY = 0;
+    this.resized = false;
+    if (this.textQueue.length > 0) this.textQueue = [];
   }
 
-  handle(kind: number, scancode: number, repeat: number, x: number, y: number): void {
+  /** Drains the whole event queue into state. One call per frame. */
+  pump(): void {
+    this.beginFrame();
+    let kind = ffi.pollEvent();
+    while (kind !== EV_NONE) {
+      this.handle(kind);
+      kind = ffi.pollEvent();
+    }
+    // Controller state is polled, not evented: SDL's standard-mapping
+    // accessors give current values, which is exactly what a frame wants.
+    pollGamepads();
+  }
+
+  private handle(kind: number): void {
     if (kind === EV_QUIT) {
       this.quitRequested = true;
       return;
     }
-    if (kind === EV_KEYDOWN) {
-      if (scancode >= 0 && scancode < MAX_SCANCODE) {
-        if (repeat === 0) this.pressed[scancode] = true;
-        this.down[scancode] = true;
+    if (kind === EV_KEYDOWN || kind === EV_KEYUP) {
+      const sc = ffi.evtI32(F_SCANCODE);
+      this.mods = ffi.evtI32(F_MODS);
+      if (sc < 0 || sc >= MAX_SCANCODE) return;
+      if (kind === EV_KEYDOWN) {
+        // A key REPEAT is not a fresh press; wasPressed must stay an edge.
+        if (ffi.evtI32(F_REPEAT) === 0) this.pressed[sc] = true;
+        this.down[sc] = true;
+      } else {
+        this.down[sc] = false;
+        this.released[sc] = true;
       }
       return;
     }
-    if (kind === EV_KEYUP) {
-      if (scancode >= 0 && scancode < MAX_SCANCODE) {
-        this.down[scancode] = false;
-        this.released[scancode] = true;
+    if (kind === EV_MOUSEMOVE) {
+      this.mouseX = ffi.evtI32(F_X);
+      this.mouseY = ffi.evtI32(F_Y);
+      return;
+    }
+    if (kind === EV_MOUSEDOWN || kind === EV_MOUSEUP) {
+      this.mouseX = ffi.evtI32(F_X);
+      this.mouseY = ffi.evtI32(F_Y);
+      const b = ffi.evtI32(F_BUTTON);
+      if (b < 0 || b >= MAX_MOUSE_BUTTON) return;
+      if (kind === EV_MOUSEDOWN) {
+        this.mouseButtons[b] = true;
+        this.mousePressed[b] = true;
+      } else {
+        this.mouseButtons[b] = false;
+        this.mouseReleased[b] = true;
       }
       return;
     }
-    if (kind === EV_MOUSEMOVE) { this.mouseX = x; this.mouseY = y; return; }
-    if (kind === EV_MOUSEDOWN) { this.mouseX = x; this.mouseY = y; this.mouseDown = true; return; }
-    if (kind === EV_MOUSEUP) { this.mouseX = x; this.mouseY = y; this.mouseDown = false; return; }
+    if (kind === EV_MOUSEWHEEL) {
+      this.wheelX += ffi.evtI32(F_WHEEL_X);
+      this.wheelY += ffi.evtI32(F_WHEEL_Y);
+      return;
+    }
+    if (kind === EV_TEXT) {
+      // Drained NOW: the shim's text buffer is overwritten by the next event.
+      this.textQueue.push(readTextEvent());
+      return;
+    }
+    if (kind === EV_WINDOW) {
+      const we = ffi.evtI32(F_WINEVENT);
+      if (we === WIN_FOCUS_GAINED) {
+        this.focused = true;
+        return;
+      }
+      if (we === WIN_FOCUS_LOST) {
+        this.focused = false;
+        // Losing focus swallows the matching key-up, so drop everything held:
+        // otherwise alt-tabbing mid-move leaves the key stuck down forever.
+        this.releaseAll();
+        return;
+      }
+      if (we === WIN_CLOSE) { this.quitRequested = true; return; }
+      if (we === WIN_RESIZED || we === WIN_SIZE_CHANGED) {
+        this.resized = true;
+        this.resizeW = ffi.evtI32(F_X);
+        this.resizeH = ffi.evtI32(F_Y);
+        return;
+      }
+      return;
+    }
+    if (kind === EV_PADADDED || kind === EV_PADREMOVED) {
+      // The slot array is maintained shim-side; pollGamepads() picks the
+      // change up this same frame, so there is nothing to do here beyond
+      // not treating the event as unknown.
+      return;
+    }
   }
 
-  isDown(scancode: number): boolean {
-    if (scancode < 0 || scancode >= MAX_SCANCODE) return false;
-    return this.down[scancode];
+  /** Clears all held state, as on focus loss. Release edges still fire. */
+  private releaseAll(): void {
+    for (let i = 0; i < MAX_SCANCODE; i++) {
+      if (this.down[i]) { this.down[i] = false; this.released[i] = true; }
+    }
+    for (let i = 0; i < MAX_MOUSE_BUTTON; i++) {
+      if (this.mouseButtons[i]) {
+        this.mouseButtons[i] = false;
+        this.mouseReleased[i] = true;
+      }
+    }
   }
 
-  wasPressed(scancode: number): boolean {
-    if (scancode < 0 || scancode >= MAX_SCANCODE) return false;
-    return this.pressed[scancode];
+  /* ---- keyboard, by W3C code name ---- */
+
+  isDown(code: string): boolean {
+    const sc = scancodeOf(code);
+    return sc < 0 ? false : this.down[sc];
   }
 
-  wasReleased(scancode: number): boolean {
-    if (scancode < 0 || scancode >= MAX_SCANCODE) return false;
-    return this.released[scancode];
+  wasPressed(code: string): boolean {
+    const sc = scancodeOf(code);
+    return sc < 0 ? false : this.pressed[sc];
   }
+
+  wasReleased(code: string): boolean {
+    const sc = scancodeOf(code);
+    return sc < 0 ? false : this.released[sc];
+  }
+
+  /** Every key currently held, as W3C code names. For debug displays. */
+  heldKeys(): string[] {
+    const out: string[] = [];
+    for (let i = 0; i < MAX_SCANCODE; i++) {
+      if (!this.down[i]) continue;
+      const name = SCANCODE_TO_CODE.get(i);
+      if (name !== undefined) out.push(name);
+    }
+    return out;
+  }
+
+  /* ---- mouse ---- */
+
+  mouseIsDown(button: number): boolean {
+    return button >= 0 && button < MAX_MOUSE_BUTTON ? this.mouseButtons[button] : false;
+  }
+  mouseWasPressed(button: number): boolean {
+    return button >= 0 && button < MAX_MOUSE_BUTTON ? this.mousePressed[button] : false;
+  }
+  mouseWasReleased(button: number): boolean {
+    return button >= 0 && button < MAX_MOUSE_BUTTON ? this.mouseReleased[button] : false;
+  }
+  /** Left button, the common case. */
+  get mouseDown(): boolean { return this.mouseButtons[MOUSE_LEFT]; }
+
+  /* ---- text ---- */
+
+  /** Enables/disables text events (and any platform IME). Off by default. */
+  textInput(enable: boolean): void { ffi.textInput(enable ? 1 : 0); }
+
+  /** Text typed this frame, in order. */
+  textEvents(): string[] { return this.textQueue; }
+
+  /* ---- gamepads ---- */
+
+  gamepads(): Gamepad[] { return gamepads(); }
+  gamepad(slot: number): Gamepad | null { return gamepad(slot); }
 }

@@ -1,6 +1,5 @@
 import { Game, GameOptions } from "../../runtime/loop/run.js";
 import { Context2D } from "../../runtime/canvas/context.js";
-import { KEY_ESCAPE, KEY_LEFT, KEY_RIGHT, KEY_UP, KEY_DOWN } from "../../runtime/input/input.js";
 import * as ffi from "../../runtime/ffi.js";
 
 const W = 640;
@@ -15,11 +14,11 @@ class Bounce extends Game {
   spin = 0;
 
   update(dtMs: number): void {
-    if (this.input.isDown(KEY_ESCAPE)) { this.stop(); return; }
-    if (this.input.isDown(KEY_LEFT)) this.vx -= 0.002 * dtMs;
-    if (this.input.isDown(KEY_RIGHT)) this.vx += 0.002 * dtMs;
-    if (this.input.isDown(KEY_UP)) this.vy -= 0.002 * dtMs;
-    if (this.input.isDown(KEY_DOWN)) this.vy += 0.002 * dtMs;
+    if (this.input.isDown("Escape")) { this.stop(); return; }
+    if (this.input.isDown("ArrowLeft")) this.vx -= 0.002 * dtMs;
+    if (this.input.isDown("ArrowRight")) this.vx += 0.002 * dtMs;
+    if (this.input.isDown("ArrowUp")) this.vy -= 0.002 * dtMs;
+    if (this.input.isDown("ArrowDown")) this.vy += 0.002 * dtMs;
 
     this.x += this.vx * dtMs;
     this.y += this.vy * dtMs;

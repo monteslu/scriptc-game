@@ -220,67 +220,7 @@ extern "C" double sg_ticks(int32_t unused) {
 
 extern "C" void sg_delay(uint32_t ms) { SDL_Delay(ms); }
 
-/* ---- events ----
- * SDL events are structs, which cannot cross. One static slot holds the
- * most recent event and TS reads its fields through scalar getters. Main
- * thread only, so the slot needs no synchronization. */
-typedef enum {
-  SG_EV_NONE = 0,
-  SG_EV_QUIT,
-  SG_EV_KEYDOWN,
-  SG_EV_KEYUP,
-  SG_EV_MOUSEMOVE,
-  SG_EV_MOUSEDOWN,
-  SG_EV_MOUSEUP,
-  SG_EV_WINDOW
-} sg_event_kind;
-
-/* field indices, mirrored in runtime/input/events.ts */
-#define SG_F_SCANCODE 0
-#define SG_F_REPEAT   1
-#define SG_F_X        2
-#define SG_F_Y        3
-#define SG_F_BUTTON   4
-#define SG_F_WINEVENT 5
-
-static int32_t g_ev[8];
-
-extern "C" uint32_t sg_poll_event(int32_t unused) {
-  (void)unused;
-  SDL_Event e;
-  while (SDL_PollEvent(&e)) {
-    memset(g_ev, 0, sizeof(g_ev));
-    switch (e.type) {
-      case SDL_QUIT:
-        return SG_EV_QUIT;
-      case SDL_KEYDOWN:
-      case SDL_KEYUP:
-        g_ev[SG_F_SCANCODE] = (int32_t)e.key.keysym.scancode;
-        g_ev[SG_F_REPEAT]   = e.key.repeat ? 1 : 0;
-        return e.type == SDL_KEYDOWN ? SG_EV_KEYDOWN : SG_EV_KEYUP;
-      case SDL_MOUSEMOTION:
-        g_ev[SG_F_X] = e.motion.x;
-        g_ev[SG_F_Y] = e.motion.y;
-        return SG_EV_MOUSEMOVE;
-      case SDL_MOUSEBUTTONDOWN:
-      case SDL_MOUSEBUTTONUP:
-        g_ev[SG_F_X]      = e.button.x;
-        g_ev[SG_F_Y]      = e.button.y;
-        g_ev[SG_F_BUTTON] = e.button.button;
-        return e.type == SDL_MOUSEBUTTONDOWN ? SG_EV_MOUSEDOWN : SG_EV_MOUSEUP;
-      case SDL_WINDOWEVENT:
-        g_ev[SG_F_WINEVENT] = e.window.event;
-        return SG_EV_WINDOW;
-      default:
-        continue; /* drop events the framework does not model yet */
-    }
-  }
-  return SG_EV_NONE;
-}
-
-extern "C" int32_t sg_evt_i32(uint32_t field) {
-  return field < 8 ? g_ev[field] : 0;
-}
+/* Events, keyboard/mouse state and controllers live in sg_input.cpp. */
 
 /* The handle-flattened skiac wrappers that used to live here are now
  * generated into sg_skia_gen.cpp from skia_c.hpp, with the shapes the

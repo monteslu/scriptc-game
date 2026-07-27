@@ -45,6 +45,33 @@ declare function sgEvtI32(field: number): number;
 declare function sgStrLen(unused: number): number;
 declare function sgStrByte(i: number): number;
 
+// input lifecycle
+declare function sgInputInit(unused: number): number;
+declare function sgInputQuit(unused: number): void;
+
+// text input (UTF-8 bytes of one text event, drained immediately)
+declare function sgTextInput(enable: number): number;
+declare function sgTextLen(unused: number): number;
+declare function sgTextByte(i: number): number;
+
+// gamepads, addressed by SLOT (stable and bounded, unlike SDL instance ids)
+declare function sgPadConnected(slot: number): number;
+declare function sgPadButton(slot: number, button: number): number;
+declare function sgPadAxis(slot: number, axis: number): number;
+declare function sgPadName(slot: number): number;
+declare function sgPadRumble(slot: number, low: number, high: number, ms: number): number;
+declare function sgPadHasRumble(slot: number): number;
+declare function sgPadAddMapping(mapping: string): number;
+
+/* Virtual pads: SDL can attach a synthetic controller, which is what makes
+ * the gamepad path testable with no hardware. Shipped rather than test-only
+ * because it is also the hook for replay and remote input. */
+declare function sgPadAttachVirtual(naxes: number, nbuttons: number): number;
+declare function sgPadDetachVirtual(deviceIndex: number): number;
+declare function sgPadSetVirtualButton(slot: number, button: number, value: number): number;
+declare function sgPadSetVirtualAxis(slot: number, axis: number, value: number): number;
+declare function sgPadUpdate(unused: number): number;
+
 // gradients + patterns (stops are pushed one at a time, then committed)
 declare function sgGradReset(unused: number): number;
 declare function sgGradAddStop(offset: number, argb: number): number;
@@ -120,6 +147,35 @@ export function evtI32(field: number): number { return sgEvtI32(field); }
 
 export function strLen(): number { return sgStrLen(0); }
 export function strByte(i: number): number { return sgStrByte(i); }
+
+export function inputInit(): number { return sgInputInit(0); }
+export function inputQuit(): void { sgInputQuit(0); }
+
+export function textInput(enable: number): number { return sgTextInput(enable); }
+export function textEventLen(): number { return sgTextLen(0); }
+export function textEventByte(i: number): number { return sgTextByte(i); }
+
+export function padConnected(slot: number): number { return sgPadConnected(slot); }
+export function padButton(slot: number, button: number): number { return sgPadButton(slot, button); }
+export function padAxis(slot: number, axis: number): number { return sgPadAxis(slot, axis); }
+export function padName(slot: number): number { return sgPadName(slot); }
+export function padRumble(slot: number, low: number, high: number, ms: number): number {
+  return sgPadRumble(slot, low, high, ms);
+}
+export function padHasRumble(slot: number): number { return sgPadHasRumble(slot); }
+export function padAddMapping(mapping: string): number { return sgPadAddMapping(mapping); }
+
+export function padAttachVirtual(naxes: number, nbuttons: number): number {
+  return sgPadAttachVirtual(naxes, nbuttons);
+}
+export function padDetachVirtual(deviceIndex: number): number { return sgPadDetachVirtual(deviceIndex); }
+export function padSetVirtualButton(slot: number, button: number, value: number): number {
+  return sgPadSetVirtualButton(slot, button, value);
+}
+export function padSetVirtualAxis(slot: number, axis: number, value: number): number {
+  return sgPadSetVirtualAxis(slot, axis, value);
+}
+export function padUpdate(): number { return sgPadUpdate(0); }
 
 export function gradReset(): number { return sgGradReset(0); }
 export function gradAddStop(offset: number, argb: number): number { return sgGradAddStop(offset, argb); }
