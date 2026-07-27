@@ -201,6 +201,28 @@ export class Input {
     return sc < 0 ? false : this.released[sc];
   }
 
+  /** Keys that went down THIS frame, as W3C code names. Feeds keydown events. */
+  pressedKeys(): string[] {
+    const out: string[] = [];
+    for (let i = 0; i < MAX_SCANCODE; i++) {
+      if (!this.pressed[i]) continue;
+      const name = SCANCODE_TO_CODE.get(i);
+      if (name !== undefined) out.push(name);
+    }
+    return out;
+  }
+
+  /** Keys released THIS frame, as W3C code names. Feeds keyup events. */
+  releasedKeys(): string[] {
+    const out: string[] = [];
+    for (let i = 0; i < MAX_SCANCODE; i++) {
+      if (!this.released[i]) continue;
+      const name = SCANCODE_TO_CODE.get(i);
+      if (name !== undefined) out.push(name);
+    }
+    return out;
+  }
+
   /** Every key currently held, as W3C code names. For debug displays. */
   heldKeys(): string[] {
     const out: string[] = [];
