@@ -28,7 +28,12 @@ if [ ! -d "$SRC" ]; then
   mkdir -p "$DL/x" && tar -xzf "$DL/a.tar.gz" -C "$DL/x"
   # The tarball may or may not carry a top-level directory.
   SRC="$DL/x"
-  [ -f "$SRC/libcanvas.a" ] || SRC="$(find "$DL/x" -maxdepth 2 -name libcanvas.a -printf '%h\n' -quit)"
+  # `find -printf` is GNU-only; BSD find (macOS) has no such flag. dirname
+  # of the first match is portable.
+  if [ ! -f "$SRC/libcanvas.a" ]; then
+    hit="$(find "$DL/x" -maxdepth 2 -name libcanvas.a | head -1)"
+    [ -n "$hit" ] && SRC="$(dirname "$hit")"
+  fi
   [ -n "$SRC" ] && [ -d "$SRC" ] || { echo "libcanvas.a not found in $URL" >&2; exit 1; }
 fi
 

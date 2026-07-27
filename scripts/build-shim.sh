@@ -110,5 +110,17 @@ else
 fi
 
 echo "built $DEST/libsggfx.a"
-nm --defined-only "$DEST/libsggfx.a" 2>/dev/null | grep -c ' T sg_' | sed 's/^/  sg_ symbols: /'
-nm --defined-only "$DEST/libsggfx.a" 2>/dev/null | grep -c ' T skiac_' | sed 's/^/  skiac_ symbols: /'
+
+# Symbol counts are INFORMATIONAL, and must never fail the build.
+#
+# Two ways this bit before: GNU nm wants --defined-only while BSD nm (macOS)
+# wants -U, and Mach-O prefixes C symbols with an underscore so the names
+# are _sg_ / _skiac_ there. On macOS the flag was rejected, grep -c matched
+# nothing, and `set -e` turned a progress message into a build failure with
+# an empty log.
+count_syms() {
+  { nm --defined-only "$1" 2>/dev/null || nm -U "$1" 2>/dev/null || nm "$1" 2>/dev/null; } \
+    | grep -cE " T _?$2" || true
+}
+echo "  sg_ symbols: $(count_syms "$DEST/libsggfx.a" 'sg_')"
+echo "  skiac_ symbols: $(count_syms "$DEST/libsggfx.a" 'skiac_')"

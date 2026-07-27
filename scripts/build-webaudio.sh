@@ -86,4 +86,10 @@ done
 rm -f "$DEST/libwebaudio.a"
 ar rcs "$DEST/libwebaudio.a" $OBJS
 echo "built $DEST/libwebaudio.a"
-nm --defined-only "$DEST/libwebaudio.a" 2>/dev/null | grep -c ' T ' | sed 's/^/  exported symbols: /'
+# Informational only, and must not fail the build: BSD nm (macOS) rejects
+# --defined-only, after which grep -c matches nothing and `set -e` kills a
+# progress message. Same trap as build-shim.sh and fetch-archives.sh.
+echo "  exported symbols: $(
+  { nm --defined-only "$DEST/libwebaudio.a" 2>/dev/null \
+    || nm -U "$DEST/libwebaudio.a" 2>/dev/null \
+    || nm "$DEST/libwebaudio.a" 2>/dev/null; } | grep -c ' T ' || true)"
