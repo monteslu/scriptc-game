@@ -1,0 +1,1 @@
+{ "ffi_format": 1, "functions": [ { "name": "sgU32", "symbol": "sg_u32", "params": ["u32"], "returns": "u32" } ], "libraries": ["./libnative.a"], "system_libraries": [] }

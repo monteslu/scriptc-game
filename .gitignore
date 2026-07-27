@@ -1,0 +1,20 @@
+node_modules/
+vendor/
+build/
+.scriptc/
+*.tmp
+*.o
+*.a
+*.ll
+
+# Spike SOURCES are kept (const-ffi-repro.ts documents a real compiler bug
+# and threadtest.ts is the audio-thread evidence); build products are not.
+# scriptc names a binary after its entry file with the extension dropped,
+# so every spike binary is an extensionless file at the spike/ root.
+spike/*
+!spike/*.ts
+!spike/*.json
+!spike/ffi/
+spike/ffi/*
+!spike/ffi/*.c
+!spike/ffi/*.json

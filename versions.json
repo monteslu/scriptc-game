@@ -1,0 +1,15 @@
+{
+  "scriptc": {
+    "version": "0.0.17",
+    "source": "fork",
+    "fork": "https://github.com/monteslu/scriptc",
+    "branch": "fix/ffi-const-binding",
+    "note": "local fork carries the FFI const-binding fix; retest against upstream on each bump"
+  },
+  "canvas": {
+    "CANVAS_VERSION": "1.0.0",
+    "source": "build-libcanvas out/linux-x86_64",
+    "skia_gl_standard": "gl"
+  },
+  "sdl": { "version": "2.32.10", "source": "system libsdl2-dev" }
+}
