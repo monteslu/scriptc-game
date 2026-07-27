@@ -566,6 +566,25 @@ export class Context2D {
     ffi.canvasPutImageData(this.canvas, pixels, width, height, x, y);
   }
 
+  /** Draws another Context2D's surface (sg.createCanvas) at (dx, dy). */
+  drawCanvas(src: Context2D, dx: number, dy: number): void {
+    const h = src.surfaceHandle();
+    if (h === 0) return;   // the screen context is not a valid source
+    sk.canvasDrawSurface(this.canvas, h, dx, dy,
+                         alphaByteRound(this.style.globalAlpha),
+                         blendMode(this.style.composite),
+                         this.style.smoothing ? 1 : 0);
+  }
+
+  /** Source-rect to destination-rect blit from another context's surface. */
+  drawCanvasRect(src: Context2D, sx: number, sy: number, sw: number, sh: number,
+                 dx: number, dy: number, dw: number, dh: number): void {
+    const h = src.surfaceHandle();
+    if (h === 0) return;
+    sk.canvasDrawSurfaceRect(this.canvas, h, sx, sy, sw, sh, dx, dy, dw, dh,
+                             this.style.smoothing ? 1 : 0);
+  }
+
   /* ---- internals ---- */
 
   /** The backing surface handle, for use as a drawImage source. */

@@ -9,6 +9,8 @@
  * Both sides run the same Skia build (build-libcanvas pins the same commit
  * @napi-rs/canvas ships), so output is expected byte-identical.
  */
+import { createCanvas as makeCanvas } from "@napi-rs/canvas";
+
 export const SCENE_W = 200;
 export const SCENE_H = 150;
 
@@ -70,6 +72,8 @@ export const SCENE_NAMES = [
   "image-smoothing-off",
   "pattern-repeat",
   "pattern-no-repeat",
+  "put-image-data",
+  "offscreen-canvas",
 ];
 
 function compositePair(ctx, op) {
@@ -440,6 +444,32 @@ export function drawScene(name, ctx, img) {
   } else if (name === "pattern-no-repeat") {
     ctx.fillStyle = ctx.createPattern(img, "no-repeat");
     ctx.fillRect(10, 10, 180, 130);
+  } else if (name === "put-image-data") {
+    const w = 60;
+    const h = 40;
+    const id = ctx.createImageData(w, h);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const o = (y * w + x) * 4;
+        id.data[o] = (x * 4) & 255;
+        id.data[o + 1] = (y * 6) & 255;
+        id.data[o + 2] = 128;
+        id.data[o + 3] = 255;
+      }
+    }
+    ctx.putImageData(id, 20, 20);
+    ctx.putImageData(id, 110, 80);
+  } else if (name === "offscreen-canvas") {
+    const off = makeCanvas(80, 60);
+    const octx = off.getContext("2d");
+    octx.fillStyle = "#ffffff";
+    octx.fillRect(0, 0, 80, 60);
+    octx.fillStyle = "#cc4422";
+    octx.fillRect(5, 5, 70, 50);
+    octx.fillStyle = "#2244cc";
+    octx.fillRect(20, 15, 40, 30);
+    ctx.drawImage(off, 10, 10);
+    ctx.drawImage(off, 0, 0, 80, 60, 110, 80, 80, 60);
   } else {
     throw new Error(`unknown scene: ${name}`);
   }

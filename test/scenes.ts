@@ -19,6 +19,7 @@ import { Context2D } from "../runtime/canvas/context.js";
 import { createLinearGradient, createRadialGradient, createConicGradient } from "../runtime/canvas/gradient.js";
 import { createPattern } from "../runtime/canvas/pattern.js";
 import { GameImage } from "../runtime/canvas/image.js";
+import { createCanvas } from "../runtime/canvas/offscreen.js";
 
 export const SCENE_W = 200;
 export const SCENE_H = 150;
@@ -94,6 +95,8 @@ export const SCENE_NAMES: string[] = [
   "image-smoothing-off",
   "pattern-repeat",
   "pattern-no-repeat",
+  "put-image-data",
+  "offscreen-canvas",
 ];
 
 /** The 64x64 procedural asset; see test/assets/make-test-image.mjs. */
@@ -471,6 +474,36 @@ export function drawScene(name: string, ctx: Context2D, img: GameImage): void {
     ctx.setFillPattern(p);
     ctx.fillRect(10, 10, 180, 130);
     p.dispose();
+  } else if (name === "put-image-data") {
+    // A procedurally built RGBA block: pixels IN is the supported FFI
+    // direction, so this is the one bulk path that needs no readback.
+    const w = 60;
+    const h = 40;
+    const buf = Buffer.alloc(w * h * 4);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const o = (y * w + x) * 4;
+        buf[o] = (x * 4) & 255;
+        buf[o + 1] = (y * 6) & 255;
+        buf[o + 2] = 128;
+        buf[o + 3] = 255;
+      }
+    }
+    ctx.putImageData(buf, w, h, 20, 20);
+    ctx.putImageData(buf, w, h, 110, 80);
+  } else if (name === "offscreen-canvas") {
+    // Compose into an offscreen surface, then blit it twice.
+    const off = createCanvas(80, 60);
+    if (off !== null) {
+      off.clear("#ffffff");
+      off.fillStyle = "#cc4422";
+      off.fillRect(5, 5, 70, 50);
+      off.fillStyle = "#2244cc";
+      off.fillRect(20, 15, 40, 30);
+      ctx.drawCanvas(off, 10, 10);
+      ctx.drawCanvasRect(off, 0, 0, 80, 60, 110, 80, 80, 60);
+      off.dispose();
+    }
   }
 }
 
