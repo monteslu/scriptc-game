@@ -11,11 +11,13 @@
 import { Game, GameOptions } from "../../runtime/loop/run.js";
 import { Context2D } from "../../runtime/canvas/context.js";
 import * as ffi from "../../runtime/ffi.js";
-import { sqrt, TAU } from "../../runtime/math.js";
+import { sqrt, atan2, PI, TAU } from "../../runtime/math.js";
 import {
   AudioContext, createAudioContext, closeAudio, GainNode, AudioBufferSourceNode,
 } from "../../runtime/audio/context.js";
 import { pickup, hit, dash as dashSfx, gameOver } from "../../runtime/audio/sfx.js";
+import { GameImage, decodeImage } from "../../runtime/canvas/image.js";
+import { readFileSync } from "node:fs";
 import {
   BTN_A, BTN_START, BTN_DPAD_LEFT, BTN_DPAD_RIGHT, BTN_DPAD_UP, BTN_DPAD_DOWN,
   AXIS_LEFT_X, AXIS_LEFT_Y, GamepadEffectParameters, Gamepad,
@@ -77,6 +79,17 @@ class Dodge extends Game {
 
   /** null when the device could not be opened; the game stays playable. */
   audio: AudioContext | null = null;
+  /* Sprites. null when the art is missing, and every draw falls back to the
+   * primitive it replaced -- an example should still run from a clone that
+   * skipped the asset step. */
+  spritePlayer: GameImage | null = null;
+  spriteHazard: GameImage | null = null;
+  spriteCoin: GameImage | null = null;
+  /** Advances the 4-frame coin spin. */
+  coinAnimMs = 0;
+  /** Facing, in radians. Eased toward travel so the ship banks, not snaps. */
+  heading = -1.5707963267948966;
+
   /** Music bus, so the track can be ducked or muted independently of SFX. */
   musicGain: GainNode | null = null;
   musicSource: AudioBufferSourceNode | null = null;
@@ -175,6 +188,16 @@ class Dodge extends Game {
     let speed = PLAYER_SPEED;
     if (this.dashMs > 0) { speed = DASH_SPEED; this.dashMs -= dtMs; }
 
+    if (ix !== 0 || iy !== 0) {
+      /* Ease toward the travel direction through the SHORTEST arc: lerping
+       * raw angles spins the long way round when crossing +/-PI. */
+      const target = atan2(iy, ix);
+      let delta = target - this.heading;
+      while (delta > PI) delta -= TAU;
+      while (delta < -PI) delta += TAU;
+      this.heading += delta * Math.min(1, dtMs * 0.02);
+    }
+
     this.px += ix * speed * dtMs;
     this.py += iy * speed * dtMs;
     if (this.px < PLAYER_R) this.px = PLAYER_R;
@@ -231,6 +254,7 @@ class Dodge extends Game {
     }
 
     this.score += dtMs * 0.004;
+    this.coinAnimMs += dtMs;
   }
 
   private spawn(): void {
@@ -264,32 +288,69 @@ class Dodge extends Game {
       const f = this.fallers[i];
       if (!f.alive) continue;
       if (f.coin) {
-        ctx.fillStyle = "#ffd257";
-        ctx.beginPath();
-        ctx.arc(f.x, f.y, f.size / 2, 0, TAU, false);
-        ctx.fill("nonzero");
-        ctx.strokeStyle = "#a8761f";
-        ctx.lineWidth = 2;
-        ctx.stroke();
+        if (this.spriteCoin !== null) {
+          /* One strip, four 16px frames: drawImageRect picks the frame, so
+           * the whole animation is a single decode and a single handle. */
+          const frame = Math.floor(this.coinAnimMs / 90) % 4;
+          ctx.drawImageRect(this.spriteCoin, frame * 16, 0, 16, 16,
+                            f.x - f.size / 2, f.y - f.size / 2, f.size, f.size);
+        } else {
+          ctx.fillStyle = "#ffd257";
+          ctx.beginPath();
+          ctx.arc(f.x, f.y, f.size / 2, 0, TAU, false);
+          ctx.fill("nonzero");
+          ctx.strokeStyle = "#a8761f";
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        }
       } else {
-        ctx.fillStyle = "#e5484d";
-        ctx.fillRect(f.x - f.size / 2, f.y - f.size / 2, f.size, f.size);
-        ctx.strokeStyle = "#7d2226";
-        ctx.lineWidth = 2;
-        ctx.strokeRect(f.x - f.size / 2, f.y - f.size / 2, f.size, f.size);
+        if (this.spriteHazard !== null) {
+          ctx.drawImageScaled(this.spriteHazard, f.x - f.size / 2, f.y - f.size / 2,
+                              f.size, f.size);
+        } else {
+          ctx.fillStyle = "#e5484d";
+          ctx.fillRect(f.x - f.size / 2, f.y - f.size / 2, f.size, f.size);
+          ctx.strokeStyle = "#7d2226";
+          ctx.lineWidth = 2;
+          ctx.strokeRect(f.x - f.size / 2, f.y - f.size / 2, f.size, f.size);
+        }
       }
     }
 
     // The player. Blinks while invulnerable, glows while dashing.
     const blink = this.invulnMs > 0 && (this.invulnMs % 200) > 100;
     if (!blink) {
-      ctx.fillStyle = this.dashMs > 0 ? "#8ee27a" : "#58a6ff";
-      ctx.beginPath();
-      ctx.arc(this.px, this.py, PLAYER_R, 0, TAU, false);
-      ctx.fill("nonzero");
-      ctx.strokeStyle = this.dashMs > 0 ? "#3f7a34" : "#1f5fa8";
-      ctx.lineWidth = 3;
-      ctx.stroke();
+      if (this.spritePlayer !== null) {
+        /* 3.2x the collision radius, not 2x: the art has transparent margin
+         * and a narrow nose, so a frame sized to the hitbox renders a ship
+         * visibly smaller than the hazards it dodges. Measured from a
+         * screenshot rather than guessed. */
+        const size = PLAYER_R * 3.2;
+        ctx.save();
+        ctx.translate(this.px, this.py);
+        /* The art faces up, so heading 0 is -PI/2 in atan2 terms. Banking
+         * toward travel is the whole reason to rotate rather than blit. */
+        ctx.rotate(this.heading + 1.5707963267948966);
+        // Dashing tints the ship by drawing a green wash over it.
+        ctx.drawImageScaled(this.spritePlayer, -size / 2, -size / 2, size, size);
+        ctx.restore();
+        if (this.dashMs > 0) {
+          ctx.globalAlpha = 0.45;
+          ctx.fillStyle = "#8ee27a";
+          ctx.beginPath();
+          ctx.arc(this.px, this.py, PLAYER_R, 0, TAU, false);
+          ctx.fill("nonzero");
+          ctx.globalAlpha = 1;
+        }
+      } else {
+        ctx.fillStyle = this.dashMs > 0 ? "#8ee27a" : "#58a6ff";
+        ctx.beginPath();
+        ctx.arc(this.px, this.py, PLAYER_R, 0, TAU, false);
+        ctx.fill("nonzero");
+        ctx.strokeStyle = this.dashMs > 0 ? "#3f7a34" : "#1f5fa8";
+        ctx.lineWidth = 3;
+        ctx.stroke();
+      }
     }
 
     this.drawHud(ctx);
@@ -384,6 +445,21 @@ function main(): void {
       game.musicSource = src;
     }
   }
+
+  /* Sprites are plain PNGs decoded at startup: no bundling, no packing step.
+   * readFileSync gives a Buffer, which is exactly what the `bytes` FFI param
+   * wants, and Skia sniffs the format from the bytes (png/jpg/webp/bmp/gif
+   * all work -- see test/imagetest.ts). */
+  const art: string[] = ["player", "hazard", "coin"];
+  const loaded: GameImage[] = [];
+  for (let i = 0; i < art.length; i++) {
+    const img = decodeImage(readFileSync(`examples/dodge/assets/${art[i]}.png`));
+    if (!img.valid) console.log(`sprite ${art[i]}.png failed to load; using shapes`);
+    loaded.push(img);
+  }
+  if (loaded[0].valid) game.spritePlayer = loaded[0];
+  if (loaded[1].valid) game.spriteHazard = loaded[1];
+  if (loaded[2].valid) game.spriteCoin = loaded[2];
 
   const opts = new GameOptions();
   opts.width = W;

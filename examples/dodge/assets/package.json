@@ -1,0 +1,9 @@
+{
+  "name": "dodge-assets",
+  "private": true,
+  "type": "module",
+  "description": "Sprite generator for the dodge example. Node resolves imports from the FILE's directory, not the cwd, so this exists purely to point make-sprites.mjs at the @napi-rs/canvas already installed for the conformance goldens.",
+  "dependencies": {
+    "@napi-rs/canvas": "1.0.0"
+  }
+}

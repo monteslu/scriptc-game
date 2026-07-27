@@ -21,3 +21,14 @@ ffmpeg -v error -y -i "$SRC" -t 3 -vn -c:a libvorbis  "$OUT/fmt.ogg"
 ffmpeg -v error -y -i "$SRC" -t 3 -vn -c:a flac       "$OUT/fmt.flac"
 ffmpeg -v error -y -i "$SRC" -t 3 -vn -c:a libmp3lame "$OUT/fmt.mp3"
 echo "wrote fmt.{wav,ogg,flac,mp3} to $OUT"
+
+# Image fixtures: one 96x64 source through five encoders, so a decoder that
+# reports the right size but garbage pixels is caught by comparing them.
+IMG="$ROOT/test/fixtures/images"
+mkdir -p "$IMG"
+ffmpeg -v error -y -f lavfi -i "testsrc=size=96x64:duration=1:rate=1" \
+       -frames:v 1 "$IMG/test.png"
+for f in jpg webp bmp gif; do
+  ffmpeg -v error -y -i "$IMG/test.png" -frames:v 1 "$IMG/test.$f"
+done
+echo "wrote test.{png,jpg,webp,bmp,gif} to $IMG"

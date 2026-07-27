@@ -25,10 +25,7 @@ spike/ffi/*
 test/out/
 test/golden/png/
 
-# Music and other large binary assets are NOT committed: they are the user's
-# files, they bloat clones, and licensing for a shipped track is a separate
-# decision. Point the example at your own via examples/dodge/assets/.
-examples/*/assets/*.mp3
-examples/*/assets/*.ogg
-examples/*/assets/*.wav
-examples/*/assets/*.flac
+# Example assets (art, music) ARE committed: an example that cannot run from
+# a fresh clone is not an example. Test FIXTURES are generated instead --
+# see scripts/make-decode-fixtures.sh.
+test/fixtures/images/

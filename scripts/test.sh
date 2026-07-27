@@ -28,7 +28,7 @@ run() {
 }
 
 echo "==> building test programs"
-for entry in test/conformance.ts test/readbackprobe.ts test/inputtest.ts test/padvisual.ts test/audiotest.ts test/decodetest.ts; do
+for entry in test/conformance.ts test/readbackprobe.ts test/inputtest.ts test/padvisual.ts test/audiotest.ts test/decodetest.ts test/imagetest.ts test/spritetest.ts; do
   ./scripts/build.sh "$entry" >/dev/null || { echo "build failed: $entry"; exit 1; }
 done
 
@@ -36,6 +36,7 @@ run "canvas conformance" ./scripts/conformance.sh
 run "pixel readback"     env SDL_VIDEODRIVER=dummy ./build/readbackprobe
 run "input + gamepads"   env SDL_VIDEODRIVER=dummy ./build/inputtest
 run "pad visual"         env SDL_VIDEODRIVER=dummy ./build/padvisual test/out/padvisual.png
+run "sprite sheets"      env SDL_VIDEODRIVER=dummy ./build/spritetest test/out
 # Audio runs OFFLINE (no device): renders graphs to float WAVs and checks the
 # samples. test/beeptest.ts is the live-device check and is deliberately not
 # here -- it needs a sound card and makes noise.
@@ -46,6 +47,7 @@ run "audio graph"        env SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./build
 if command -v ffmpeg >/dev/null 2>&1; then
   ./scripts/make-decode-fixtures.sh >/dev/null
   run "audio decoders"     env SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./build/decodetest test/out
+  run "image formats"      env SDL_VIDEODRIVER=dummy ./build/imagetest test/fixtures/images test/out
 else
   echo; echo "==> audio decoders"; echo "    SKIP (ffmpeg not installed)"
 fi
