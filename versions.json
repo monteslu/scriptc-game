@@ -19,7 +19,8 @@
   "webaudio": {
     "version": "0.8.0",
     "source": "https://github.com/monteslu/webaudio-node",
-    "commit": "1a1aea7",
-    "note": "C++ graph compiled native by scripts/build-webaudio.sh; source is UNPATCHED (shim/emscripten.h and shim/wasm_simd128.h stand in for the two headers it wants), so a bump is a re-fetch"
+    "commit": "1a1aea705230c5d1ec483d1a4a03e2f11cc7a2ba",
+    "note": "C++ graph compiled native by scripts/build-webaudio.sh; source is UNPATCHED (shim/emscripten.h and shim/wasm_simd128.h stand in for the two headers it wants), so a bump is a re-fetch. Pinned by FULL sha: actions/checkout cannot fetch an abbreviated one.",
+    "commit_short": "1a1aea7"
   }
 }
