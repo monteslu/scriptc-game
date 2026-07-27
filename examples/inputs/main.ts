@@ -91,7 +91,11 @@ window.addEventListener("load", () => {
       }
     }
 
-    ctx.clear("#12161c");
+    // The spec has no ctx.clear(): fill the canvas instead.
+
+    ctx.fillStyle = "#12161c";
+
+    ctx.fillRect(0, 0, W, H);
     ctx.textAlign = "left";
     ctx.textBaseline = "alphabetic";
 

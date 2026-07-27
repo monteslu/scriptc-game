@@ -64,7 +64,7 @@ function main(): void {
      * blank, which is exactly the failure a "does it load" test misses. */
     const ctx = createCanvas(W, H);
     if (ctx === null) { console.log("FATAL: createCanvas"); process.exit(2); }
-    ctx.clear("#000000");
+    ctx.__clearToColor("#000000");
     ctx.drawImage(img, 0, 0);
 
     const pixels = getImageData(ctx, 0, 0, W, H);

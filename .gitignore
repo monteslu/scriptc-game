@@ -33,3 +33,8 @@ test/fixtures/images/
 # Generated per-build entry modules: gen-entry.js writes these, and they
 # bake in an absolute game directory. Never committed.
 .sg-build/
+
+# The browser proof's build output and captures: both regenerate from
+# browser/build.sh, and the shots are large PNGs of the same two frames.
+browser/out/
+browser/shots/

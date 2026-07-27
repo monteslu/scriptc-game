@@ -69,7 +69,11 @@ window.addEventListener("load", () => {
     const drawY = prevY + (y - prevY) * alpha;
     const drawSpin = prevSpin + (spin - prevSpin) * alpha;
 
-    ctx.clear("#101820");
+    // The spec has no ctx.clear(): fill the canvas instead.
+
+    ctx.fillStyle = "#101820";
+
+    ctx.fillRect(0, 0, W, H);
 
     // A static grid, so motion is obvious in a screenshot.
     ctx.strokeStyle = "#1d2b3a";

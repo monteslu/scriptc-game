@@ -12,7 +12,7 @@ function main(): void {
   const ctx = createCanvas(32, 32);
   if (ctx === null) { console.log("FAIL: createCanvas"); process.exit(1); }
 
-  ctx.clear("#ffffff");
+  ctx.__clearToColor("#ffffff");
   ctx.fillStyle = "#ff0000";
   ctx.fillRect(0, 0, 16, 16);
   ctx.fillStyle = "#0000ff";

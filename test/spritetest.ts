@@ -41,10 +41,10 @@ function main(): void {
   const h = CELL * SCALE;
   const ctx = createCanvas(w, h);
   if (ctx === null) { console.log("FATAL: createCanvas"); process.exit(2); }
-  ctx.clear("#101010");
+  ctx.__clearToColor("#101010");
 
   for (let f = 0; f < FRAMES; f++) {
-    ctx.drawImageRect(strip, f * CELL, 0, CELL, CELL,
+    ctx.drawImage(strip, f * CELL, 0, CELL, CELL,
                       f * CELL * SCALE, 0, CELL * SCALE, CELL * SCALE);
   }
 
