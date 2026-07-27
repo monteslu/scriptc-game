@@ -85,9 +85,20 @@ if [ "$NEED_MERGE" = "1" ]; then
   rm -f "$DEST/libsggfx.a"
   # A single ar command line would overflow with thousands of members, so
   # append in batches and build the index once at the end.
-  ar qS "$DEST/libsggfx.a" $SHIM_OBJS
-  find "$MERGE" -name '*.o' -print0 | xargs -0 -n 300 ar qS "$DEST/libsggfx.a"
-  ranlib "$DEST/libsggfx.a"
+  # `q` appends; GNU ar takes S to skip the symbol index (built once at the
+  # end by ranlib), which BSD ar on macOS does not accept. Try the fast form
+  # and fall back rather than assuming a toolchain.
+  AR_APPEND="qS"
+  ar qS "$DEST/libsggfx.a" $SHIM_OBJS 2>/dev/null || {
+    AR_APPEND="q"
+    rm -f "$DEST/libsggfx.a"
+    ar q "$DEST/libsggfx.a" $SHIM_OBJS || {
+      echo "ar: could not append shim objects to libsggfx.a" >&2; exit 1; }
+  }
+  find "$MERGE" -name '*.o' -print0 \
+    | xargs -0 -n 300 ar "$AR_APPEND" "$DEST/libsggfx.a" || {
+        echo "ar: could not append Skia members to libsggfx.a" >&2; exit 1; }
+  ranlib "$DEST/libsggfx.a" || { echo "ranlib failed" >&2; exit 1; }
   rm -rf "$MERGE"
 else
   # Shim objects changed but Skia did not: replace just those members.

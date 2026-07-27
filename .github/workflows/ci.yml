@@ -138,6 +138,7 @@ jobs:
         shell: bash
         env:
           SCRIPTC_BIN: ${{ github.workspace }}/scriptc/packages/cli/dist/main.js
+          SG_TARGET: ${{ matrix.target }}
         run: |
           # Headless: SDL's dummy drivers, and xvfb on Linux for the browser
           # proof (Firefox headless still wants a display on some runners).

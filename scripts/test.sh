@@ -10,6 +10,12 @@
 # display, no window manager, and no physical hardware.
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+# Test programs must link the SAME per-target archives the examples do.
+# Without this every suite built against vendor/linux-x86_64 regardless of
+# the host, which fails on any other architecture with a bare
+# "ar: .../linux-x86_64/libskiac.a: No such file or directory".
+TARGET="${SG_TARGET:-linux-x86_64}"
 cd "$ROOT"
 
 mkdir -p test/out
@@ -29,7 +35,7 @@ run() {
 
 echo "==> building test programs"
 for entry in test/conformance.ts test/readbackprobe.ts test/inputtest.ts test/padvisual.ts test/audiotest.ts test/decodetest.ts test/imagetest.ts test/spritetest.ts test/asynctest.ts test/missileprobe.ts test/websurface.ts; do
-  ./scripts/build.sh "$entry" >/dev/null || { echo "build failed: $entry"; exit 1; }
+  ./scripts/build.sh "$entry" "$TARGET" >/dev/null || { echo "build failed: $entry"; exit 1; }
 done
 
 run "canvas conformance" ./scripts/conformance.sh
