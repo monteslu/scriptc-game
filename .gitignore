@@ -24,3 +24,11 @@ spike/ffi/*
 # bump into a binary-diff review.
 test/out/
 test/golden/png/
+
+# Music and other large binary assets are NOT committed: they are the user's
+# files, they bloat clones, and licensing for a shipped track is a separate
+# decision. Point the example at your own via examples/dodge/assets/.
+examples/*/assets/*.mp3
+examples/*/assets/*.ogg
+examples/*/assets/*.wav
+examples/*/assets/*.flac

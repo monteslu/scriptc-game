@@ -59,6 +59,7 @@ const shimSrc = [
   "shim/sg_skia_extra.cpp",
   "shim/sg_input.cpp",
   "shim/sg_audio.cpp",
+  "shim/sg_audio_decode.cpp",
 ]
   .map((f) => readFileSync(join(root, f), "utf8"))
   .join("\n");

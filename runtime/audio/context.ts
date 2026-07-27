@@ -338,6 +338,20 @@ export class AudioContext {
     return new IIRFilterNode(ffi.audioCreateNode("IIRFilter"));
   }
 
+  /* Decodes an audio FILE (mp3/wav/flac/ogg) into a playable buffer.
+   *
+   * The samples never cross the boundary -- a three-minute track is ~90MB of
+   * float32 -- so the decode happens natively and this returns a handle plus
+   * the metadata. Synchronous, like every asset load here: games decode
+   * during a load screen, and a promise would be pretending. */
+  decodeAudioFile(path: string): AudioBuffer | null {
+    const graph = ffi.audioGraphId();
+    if (graph < 0) return null;
+    const id = ffi.audioNextBufferId();
+    if (ffi.audioDecodeFile(graph, id, path) < 0) return null;
+    return new AudioBuffer(id, ffi.decodeFrames(), ffi.decodeChannels(), ffi.decodeRate());
+  }
+
   /** Registers float32 PCM as a playable buffer. */
   createBuffer(samples: Buffer, frames: number, channels: number): AudioBuffer | null {
     const id = ffi.audioRegisterBuffer(samples, frames, channels);

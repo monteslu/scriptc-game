@@ -305,6 +305,16 @@ extern "C" int32_t sg_audio_register_buffer(const uint8_t* data, size_t len,
   return id;
 }
 
+/* The live graph id, for sg_audio_decode.cpp (which registers decoded files
+ * straight with the engine rather than passing 90MB of float through TS). */
+extern "C" int32_t sg_audio_graph_id(int32_t unused) { (void)unused; return g_graph; }
+
+/** Next free buffer id, so decode and createBuffer cannot collide. */
+extern "C" int32_t sg_audio_next_buffer_id(int32_t unused) {
+  (void)unused;
+  return g_next_buffer_id++;
+}
+
 extern "C" int32_t sg_audio_set_node_buffer(uint32_t node, uint32_t buffer_id) {
   sg_cmd c; memset(&c, 0, sizeof(c));
   c.kind = CMD_SET_BUFFER; c.a = (int32_t)node; c.b = (int32_t)buffer_id;

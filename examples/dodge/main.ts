@@ -12,7 +12,9 @@ import { Game, GameOptions } from "../../runtime/loop/run.js";
 import { Context2D } from "../../runtime/canvas/context.js";
 import * as ffi from "../../runtime/ffi.js";
 import { sqrt, TAU } from "../../runtime/math.js";
-import { AudioContext, createAudioContext, closeAudio } from "../../runtime/audio/context.js";
+import {
+  AudioContext, createAudioContext, closeAudio, GainNode, AudioBufferSourceNode,
+} from "../../runtime/audio/context.js";
 import { pickup, hit, dash as dashSfx, gameOver } from "../../runtime/audio/sfx.js";
 import {
   BTN_A, BTN_START, BTN_DPAD_LEFT, BTN_DPAD_RIGHT, BTN_DPAD_UP, BTN_DPAD_DOWN,
@@ -33,6 +35,12 @@ const DASH_COOLDOWN_MS = 620;
  * treated as centred; past it the value is rescaled so the usable range
  * still runs a full 0..1 and slow movement stays possible. */
 const DEADZONE = 0.22;
+
+/* Music sits UNDER the effects: at equal volume a looping track masks the
+ * feedback a player actually needs to hear. Half is the brief; the effects
+ * go near full so they cut through it. */
+const MUSIC_VOLUME = 0.5;
+const SFX_VOLUME = 0.9;
 
 function applyDeadzone(v: number): number {
   const mag = v < 0 ? -v : v;
@@ -69,6 +77,10 @@ class Dodge extends Game {
 
   /** null when the device could not be opened; the game stays playable. */
   audio: AudioContext | null = null;
+  /** Music bus, so the track can be ducked or muted independently of SFX. */
+  musicGain: GainNode | null = null;
+  musicSource: AudioBufferSourceNode | null = null;
+  musicOn = true;
 
   /** Deterministic pseudo-randomness: no Math.random in the static tier. */
   private seed = 0x2f6e2b1;
@@ -157,7 +169,7 @@ class Dodge extends Game {
       this.dashMs = DASH_MS;
       this.cooldownMs = DASH_COOLDOWN_MS;
       this.rumble(0.25, 0.15, 70);
-      if (this.audio !== null) dashSfx(this.audio, 0.22);
+      if (this.audio !== null) dashSfx(this.audio, SFX_VOLUME * 0.8);
     }
 
     let speed = PLAYER_SPEED;
@@ -202,18 +214,18 @@ class Dodge extends Game {
         f.alive = false;
         this.score += 10;
         this.rumble(0.15, 0.0, 45);
-        if (this.audio !== null) pickup(this.audio, 0.3);
+        if (this.audio !== null) pickup(this.audio, SFX_VOLUME);
       } else if (this.invulnMs <= 0) {
         f.alive = false;
         this.lives -= 1;
         this.invulnMs = 1100;
         this.rumble(0.9, 1.0, 260);
-        if (this.audio !== null) hit(this.audio, 0.45);
+        if (this.audio !== null) hit(this.audio, SFX_VOLUME);
         if (this.lives <= 0) {
           this.over = true;
           if (this.score > this.best) this.best = this.score;
           this.rumble(1.0, 1.0, 520);
-          if (this.audio !== null) gameOver(this.audio, 0.3);
+          if (this.audio !== null) gameOver(this.audio, SFX_VOLUME * 0.9);
         }
       }
     }
@@ -315,6 +327,9 @@ class Dodge extends Game {
     const pad = this.pad();
     ctx.fillText(pad === null ? "keyboard: arrows/WASD, space to dash"
                               : `pad: ${pad.id}`, 16, H - 14);
+    ctx.textAlign = "right";
+    ctx.fillText(this.musicOn ? "M: music on" : "M: music off", W - 16, H - 14);
+    ctx.textAlign = "left";
   }
 
   private drawGameOver(ctx: Context2D): void {
@@ -346,6 +361,29 @@ function main(): void {
    * fatal -- a machine with no sound card should still play the game. */
   game.audio = createAudioContext(48000, 1024);
   if (game.audio === null) console.log("audio unavailable; running silent");
+
+  /* Music on its own gain bus, looping. Decoding is synchronous native work;
+   * a 2:38 track at 48kHz takes a moment, which is what a load screen is for. */
+  if (game.audio !== null) {
+    const track = game.audio.decodeAudioFile("examples/dodge/assets/music.mp3");
+    if (track === null) {
+      /* Not committed: example asset audio is gitignored, since the track is
+       * the user's own file. Drop any mp3/ogg/wav/flac in as music.mp3. */
+      console.log("no music at examples/dodge/assets/music.mp3; running without it");
+    } else {
+      console.log(`music: ${track.duration.toFixed(1)}s, ${track.numberOfChannels}ch @ ${track.sampleRate}Hz`);
+      const bus = game.audio.createGain();
+      bus.gain.value = MUSIC_VOLUME;
+      bus.connect(game.audio.destination);
+      const src = game.audio.createBufferSource();
+      src.buffer = track;
+      src.loop = true;
+      src.connect(bus);
+      src.start(0);
+      game.musicGain = bus;
+      game.musicSource = src;
+    }
+  }
 
   const opts = new GameOptions();
   opts.width = W;

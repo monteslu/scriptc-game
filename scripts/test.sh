@@ -28,7 +28,7 @@ run() {
 }
 
 echo "==> building test programs"
-for entry in test/conformance.ts test/readbackprobe.ts test/inputtest.ts test/padvisual.ts test/audiotest.ts; do
+for entry in test/conformance.ts test/readbackprobe.ts test/inputtest.ts test/padvisual.ts test/audiotest.ts test/decodetest.ts; do
   ./scripts/build.sh "$entry" >/dev/null || { echo "build failed: $entry"; exit 1; }
 done
 
@@ -40,6 +40,15 @@ run "pad visual"         env SDL_VIDEODRIVER=dummy ./build/padvisual test/out/pa
 # samples. test/beeptest.ts is the live-device check and is deliberately not
 # here -- it needs a sound card and makes noise.
 run "audio graph"        env SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./build/audiotest test/out
+
+# Decoder fixtures are DERIVED (one source, four formats) and not committed,
+# so regenerate them when ffmpeg is available and skip the suite when not.
+if command -v ffmpeg >/dev/null 2>&1; then
+  ./scripts/make-decode-fixtures.sh >/dev/null
+  run "audio decoders"     env SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./build/decodetest test/out
+else
+  echo; echo "==> audio decoders"; echo "    SKIP (ffmpeg not installed)"
+fi
 
 echo
 if [ "$fails" -eq 0 ]; then

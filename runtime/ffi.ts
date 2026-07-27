@@ -87,6 +87,15 @@ declare function sgAudioRegisterBuffer(data: Buffer, frames: number, channels: n
 declare function sgAudioSetNodeBuffer(node: number, bufferId: number): number;
 declare function sgAudioSetCurve(node: number, data: Buffer): number;
 declare function sgAudioRenderOffline(path: string, frames: number): number;
+declare function sgAudioGraphId(unused: number): number;
+declare function sgAudioNextBufferId(unused: number): number;
+/* Decoding happens NATIVELY and the samples never cross: a 3-minute track is
+ * ~90MB of float32. The file goes straight into the engine's buffer store and
+ * TS gets back an id plus metadata through the three getters. */
+declare function sgAudioDecodeFile(graphId: number, bufferId: number, path: string): number;
+declare function sgDecodeFrames(unused: number): number;
+declare function sgDecodeChannels(unused: number): number;
+declare function sgDecodeRate(unused: number): number;
 
 // input lifecycle
 declare function sgInputInit(unused: number): number;
@@ -228,6 +237,14 @@ export function audioRegisterBuffer(data: Buffer, frames: number, channels: numb
 export function audioSetNodeBuffer(node: number, bufferId: number): number { return sgAudioSetNodeBuffer(node, bufferId); }
 export function audioSetCurve(node: number, data: Buffer): number { return sgAudioSetCurve(node, data); }
 export function audioRenderOffline(path: string, frames: number): number { return sgAudioRenderOffline(path, frames); }
+export function audioGraphId(): number { return sgAudioGraphId(0); }
+export function audioNextBufferId(): number { return sgAudioNextBufferId(0); }
+export function audioDecodeFile(graphId: number, bufferId: number, path: string): number {
+  return sgAudioDecodeFile(graphId, bufferId, path);
+}
+export function decodeFrames(): number { return sgDecodeFrames(0); }
+export function decodeChannels(): number { return sgDecodeChannels(0); }
+export function decodeRate(): number { return sgDecodeRate(0); }
 
 export function inputInit(): number { return sgInputInit(0); }
 export function inputQuit(): void { sgInputQuit(0); }
