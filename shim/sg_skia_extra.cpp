@@ -280,6 +280,12 @@ extern "C" skiac_font_collection* sg_fonts(void) {
   return g_fonts;
 }
 
+/* Returns 0 on success, negative on failure.
+ *
+ * NOT the typeface id: that is a CONTENT HASH (FNV-1a over the file), so it
+ * uses the full uint32 range and reinterpreting it as int32 makes perfectly
+ * good ids look like errors. Nothing needs the id yet -- fonts are addressed
+ * by family name -- so it is deliberately not surfaced. */
 extern "C" int32_t sg_font_register(const uint8_t* path, size_t path_len) {
   skiac_font_collection* fc = sg_fonts();
   if (!fc) { sg_mail_set("font collection unavailable"); return SG_ESKIA; }
@@ -288,8 +294,8 @@ extern "C" int32_t sg_font_register(const uint8_t* path, size_t path_len) {
   memcpy(buf, path, path_len);
   buf[path_len] = 0;
   uint32_t id = skiac_font_collection_register_from_path(fc, buf, NULL);
-  if (id == 0) { sg_mail_set("font registration failed"); return SG_EDECODE; }
-  return (int32_t)id;
+  if (id == 0) { sg_mail_set("font registration failed (missing or unreadable)"); return SG_EDECODE; }
+  return SG_OK;
 }
 
 /* ---- text ----
@@ -361,10 +367,20 @@ static int32_t text_run(uint32_t hc, uint32_t hp, double x, double y,
     cv = (skiac_canvas*)sg_table_get(SG_T_CANVAS, hc);
     if (!cv) { sg_mail_set("canvas handle is stale or invalid"); return SG_EBADHANDLE; }
   }
+
+  /* The paint is NOT optional, even when only measuring: the implementation
+   * does `text_style.setForegroundColor(*PAINT_CAST)` unconditionally, so a
+   * NULL paint segfaults. Measuring therefore borrows a shim-owned scratch
+   * paint rather than passing NULL. */
   skiac_paint* pt = NULL;
   if (hp != 0) {
     pt = (skiac_paint*)sg_table_get(SG_T_PAINT, hp);
     if (!pt) { sg_mail_set("paint handle is stale or invalid"); return SG_EBADHANDLE; }
+  } else {
+    static skiac_paint* measure_paint;
+    if (!measure_paint) measure_paint = skiac_paint_create();
+    if (!measure_paint) { sg_mail_set("paint allocation failed"); return SG_ESKIA; }
+    pt = measure_paint;
   }
 
   memset(&g_metrics, 0, sizeof(g_metrics));
@@ -372,7 +388,10 @@ static int32_t text_run(uint32_t hc, uint32_t hp, double x, double y,
       g_text.text, g_text.text_len, g_text.max_width, (float)x, (float)y,
       (float)canvas_width, fc, g_text.size, g_text.weight,
       /* stretch */ 5, /* stretch_width */ 0.0f, g_text.slant, g_text.family,
-      g_text.baseline, g_text.align, /* direction LTR */ 0,
+      /* TextDirection is { kRtl = 0, kLtr = 1 }: LTR is ONE. Passing 0 here
+       * laid every string out right-to-left from MAX_LAYOUT_WIDTH and then
+       * compensated, which shifted text off the left edge. */
+      g_text.baseline, g_text.align, /* direction LTR */ 1,
       g_text.letter_spacing, /* word spacing */ 0.0f, pt, cv, &g_metrics,
       /* variations */ NULL, 0, /* kerning */ 0, /* variant_caps */ 0,
       /* lang */ "", /* text_rendering */ 0);
@@ -389,14 +408,19 @@ extern "C" int32_t sg_text_measure(double canvas_width) {
   return text_run(0, 0, 0.0, 0.0, canvas_width);
 }
 
+/* Index order matches TextMetrics in runtime/canvas/metrics.ts. skiac
+ * already reports ascent/descent in canvas orientation (positive above the
+ * baseline), so no sign flip is needed here or on the TS side. */
 extern "C" double sg_text_metric(uint32_t i) {
   switch (i) {
-    case 0: return g_metrics.width;
-    case 1: return g_metrics.ascent;
-    case 2: return g_metrics.descent;
-    case 3: return g_metrics.height;
-    case 4: return g_metrics.left;
-    case 5: return g_metrics.baseline;
+    case 0: return (double)g_metrics.width;
+    case 1: return (double)g_metrics.ascent;
+    case 2: return (double)g_metrics.descent;
+    case 3: return (double)g_metrics.font_ascent;
+    case 4: return (double)g_metrics.font_descent;
+    case 5: return (double)g_metrics.left;
+    case 6: return (double)g_metrics.right;
+    case 7: return (double)g_metrics.alphabetic_baseline;
     default: return 0.0;
   }
 }
@@ -412,16 +436,16 @@ extern "C" uint32_t sg_image_decode(const uint8_t* data, size_t len) {
   if (!data || len == 0) { sg_mail_set("empty image data"); return 0; }
   skiac_bitmap_info info;
   memset(&info, 0, sizeof(info));
+  /* The decoder allocates and returns a finished SkBitmap; there is nothing
+   * to re-wrap. It also premultiplies alpha on the way out, which is what
+   * keeps transparent PNG borders from bleeding black under bilinear
+   * sampling in drawImage. */
   skiac_bitmap_make_from_buffer(data, len, &info);
-  if (!info.pixels || info.width == 0 || info.height == 0) {
+  if (!info.bitmap || info.width <= 0 || info.height <= 0) {
     sg_mail_set("image decode failed (unsupported or corrupt)");
     return 0;
   }
-  skiac_bitmap* bm = skiac_bitmap_make_from_image_data(
-      info.pixels, info.width, info.height, info.row_bytes, info.size,
-      info.color_type, info.alpha_type);
-  if (!bm) { sg_mail_set("bitmap wrap failed"); return 0; }
-  return sg_table_alloc(SG_T_BITMAP, bm);
+  return sg_table_alloc(SG_T_BITMAP, info.bitmap);
 }
 
 /* drawImage's 9-argument form; the 3- and 5-arg forms are the same call with

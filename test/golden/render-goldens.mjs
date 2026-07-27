@@ -7,7 +7,7 @@
  *
  * Usage: node render-goldens.mjs [outDir]
  */
-import { createCanvas } from "@napi-rs/canvas";
+import { createCanvas, GlobalFonts, loadImage } from "@napi-rs/canvas";
 import { mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -32,7 +32,21 @@ if (expected !== actual) {
   process.exit(2);
 }
 
+/* Register the vendored test face explicitly. Text scenes must not resolve
+ * through the system font manager: that would make a diff mean "different
+ * machines" rather than "different renderer". */
+// All three faces: with only the regular one present, both sides synthesize
+// bold/italic and do it differently.
+for (const face of ["DejaVuSans.ttf", "DejaVuSans-Bold.ttf", "DejaVuSans-Oblique.ttf"]) {
+  if (!GlobalFonts.registerFromPath(join(root, "test/assets", face), "DejaVu Sans")) {
+    console.error(`failed to register test/assets/${face}`);
+    process.exit(2);
+  }
+}
+
 mkdirSync(outDir, { recursive: true });
+
+const testImage = await loadImage(join(root, "test/assets/test-image.png"));
 
 for (const name of SCENE_NAMES) {
   const canvas = createCanvas(SCENE_W, SCENE_H);
@@ -40,7 +54,7 @@ for (const name of SCENE_NAMES) {
   // Same opaque-white backdrop as the scriptc side.
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, SCENE_W, SCENE_H);
-  drawScene(name, ctx);
+  drawScene(name, ctx, testImage);
   writeFileSync(join(outDir, `${name}.png`), canvas.toBuffer("image/png"));
 }
 

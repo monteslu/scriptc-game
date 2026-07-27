@@ -12,6 +12,10 @@
 export const SCENE_W = 200;
 export const SCENE_H = 150;
 
+/* Registered explicitly by render-goldens.mjs on this side and by the
+ * harness on the other, so both resolve the SAME face. */
+export const TEST_FONT = "DejaVu Sans";
+
 export const SCENE_NAMES = [
   "fill-rect",
   "stroke-rect",
@@ -53,6 +57,19 @@ export const SCENE_NAMES = [
   "composite-xor",
   "composite-lighter",
   "color-formats",
+  "text-fill",
+  "text-stroke",
+  "text-align",
+  "text-baseline",
+  "text-weight-style",
+  "text-sizes",
+  "image-draw",
+  "image-scaled",
+  "image-subrect",
+  "image-alpha",
+  "image-smoothing-off",
+  "pattern-repeat",
+  "pattern-no-repeat",
 ];
 
 function compositePair(ctx, op) {
@@ -65,7 +82,7 @@ function compositePair(ctx, op) {
   ctx.globalCompositeOperation = "source-over";
 }
 
-export function drawScene(name, ctx) {
+export function drawScene(name, ctx, img) {
   if (name === "fill-rect") {
     ctx.fillStyle = "#3366cc";
     ctx.fillRect(20, 20, 60, 40);
@@ -335,6 +352,94 @@ export function drawScene(name, ctx) {
     ctx.fillRect(60, 60, 40, 40);
     ctx.fillStyle = "#00808080";
     ctx.fillRect(110, 60, 40, 40);
+  } else if (name === "text-fill") {
+    ctx.fillStyle = "#111111";
+    ctx.font = `24px ${TEST_FONT}`;
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    ctx.fillText("Hello 123", 15, 50);
+    ctx.fillStyle = "#aa2211";
+    ctx.font = `14px ${TEST_FONT}`;
+    ctx.fillText("smaller text", 15, 90);
+  } else if (name === "text-stroke") {
+    ctx.strokeStyle = "#113388";
+    ctx.lineWidth = 1;
+    ctx.font = `30px ${TEST_FONT}`;
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    ctx.strokeText("Outline", 15, 60);
+  } else if (name === "text-align") {
+    ctx.fillStyle = "#222222";
+    ctx.font = `16px ${TEST_FONT}`;
+    ctx.textBaseline = "alphabetic";
+    ctx.textAlign = "left";
+    ctx.fillText("left", 100, 40);
+    ctx.textAlign = "center";
+    ctx.fillText("center", 100, 75);
+    ctx.textAlign = "right";
+    ctx.fillText("right", 100, 110);
+    ctx.textAlign = "left";
+  } else if (name === "text-baseline") {
+    ctx.fillStyle = "#224422";
+    ctx.font = `15px ${TEST_FONT}`;
+    ctx.textAlign = "left";
+    ctx.textBaseline = "top";
+    ctx.fillText("top", 15, 40);
+    ctx.textBaseline = "middle";
+    ctx.fillText("middle", 70, 40);
+    ctx.textBaseline = "bottom";
+    ctx.fillText("bottom", 140, 40);
+    ctx.textBaseline = "alphabetic";
+    ctx.fillText("alphabetic", 15, 100);
+  } else if (name === "text-weight-style") {
+    ctx.fillStyle = "#331144";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    ctx.font = `18px ${TEST_FONT}`;
+    ctx.fillText("regular", 15, 40);
+    ctx.font = `bold 18px ${TEST_FONT}`;
+    ctx.fillText("bold", 15, 75);
+    ctx.font = `italic 18px ${TEST_FONT}`;
+    ctx.fillText("italic", 15, 110);
+  } else if (name === "text-sizes") {
+    ctx.fillStyle = "#442211";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    let size = 10;
+    let y = 25;
+    while (size <= 28) {
+      ctx.font = `${size}px ${TEST_FONT}`;
+      ctx.fillText("Agy", 15, y);
+      size += 6;
+      y += 32;
+    }
+  } else if (name === "image-draw") {
+    ctx.drawImage(img, 10, 10);
+    ctx.drawImage(img, 120, 70);
+  } else if (name === "image-scaled") {
+    ctx.drawImage(img, 10, 10, 128, 96);
+    ctx.drawImage(img, 150, 100, 32, 24);
+  } else if (name === "image-subrect") {
+    ctx.drawImage(img, 0, 0, 32, 32, 10, 10, 96, 96);
+    ctx.drawImage(img, 32, 0, 32, 32, 120, 10, 32, 32);
+  } else if (name === "image-alpha") {
+    ctx.fillStyle = "#404040";
+    ctx.fillRect(0, 0, 200, 150);
+    ctx.globalAlpha = 0.5;
+    ctx.drawImage(img, 20, 20);
+    ctx.globalAlpha = 1;
+    ctx.drawImage(img, 110, 60);
+  } else if (name === "image-smoothing-off") {
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(img, 0, 0, 8, 8, 10, 10, 80, 80);
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(img, 0, 0, 8, 8, 110, 10, 80, 80);
+  } else if (name === "pattern-repeat") {
+    ctx.fillStyle = ctx.createPattern(img, "repeat");
+    ctx.fillRect(10, 10, 180, 130);
+  } else if (name === "pattern-no-repeat") {
+    ctx.fillStyle = ctx.createPattern(img, "no-repeat");
+    ctx.fillRect(10, 10, 180, 130);
   } else {
     throw new Error(`unknown scene: ${name}`);
   }

@@ -9,6 +9,8 @@ export class TextMetrics {
   width = 0;
   actualBoundingBoxAscent = 0;
   actualBoundingBoxDescent = 0;
+  actualBoundingBoxLeft = 0;
+  actualBoundingBoxRight = 0;
   fontBoundingBoxAscent = 0;
   fontBoundingBoxDescent = 0;
 }

@@ -225,7 +225,7 @@ export class Context2D {
       ffi.paintSetShaderOpt(this.paint, s.fillShader);
       this.paintHasExtras = true;
       // With a shader the paint colour is ignored except for its alpha.
-      sk.paintSetAlpha(this.paint, scaleAlpha(255, s.globalAlpha));
+      sk.paintSetAlpha(this.paint, alphaByteTrunc(s.globalAlpha));
     }
   }
 
@@ -248,7 +248,7 @@ export class Context2D {
     } else {
       ffi.paintSetShaderOpt(this.paint, s.strokeShader);
       this.paintHasExtras = true;
-      sk.paintSetAlpha(this.paint, scaleAlpha(255, s.globalAlpha));
+      sk.paintSetAlpha(this.paint, alphaByteTrunc(s.globalAlpha));
     }
   }
 
@@ -524,13 +524,15 @@ export class Context2D {
     this.pushTextState(text);
     ffi.textMeasure(this.width);
     const m = new TextMetrics();
+    // skiac already reports these in canvas orientation (ascent positive
+    // above the baseline), so they pass through unchanged.
     m.width = ffi.textMetric(0);
-    // Skia reports ascent as a negative offset from the baseline; canvas
-    // reports the ascent as a positive distance above it.
-    m.actualBoundingBoxAscent = -ffi.textMetric(1);
+    m.actualBoundingBoxAscent = ffi.textMetric(1);
     m.actualBoundingBoxDescent = ffi.textMetric(2);
-    m.fontBoundingBoxAscent = m.actualBoundingBoxAscent;
-    m.fontBoundingBoxDescent = m.actualBoundingBoxDescent;
+    m.fontBoundingBoxAscent = ffi.textMetric(3);
+    m.fontBoundingBoxDescent = ffi.textMetric(4);
+    m.actualBoundingBoxLeft = ffi.textMetric(5);
+    m.actualBoundingBoxRight = ffi.textMetric(6);
     return m;
   }
 
@@ -551,7 +553,9 @@ export class Context2D {
                 dx: number, dy: number, dw: number, dh: number): void {
     this.applyCommon();
     sk.paintSetStyle(this.paint, STYLE_FILL);
-    sk.paintSetColor(this.paint, 255, 255, 255, scaleAlpha(255, this.style.globalAlpha));
+    // drawImage sets the paint alpha straight from globalAlpha: ONE rounding,
+    // not the colour path's two (there is no source colour to combine with).
+    sk.paintSetColor(this.paint, 255, 255, 255, alphaByteRound(this.style.globalAlpha));
     ffi.canvasDrawBitmap(this.canvas, img.handle, sx, sy, sw, sh, dx, dy, dw, dh,
                          this.style.smoothing ? 1 : 0,
                          this.style.smoothing ? 1 : 0, this.paint);
@@ -578,11 +582,41 @@ export class Context2D {
   }
 }
 
-function scaleAlpha(a: number, globalAlpha: number): number {
-  let v = a * globalAlpha;
+/* globalAlpha as a 0-255 byte. THE REFERENCE USES TWO DIFFERENT RULES, and
+ * conformance rejects either one applied everywhere:
+ *
+ *   - colour fills truncate (`... as u8` on the f32), so 0.25 -> 63
+ *   - drawImage rounds (`(global_alpha * 255.0).round()`), so 0.25 -> 64
+ *
+ * The difference is invisible at most alpha values (0.75 -> 191 both ways)
+ * and exactly one step at others, which is why only one scene at a time
+ * failed while the rule was unified. Keep them separate. */
+function alphaByteTrunc(globalAlpha: number): number {
+  let v = globalAlpha * 255;
   if (v < 0) v = 0;
   if (v > 255) v = 255;
-  return v | 0;
+  return Math.floor(v);
+}
+
+function alphaByteRound(globalAlpha: number): number {
+  let v = globalAlpha * 255;
+  if (v < 0) v = 0;
+  if (v > 255) v = 255;
+  return Math.round(v);
+}
+
+/* Combining a COLOUR's alpha with globalAlpha rounds TWICE, and the two
+ * roundings are not equivalent to one: the reference stores globalAlpha as a
+ * byte first, then computes `(a/255 * ga/255 * 255).round()`
+ * (skia/modules/canvaskit/color.js). Collapsing this to a single multiply is
+ * off by one on many values -- conformance caught it as a max-channel-delta
+ * of exactly 1 wherever globalAlpha was fractional. */
+function scaleAlpha(a: number, globalAlpha: number): number {
+  const ga = alphaByteTrunc(globalAlpha);
+  let unit = (a / 255) * (ga / 255);
+  if (unit < 0) unit = 0;
+  if (unit > 1) unit = 1;
+  return Math.round(unit * 255);
 }
 
 function alphaOf(c: Rgba, globalAlpha: number): number {

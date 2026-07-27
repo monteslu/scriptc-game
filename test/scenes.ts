@@ -17,9 +17,27 @@
  */
 import { Context2D } from "../runtime/canvas/context.js";
 import { createLinearGradient, createRadialGradient, createConicGradient } from "../runtime/canvas/gradient.js";
+import { createPattern } from "../runtime/canvas/pattern.js";
+import { GameImage } from "../runtime/canvas/image.js";
 
 export const SCENE_W = 200;
 export const SCENE_H = 150;
+
+/* Text scenes name this family explicitly and the harness registers the
+ * matching .ttf on both sides. Asking for "sans-serif" would resolve through
+ * each side's font manager against 250-odd system fonts, so a diff would
+ * mean "different machines" rather than "different renderer". */
+export const TEST_FONT = "DejaVu Sans";
+
+/* All three faces are registered, not just the regular one: with only the
+ * regular face present both sides SYNTHESIZE bold and italic, and they
+ * synthesize differently (caught by conformance -- "bold" was the single
+ * failing scene while regular and italic matched byte for byte). */
+export const TEST_FONT_PATHS: string[] = [
+  "test/assets/DejaVuSans.ttf",
+  "test/assets/DejaVuSans-Bold.ttf",
+  "test/assets/DejaVuSans-Oblique.ttf",
+];
 
 /** Scene names, in order. Must match test/golden/scenes.mjs exactly. */
 export const SCENE_NAMES: string[] = [
@@ -63,10 +81,26 @@ export const SCENE_NAMES: string[] = [
   "composite-xor",
   "composite-lighter",
   "color-formats",
+  "text-fill",
+  "text-stroke",
+  "text-align",
+  "text-baseline",
+  "text-weight-style",
+  "text-sizes",
+  "image-draw",
+  "image-scaled",
+  "image-subrect",
+  "image-alpha",
+  "image-smoothing-off",
+  "pattern-repeat",
+  "pattern-no-repeat",
 ];
 
-/** Draws scene `i` with our Context2D. */
-export function drawScene(name: string, ctx: Context2D): void {
+/** The 64x64 procedural asset; see test/assets/make-test-image.mjs. */
+export const TEST_IMAGE_PATH = "test/assets/test-image.png";
+
+/** Draws scene `name` with our Context2D. `img` is the shared test asset. */
+export function drawScene(name: string, ctx: Context2D, img: GameImage): void {
   if (name === "fill-rect") {
     ctx.fillStyle = "#3366cc";
     ctx.fillRect(20, 20, 60, 40);
@@ -343,6 +377,100 @@ export function drawScene(name: string, ctx: Context2D): void {
     ctx.fillRect(60, 60, 40, 40);
     ctx.fillStyle = "#00808080";
     ctx.fillRect(110, 60, 40, 40);
+  } else if (name === "text-fill") {
+    ctx.fillStyle = "#111111";
+    ctx.font = `24px ${TEST_FONT}`;
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    ctx.fillText("Hello 123", 15, 50);
+    ctx.fillStyle = "#aa2211";
+    ctx.font = `14px ${TEST_FONT}`;
+    ctx.fillText("smaller text", 15, 90);
+  } else if (name === "text-stroke") {
+    ctx.strokeStyle = "#113388";
+    ctx.lineWidth = 1;
+    ctx.font = `30px ${TEST_FONT}`;
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    ctx.strokeText("Outline", 15, 60);
+  } else if (name === "text-align") {
+    ctx.fillStyle = "#222222";
+    ctx.font = `16px ${TEST_FONT}`;
+    ctx.textBaseline = "alphabetic";
+    ctx.textAlign = "left";
+    ctx.fillText("left", 100, 40);
+    ctx.textAlign = "center";
+    ctx.fillText("center", 100, 75);
+    ctx.textAlign = "right";
+    ctx.fillText("right", 100, 110);
+    ctx.textAlign = "left";
+  } else if (name === "text-baseline") {
+    ctx.fillStyle = "#224422";
+    ctx.font = `15px ${TEST_FONT}`;
+    ctx.textAlign = "left";
+    ctx.textBaseline = "top";
+    ctx.fillText("top", 15, 40);
+    ctx.textBaseline = "middle";
+    ctx.fillText("middle", 70, 40);
+    ctx.textBaseline = "bottom";
+    ctx.fillText("bottom", 140, 40);
+    ctx.textBaseline = "alphabetic";
+    ctx.fillText("alphabetic", 15, 100);
+  } else if (name === "text-weight-style") {
+    ctx.fillStyle = "#331144";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    ctx.font = `18px ${TEST_FONT}`;
+    ctx.fillText("regular", 15, 40);
+    ctx.font = `bold 18px ${TEST_FONT}`;
+    ctx.fillText("bold", 15, 75);
+    ctx.font = `italic 18px ${TEST_FONT}`;
+    ctx.fillText("italic", 15, 110);
+  } else if (name === "text-sizes") {
+    ctx.fillStyle = "#442211";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    let size = 10;
+    let y = 25;
+    while (size <= 28) {
+      ctx.font = `${size}px ${TEST_FONT}`;
+      ctx.fillText("Agy", 15, y);
+      size += 6;
+      y += 32;
+    }
+  } else if (name === "image-draw") {
+    // Natural size, twice, at integer positions.
+    ctx.drawImage(img, 10, 10);
+    ctx.drawImage(img, 120, 70);
+  } else if (name === "image-scaled") {
+    ctx.drawImageScaled(img, 10, 10, 128, 96);
+    ctx.drawImageScaled(img, 150, 100, 32, 24);
+  } else if (name === "image-subrect") {
+    // Top-left red quadrant, blown up; then the green quadrant at 1:1.
+    ctx.drawImageRect(img, 0, 0, 32, 32, 10, 10, 96, 96);
+    ctx.drawImageRect(img, 32, 0, 32, 32, 120, 10, 32, 32);
+  } else if (name === "image-alpha") {
+    ctx.fillStyle = "#404040";
+    ctx.fillRect(0, 0, 200, 150);
+    ctx.globalAlpha = 0.5;
+    ctx.drawImage(img, 20, 20);
+    ctx.globalAlpha = 1;
+    ctx.drawImage(img, 110, 60);
+  } else if (name === "image-smoothing-off") {
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImageRect(img, 0, 0, 8, 8, 10, 10, 80, 80);
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImageRect(img, 0, 0, 8, 8, 110, 10, 80, 80);
+  } else if (name === "pattern-repeat") {
+    const p = createPattern(img, "repeat");
+    ctx.setFillPattern(p);
+    ctx.fillRect(10, 10, 180, 130);
+    p.dispose();
+  } else if (name === "pattern-no-repeat") {
+    const p = createPattern(img, "no-repeat");
+    ctx.setFillPattern(p);
+    ctx.fillRect(10, 10, 180, 130);
+    p.dispose();
   }
 }
 

@@ -69,32 +69,29 @@ typedef struct {
   float x, y;
 } skiac_point;
 
+/* skiac_bitmap_info: the decoder hands back a READY bitmap plus its size, not
+ * a raw pixel span. (Assuming a pixels/row_bytes/color_type shape made every
+ * decode fail.) */
 typedef struct {
-  uint8_t* pixels;
-  size_t   width;
-  size_t   height;
-  size_t   row_bytes;
-  size_t   size;
-  int      color_type;
-  int      alpha_type;
+  skiac_bitmap* bitmap;
+  int           width;
+  int           height;
+  bool          is_canvas;
 } skiac_bitmap_info;
 
-/* skiac_line_metrics as declared in skia_c.hpp. Only the fields the text
- * wrapper reads are relied upon, but the LAYOUT must match exactly, so the
- * whole struct is mirrored. */
+/* skiac_line_metrics as declared in skia_c.hpp: EIGHT FLOATS, nothing else.
+ * (Not skparagraph's own LineMetrics, which is a much larger struct with
+ * size_t indices -- assuming that shape silently zeroed every measurement.)
+ * The layout must match exactly, so the whole struct is mirrored. */
 typedef struct {
-  size_t start_index;
-  size_t end_index;
-  size_t end_excluding_whitespaces;
-  size_t end_including_newline;
-  size_t line_number;
-  bool   hard_break;
-  double ascent;
-  double descent;
-  double height;
-  double width;
-  double left;
-  double baseline;
+  float ascent;
+  float descent;
+  float left;
+  float right;
+  float width;
+  float font_ascent;
+  float font_descent;
+  float alphabetic_baseline;
 } skiac_line_metrics;
 
 typedef struct {
