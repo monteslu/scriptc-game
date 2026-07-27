@@ -18,3 +18,9 @@ spike/*
 spike/ffi/*
 !spike/ffi/*.c
 !spike/ffi/*.json
+
+# Conformance output and goldens: both are REGENERATED (build/conformance and
+# test/golden/render-goldens.mjs), and committing PNGs would turn every Skia
+# bump into a binary-diff review.
+test/out/
+test/golden/png/

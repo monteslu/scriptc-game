@@ -1,5 +1,8 @@
-/* Core shim: window, present, timing, events, error mailbox, and the
- * flattened skiac wrappers Phase 1 needs.
+/* Core shim: window, present, timing, events, error mailbox.
+ *
+ * The flattened skiac wrappers live in sg_skia_gen.cpp (generated) and
+ * sg_skia_extra.cpp (hand-written); the shared skiac declarations and status
+ * codes are in sg_skia.h.
  *
  * Boundary rules (docs/FFI-SHIM.md):
  *   - no pointer ever crosses; native objects are u32 handles
@@ -13,80 +16,24 @@
 #include <string.h>
 
 #include "sg_tables.h"
+#include "sg_skia.h"
 
-/* ---- skiac C ABI (subset used here; see vendor include/skia_c.hpp) ---- */
-typedef struct skiac_surface skiac_surface;
-typedef struct skiac_canvas skiac_canvas;
-typedef struct skiac_paint skiac_paint;
-typedef struct skiac_path skiac_path;
-
-/* skiac_surface_data as declared in skia_c.hpp: pixel span + dimensions. */
-typedef struct {
-  uint8_t* ptr;
-  size_t   size;
-} skiac_surface_data;
-
-/* skiac_sk_data: an owned encoded blob plus the handle used to free it. */
-typedef struct skiac_data skiac_data;
-typedef struct {
-  const uint8_t* ptr;
-  size_t         size;
-  skiac_data*    data;
-} skiac_sk_data;
-
-extern "C" {
-skiac_surface* skiac_surface_create_rgba_premultiplied(int w, int h, uint8_t cs);
-void  skiac_surface_png_data(skiac_surface*, skiac_sk_data*);
-void  skiac_sk_data_destroy(skiac_data*);
-void  skiac_surface_destroy(skiac_surface*);
-skiac_canvas* skiac_surface_get_canvas(skiac_surface*);
-int   skiac_surface_get_width(skiac_surface*);
-int   skiac_surface_get_height(skiac_surface*);
-void  skiac_surface_read_pixels(skiac_surface*, skiac_surface_data*);
-
-void  skiac_canvas_clear(skiac_canvas*, uint32_t color);
-void  skiac_canvas_save(skiac_canvas*);
-void  skiac_canvas_restore(skiac_canvas*);
-void  skiac_canvas_translate(skiac_canvas*, float dx, float dy);
-void  skiac_canvas_rotate(skiac_canvas*, float degrees);
-void  skiac_canvas_scale(skiac_canvas*, float sx, float sy);
-void  skiac_canvas_draw_rect(skiac_canvas*, float x, float y, float w, float h,
-                             skiac_paint*);
-void  skiac_canvas_draw_path(skiac_canvas*, skiac_path*, skiac_paint*);
-
-skiac_paint* skiac_paint_create(void);
-void  skiac_paint_destroy(skiac_paint*);
-void  skiac_paint_set_style(skiac_paint*, int style);
-void  skiac_paint_set_color(skiac_paint*, uint8_t r, uint8_t g, uint8_t b, uint8_t a);
-void  skiac_paint_set_alpha(skiac_paint*, uint8_t a);
-void  skiac_paint_set_anti_alias(skiac_paint*, bool aa);
-void  skiac_paint_set_stroke_width(skiac_paint*, float w);
-
-skiac_path* skiac_path_create(void);
-void  skiac_path_destroy(skiac_path*);
-void  skiac_path_move_to(skiac_path*, float x, float y);
-void  skiac_path_line_to(skiac_path*, float x, float y);
-void  skiac_path_close(skiac_path*);
-}
-
-/* ---- status codes (mirrored in runtime/status.ts) ---- */
-#define SG_OK            0
-#define SG_EBADHANDLE   -1
-#define SG_ESDL         -2
-#define SG_ESKIA        -3
-#define SG_ERANGE       -6
-
-/* ---- string mailbox ---- */
+/* ---- string mailbox ----
+ * Shared with the other shim translation units through sg_skia.h, hence the
+ * external linkage: every producing call overwrites it and TS drains it
+ * immediately after a non-zero status. */
 static char     g_mail[4096];
 static uint32_t g_mail_len;
 
-static void mail_set(const char* s) {
+extern "C" void sg_mail_set(const char* s) {
   size_t n = strlen(s);
   if (n >= sizeof(g_mail)) n = sizeof(g_mail) - 1;
   memcpy(g_mail, s, n);
   g_mail[n] = 0;
   g_mail_len = (uint32_t)n;
 }
+
+#define mail_set sg_mail_set
 
 extern "C" uint32_t sg_str_len(int32_t unused) { (void)unused; return g_mail_len; }
 extern "C" uint32_t sg_str_byte(uint32_t i) {
@@ -230,8 +177,16 @@ extern "C" int32_t sg_present(int32_t unused) {
  * per-pixel FFI, no bytes return, which format 1 cannot express anyway) and
  * it is what the conformance harness and every screenshot use. `path` is a
  * borrowed span, valid only for this call, so it is copied before use. */
-extern "C" int32_t sg_surface_save_png(const uint8_t* path, size_t path_len) {
-  if (!g_surface) { mail_set("save_png before init"); return SG_ESDL; }
+extern "C" int32_t sg_surface_save_png(uint32_t hs, const uint8_t* path,
+                                       size_t path_len) {
+  /* Handle 0 means the screen surface, so the common case needs no handle
+   * plumbing; the conformance harness passes a real offscreen handle. */
+  skiac_surface* surf = g_surface;
+  if (hs != 0) {
+    surf = (skiac_surface*)sg_table_get(SG_T_SURFACE, hs);
+    if (!surf) { mail_set("surface handle is stale or invalid"); return SG_EBADHANDLE; }
+  }
+  if (!surf) { mail_set("save_png before init"); return SG_ESDL; }
   char buf[1024];
   if (path_len >= sizeof(buf)) { mail_set("png path too long"); return SG_ERANGE; }
   memcpy(buf, path, path_len);
@@ -239,7 +194,7 @@ extern "C" int32_t sg_surface_save_png(const uint8_t* path, size_t path_len) {
 
   skiac_sk_data png;
   png.ptr = NULL; png.size = 0; png.data = NULL;
-  skiac_surface_png_data(g_surface, &png);
+  skiac_surface_png_data(surf, &png);
   if (!png.ptr || png.size == 0) { mail_set("png encode failed"); return SG_ESKIA; }
 
   FILE* f = fopen(buf, "wb");
@@ -327,149 +282,9 @@ extern "C" int32_t sg_evt_i32(uint32_t field) {
   return field < 8 ? g_ev[field] : 0;
 }
 
-/* ---- skiac wrappers (handle-flattened) ---- */
-extern "C" int32_t sg_canvas_clear(uint32_t hc, uint32_t color) {
-  skiac_canvas* c = (skiac_canvas*)sg_table_get(SG_T_CANVAS, hc);
-  if (!c) { mail_set("canvas handle is stale or invalid"); return SG_EBADHANDLE; }
-  skiac_canvas_clear(c, color);
-  return SG_OK;
-}
-
-extern "C" int32_t sg_canvas_save(uint32_t hc) {
-  skiac_canvas* c = (skiac_canvas*)sg_table_get(SG_T_CANVAS, hc);
-  if (!c) return SG_EBADHANDLE;
-  skiac_canvas_save(c);
-  return SG_OK;
-}
-
-extern "C" int32_t sg_canvas_restore(uint32_t hc) {
-  skiac_canvas* c = (skiac_canvas*)sg_table_get(SG_T_CANVAS, hc);
-  if (!c) return SG_EBADHANDLE;
-  skiac_canvas_restore(c);
-  return SG_OK;
-}
-
-extern "C" int32_t sg_canvas_translate(uint32_t hc, double dx, double dy) {
-  skiac_canvas* c = (skiac_canvas*)sg_table_get(SG_T_CANVAS, hc);
-  if (!c) return SG_EBADHANDLE;
-  skiac_canvas_translate(c, (float)dx, (float)dy);
-  return SG_OK;
-}
-
-extern "C" int32_t sg_canvas_rotate(uint32_t hc, double degrees) {
-  skiac_canvas* c = (skiac_canvas*)sg_table_get(SG_T_CANVAS, hc);
-  if (!c) return SG_EBADHANDLE;
-  skiac_canvas_rotate(c, (float)degrees);
-  return SG_OK;
-}
-
-extern "C" int32_t sg_canvas_scale(uint32_t hc, double sx, double sy) {
-  skiac_canvas* c = (skiac_canvas*)sg_table_get(SG_T_CANVAS, hc);
-  if (!c) return SG_EBADHANDLE;
-  skiac_canvas_scale(c, (float)sx, (float)sy);
-  return SG_OK;
-}
-
-extern "C" int32_t sg_canvas_draw_rect(uint32_t hc, double x, double y,
-                                       double w, double h, uint32_t hp) {
-  skiac_canvas* c = (skiac_canvas*)sg_table_get(SG_T_CANVAS, hc);
-  skiac_paint*  p = (skiac_paint*)sg_table_get(SG_T_PAINT, hp);
-  if (!c || !p) { mail_set("draw_rect: stale canvas or paint handle"); return SG_EBADHANDLE; }
-  skiac_canvas_draw_rect(c, (float)x, (float)y, (float)w, (float)h, p);
-  return SG_OK;
-}
-
-extern "C" int32_t sg_canvas_draw_path(uint32_t hc, uint32_t hpath, uint32_t hp) {
-  skiac_canvas* c = (skiac_canvas*)sg_table_get(SG_T_CANVAS, hc);
-  skiac_path* pa  = (skiac_path*)sg_table_get(SG_T_PATH, hpath);
-  skiac_paint* p  = (skiac_paint*)sg_table_get(SG_T_PAINT, hp);
-  if (!c || !pa || !p) { mail_set("draw_path: stale handle"); return SG_EBADHANDLE; }
-  skiac_canvas_draw_path(c, pa, p);
-  return SG_OK;
-}
-
-/* paint */
-extern "C" uint32_t sg_paint_create(int32_t unused) {
-  (void)unused;
-  skiac_paint* p = skiac_paint_create();
-  if (!p) return 0;
-  skiac_paint_set_anti_alias(p, true);
-  return sg_table_alloc(SG_T_PAINT, p);
-}
-
-extern "C" void sg_paint_destroy(uint32_t hp) {
-  skiac_paint* p = (skiac_paint*)sg_table_take(SG_T_PAINT, hp);
-  if (p) skiac_paint_destroy(p);
-}
-
-extern "C" int32_t sg_paint_set_color(uint32_t hp, uint32_t r, uint32_t g,
-                                      uint32_t b, uint32_t a) {
-  skiac_paint* p = (skiac_paint*)sg_table_get(SG_T_PAINT, hp);
-  if (!p) return SG_EBADHANDLE;
-  skiac_paint_set_color(p, (uint8_t)r, (uint8_t)g, (uint8_t)b, (uint8_t)a);
-  return SG_OK;
-}
-
-extern "C" int32_t sg_paint_set_style(uint32_t hp, uint32_t style) {
-  skiac_paint* p = (skiac_paint*)sg_table_get(SG_T_PAINT, hp);
-  if (!p) return SG_EBADHANDLE;
-  skiac_paint_set_style(p, (int)style); /* 0 fill, 1 stroke */
-  return SG_OK;
-}
-
-extern "C" int32_t sg_paint_set_stroke_width(uint32_t hp, double w) {
-  skiac_paint* p = (skiac_paint*)sg_table_get(SG_T_PAINT, hp);
-  if (!p) return SG_EBADHANDLE;
-  skiac_paint_set_stroke_width(p, (float)w);
-  return SG_OK;
-}
-
-extern "C" int32_t sg_paint_set_alpha(uint32_t hp, uint32_t a) {
-  skiac_paint* p = (skiac_paint*)sg_table_get(SG_T_PAINT, hp);
-  if (!p) return SG_EBADHANDLE;
-  skiac_paint_set_alpha(p, (uint8_t)a);
-  return SG_OK;
-}
-
-extern "C" int32_t sg_paint_set_anti_alias(uint32_t hp, uint8_t aa) {
-  skiac_paint* p = (skiac_paint*)sg_table_get(SG_T_PAINT, hp);
-  if (!p) return SG_EBADHANDLE;
-  skiac_paint_set_anti_alias(p, aa != 0);
-  return SG_OK;
-}
-
-/* path */
-extern "C" uint32_t sg_path_create(int32_t unused) {
-  (void)unused;
-  skiac_path* p = skiac_path_create();
-  return p ? sg_table_alloc(SG_T_PATH, p) : 0;
-}
-
-extern "C" void sg_path_destroy(uint32_t hp) {
-  skiac_path* p = (skiac_path*)sg_table_take(SG_T_PATH, hp);
-  if (p) skiac_path_destroy(p);
-}
-
-extern "C" int32_t sg_path_move_to(uint32_t hp, double x, double y) {
-  skiac_path* p = (skiac_path*)sg_table_get(SG_T_PATH, hp);
-  if (!p) return SG_EBADHANDLE;
-  skiac_path_move_to(p, (float)x, (float)y);
-  return SG_OK;
-}
-
-extern "C" int32_t sg_path_line_to(uint32_t hp, double x, double y) {
-  skiac_path* p = (skiac_path*)sg_table_get(SG_T_PATH, hp);
-  if (!p) return SG_EBADHANDLE;
-  skiac_path_line_to(p, (float)x, (float)y);
-  return SG_OK;
-}
-
-extern "C" int32_t sg_path_close(uint32_t hp) {
-  skiac_path* p = (skiac_path*)sg_table_get(SG_T_PATH, hp);
-  if (!p) return SG_EBADHANDLE;
-  skiac_path_close(p);
-  return SG_OK;
-}
+/* The handle-flattened skiac wrappers that used to live here are now
+ * generated into sg_skia_gen.cpp from skia_c.hpp, with the shapes the
+ * generator refuses to guess hand-written in sg_skia_extra.cpp. */
 
 /* ---- debug / leak counters ---- */
 extern "C" uint32_t sg_debug_live(uint32_t domain) {

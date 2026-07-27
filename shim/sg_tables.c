@@ -81,6 +81,18 @@ void* sg_table_take(sg_domain d, uint32_t handle) {
   return ptr;
 }
 
+/* Repoints an existing handle at a new object WITHOUT bumping the
+ * generation, so handles already held TS-side stay valid. Used when a native
+ * object must be replaced wholesale (a paint reset: skiac has no "clear the
+ * shader" call, so a pristine SkPaint is swapped in behind the same handle).
+ * The caller owns the old pointer that is returned by sg_table_get first. */
+int sg_table_replace(sg_domain d, uint32_t handle, void* ptr) {
+  sg_slot* s = slot_of(d, handle);
+  if (!s || ptr == NULL) return 0;
+  s->ptr = ptr;
+  return 1;
+}
+
 uint32_t sg_table_live(sg_domain d) {
   return d < SG_T_COUNT ? g_tables[d].live : 0;
 }

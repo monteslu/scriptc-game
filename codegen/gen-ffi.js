@@ -53,9 +53,13 @@ function collapseSpans(cParams) {
 
 // Parse the C signatures the shim exports.
 const shimSrc = [
-  readFileSync(join(root, "shim/sg_core.cpp"), "utf8"),
-  readFileSync(join(root, "shim/sg_tables.c"), "utf8"),
-].join("\n");
+  "shim/sg_core.cpp",
+  "shim/sg_tables.c",
+  "shim/sg_skia_gen.cpp",
+  "shim/sg_skia_extra.cpp",
+]
+  .map((f) => readFileSync(join(root, f), "utf8"))
+  .join("\n");
 
 const cSigs = new Map();
 const sigRe = /extern\s+"C"\s+([A-Za-z_][A-Za-z0-9_ ]*?)\s+(sg_[a-z0-9_]+)\s*\(([^)]*)\)/g;
@@ -71,8 +75,12 @@ for (let m; (m = sigRe.exec(shimSrc)); ) {
   cSigs.set(symbol, { ret: ret.trim(), params: collapseSpans(paramList) });
 }
 
-// Parse the TS declarations.
-const tsSrc = readFileSync(join(root, "runtime/ffi.ts"), "utf8");
+/* Parse the TS declarations. They live in two files: the hand-written core
+ * plus the generated skia block. The manifest is all-or-nothing, so BOTH
+ * must be scanned or the build fails on whichever set is missing. */
+const tsSrc = ["runtime/ffi.ts", "runtime/canvas/skia-ffi.ts"]
+  .map((f) => readFileSync(join(root, f), "utf8"))
+  .join("\n");
 const declRe = /^declare function (sg[A-Za-z0-9]*)\s*\(([^)]*)\)\s*:\s*([A-Za-z]+);/gm;
 
 const functions = [];
