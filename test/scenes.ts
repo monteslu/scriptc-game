@@ -18,7 +18,7 @@
 import { Context2D } from "../web/canvas/context.js";
 import { createLinearGradient, createRadialGradient, createConicGradient } from "../web/canvas/gradient.js";
 import { createPattern } from "../web/canvas/pattern.js";
-import { GameImage } from "../web/canvas/image.js";
+import { Image } from "../web/canvas/image.js";
 import { createCanvas } from "../web/canvas/offscreen.js";
 
 export const SCENE_W = 200;
@@ -103,7 +103,7 @@ export const SCENE_NAMES: string[] = [
 export const TEST_IMAGE_PATH = "test/assets/test-image.png";
 
 /** Draws scene `name` with our Context2D. `img` is the shared test asset. */
-export function drawScene(name: string, ctx: Context2D, img: GameImage): void {
+export function drawScene(name: string, ctx: Context2D, img: Image): void {
   if (name === "fill-rect") {
     ctx.fillStyle = "#3366cc";
     ctx.fillRect(20, 20, 60, 40);

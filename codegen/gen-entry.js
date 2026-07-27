@@ -120,7 +120,7 @@ if (brc !== 0) process.exit(brc);
 
 import "${gameSpec}";
 
-process.exit(run(opts));
+run(opts).then((rc) => { process.exit(rc); });
 `;
 
 writeFileSync(outFile, text);

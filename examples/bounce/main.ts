@@ -3,14 +3,20 @@
  * Browser code. The only non-web line is the import that supplies the
  * globals; in a page an import-map or bundler alias satisfies it and the
  * rest of the file is unchanged.
+ *
+ * This one uses the OPTIONAL engine loop (engine/loop.js) to show what it
+ * buys: physics runs at a fixed 60Hz whatever the display refresh is, and
+ * render interpolates by `alpha` so motion stays smooth between steps.
+ * `examples/minimal` skips the engine entirely and drives rAF itself.
  */
 import {
-  window, document, requestAnimationFrame, KeyboardEvent,
+  window, document, KeyboardEvent,
 } from "../../web/globals.js";
+import { createGameLoop, LoopOptions } from "../../engine/loop.js";
 
 const SIZE = 48;
 
-window.onLoad(() => {
+window.addEventListener("load", () => {
   const canvas = document.getElementById("game-canvas");
   const ctx = canvas.getContext("2d")!;
   const W = canvas.width;
@@ -21,7 +27,11 @@ window.onLoad(() => {
   let vx = 0.22;
   let vy = 0.17;
   let spin = 0;
-  let last = 0;
+
+  // Previous-step state, so render can interpolate instead of snapping.
+  let prevX = x;
+  let prevY = y;
+  let prevSpin = spin;
 
   /* Held-key state from keydown/keyup, the way a browser game does it: the
    * platform has no "is this key down" query, so the game keeps the set. */
@@ -31,12 +41,12 @@ window.onLoad(() => {
 
   function down(code: string): boolean { return held.get(code) === true; }
 
-  function frame(time: number): void {
-    // The first rAF has no previous timestamp -- true in a browser too --
-    // so seed it rather than computing a delta against zero.
-    let dt = last === 0 ? 16 : time - last;
-    last = time;
-    if (dt > 250) dt = 250;
+  /* Fixed-rate simulation: `dt` is the SAME every call, so the square
+   * behaves identically on a 60Hz and a 144Hz display. */
+  function update(dt: number): void {
+    prevX = x;
+    prevY = y;
+    prevSpin = spin;
 
     if (down("ArrowLeft")) vx -= 0.002 * dt;
     if (down("ArrowRight")) vx += 0.002 * dt;
@@ -50,6 +60,14 @@ window.onLoad(() => {
     if (x > W - SIZE) { x = W - SIZE; vx = -vx; }
     if (y > H - SIZE) { y = H - SIZE; vy = -vy; }
     spin += dt * 0.002;
+  }
+
+  /* `alpha` is how far this frame falls between the last two updates, so
+   * drawing at the interpolated position removes step-boundary stutter. */
+  function render(alpha: number): void {
+    const drawX = prevX + (x - prevX) * alpha;
+    const drawY = prevY + (y - prevY) * alpha;
+    const drawSpin = prevSpin + (spin - prevSpin) * alpha;
 
     ctx.clear("#101820");
 
@@ -64,8 +82,8 @@ window.onLoad(() => {
     }
 
     ctx.save();
-    ctx.translate(x + SIZE / 2, y + SIZE / 2);
-    ctx.rotate(spin);
+    ctx.translate(drawX + SIZE / 2, drawY + SIZE / 2);
+    ctx.rotate(drawSpin);
     ctx.fillStyle = "#ffb703";
     ctx.fillRect(-SIZE / 2, -SIZE / 2, SIZE, SIZE);
     ctx.strokeStyle = "#fb8500";
@@ -75,9 +93,10 @@ window.onLoad(() => {
 
     ctx.fillStyle = "rgba(255,255,255,0.85)";
     ctx.fillRect(8, 8, 120, 6);
-
-    requestAnimationFrame(frame);
   }
 
-  requestAnimationFrame(frame);
+  const loop = new LoopOptions();
+  loop.update = update;
+  loop.render = render;
+  createGameLoop(loop);
 });

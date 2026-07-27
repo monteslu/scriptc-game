@@ -4,20 +4,35 @@
 
 ```
 +---------------------------------------------------------------+
-|  game code (TS, scriptc static dialect)                       |
+|  game code -- BROWSER CODE (TS, scriptc static dialect)       |
+|     document.getElementById  requestAnimationFrame            |
+|     new Image()  fetch  AudioContext  navigator.getGamepads() |
 |     examples/*, user projects                                 |
 +---------------------------------------------------------------+
-|  runtime/ (TS, compiled statically by scriptc)                |
+|  engine/ (OPTIONAL -- a game must be able to skip it)         |
+|     sfx (oscillator effects), future helpers                  |
+|     imports web/ like a game does; never reaches into host/   |
++---------------------------------------------------------------+
+|  web/ (the browser surface -- all a game is allowed to see)   |
+|     globals: document, window, navigator, rAF, Image, fetch,  |
+|              FontFace, AudioContext, Math, Gamepad types      |
 |     canvas/Context2D   audio/AudioContext+nodes               |
-|     input/keyboard+mouse+Gamepad   loop/run+timing            |
-|     assets/loader   color/css-parse   handles (u32 wrappers)  |
+|     input/Gamepad+keycodes   canvas/color+font parsing        |
++---------------------------------------------------------------+
+|  host/ (machinery; games never import this)                   |
+|     runtime: the frame loop that drives rAF                   |
+|     resources: game dir = web root, URL resolution            |
+|     tasks: the one queue behind every async shim              |
+|     ffi + skia-ffi: declarations   mailbox   math-over-libm   |
 +---------------------------------------------------------------+
 |  declare function sg_* / wa_* (FFI declarations, no bodies)   |
 |  ffi/*.ffi.json manifests (ABI authority)                     |
 +======================= C ABI boundary ========================+
-|  shim/ (C, one static archive: libsgshim.a)                   |
+|  shim/ (C/C++, merged into one archive: libsggfx.a)           |
 |     handle tables    event slot + getters   string mailbox    |
-|     sg_skia_gen.c (generated)   sg_sdl.c   sg_audio.c         |
+|     sg_skia_gen.cpp (generated)  sg_skia_extra.cpp            |
+|     sg_core.cpp (window/present)  sg_input.cpp                |
+|     sg_audio.cpp (SDL device + SPSC ring)  sg_audio_decode    |
 +---------------------------------------------------------------+
 |  vendored static archives (per target, fetched, pinned)       |
 |     skia/*.a (build-libcanvas)   libSDL2.a   libwebaudio.a    |
@@ -73,28 +88,39 @@ must not reintroduce that class of bug through integer handles.
 
 ## Frame loop and timing
 
+The HOST owns the loop and drives the game's `requestAnimationFrame`
+callbacks, exactly as a browser drives a page. A game never sees this code.
+
 ```
-sg.run(opts) [TS]:
-  sg_init(w, h, flags)
-  last = sg_ticks()                      // SDL performance counter, ms as f64
-  acc = 0
-  while (running):
-    while ((t = sg_poll_event()) != 0):  // drain event queue
-      dispatch(t, scalar getters...)     // updates input state maps
-    now = sg_ticks(); acc += now - last; last = now
-    while (acc >= STEP):                 // fixed-timestep update
-      opts.update(STEP); acc -= STEP
-    opts.draw(ctx, acc / STEP)           // interpolation factor
-    sg_present()                         // blocks on vsync
+host/runtime.ts:
+
+  boot(opts):                            // BEFORE the game module evaluates
+    sg_init(w, h, flags)                 // window exists, so `document` works
+    sg_input_init()
+    __initScreen()                       // build the canvas + document
+
+  run(opts):
+    __fireLoad()                         // 'load' fires once, before frame 1
+    for (;;):
+      input.pump()                       // drain SDL events + refresh pads
+      __dispatchKeyEvents(); __dispatchMouseEvents()
+      __drainTasks()                     // img.onload, fetch/promise settlement
+      __runFrameCallbacks(sg_ticks())    // the game's rAF callbacks
+      sg_present()                       // blocks on vsync: THIS is the pacer
 ```
 
-- No requestAnimationFrame emulation. The loop is explicit and owned by the
-  framework (the jsgame-libretro lesson: the frame contract must be the
-  platform's, not the browser's).
-- `sg_present()` with PRESENTVSYNC is the pacing source. A
-  `sg_set_vsync(0)` escape hatch exists for benchmarks.
-- scriptc async/fibers are allowed in game code (e.g. load screens) but the
-  frame loop itself is synchronous; FFI calls are synchronous by contract.
+- **requestAnimationFrame is real**, and it is a QUEUE, not a single slot:
+  two independent systems registering in one frame both run, as in a browser.
+  (jsgamelauncher keeps one pending callback and silently drops the second.)
+- `sg_present()` with PRESENTVSYNC is the pacing source; `SG_NO_VSYNC` opts
+  out for benchmarks.
+- **Async is drained before the frame that observes it.** Everything
+  async-shaped settles on a later turn through one queue (`host/tasks.ts`),
+  so `img.onload` fires even when attached after `src`, and a flag it sets is
+  not visible on the next line. Genuinely synchronous web APIs stay sync.
+- Fixed-timestep integration, interpolation and delta clamping are the
+  GAME's business now, not the platform's, which is how browser games work.
+  `examples/dodge` shows the pattern.
 
 ## Present path
 
@@ -221,9 +247,13 @@ Architectural notes that differ from the canvas tier:
 
 - No WebGL/3D tier in v0.1; it arrives as Phases 8/9 per the section
   above rather than growing ad hoc.
-- No DOM, no requestAnimationFrame, no window object pretense. The API is
-  web-shaped where the shape helps (Context2D, AudioNode graph, Gamepad),
-  and honest platform API everywhere else (`sg.run`, `sg.assets`).
+- No DOM tree. `document.getElementById` returns THE canvas whatever id it is
+  given, and `querySelectorAll` has no meaning here; there is nothing to
+  query. This is the same shortcut jsgamelauncher takes, for the same reason.
+- No invented API where a spec exists. If the web defines it, we match it
+  (and cite the spec at the site); if the web does NOT define it -- the
+  Standard Gamepad names no `BTN_A` constant, we do not invent a global for
+  it either. Conveniences live in `engine/`, which is optional.
 - No quickjs island, ever, in this project. If a build needs `--dynamic`,
   something is wrong; CI builds without it and treats its presence as an
   error.

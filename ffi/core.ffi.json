@@ -812,6 +812,22 @@
       "returns": "u32"
     },
     {
+      "name": "sgSetFullscreen",
+      "symbol": "sg_set_fullscreen",
+      "params": [
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgIsFullscreen",
+      "symbol": "sg_is_fullscreen",
+      "params": [
+        "i32"
+      ],
+      "returns": "u32"
+    },
+    {
       "name": "sgPresent",
       "symbol": "sg_present",
       "params": [

@@ -6,12 +6,12 @@
  * Run it by hand when audio hardware changes.
  */
 import * as ffi from "../host/ffi.js";
-import { createAudioContext, closeAudio } from "../web/audio/context.js";
+import { AudioContext, closeAudio } from "../web/audio/context.js";
 import { blip, pickup, hit, dash, gameOver } from "../engine/sfx.js";
 
 function main(): void {
-  const ctx = createAudioContext(48000, 1024);
-  if (ctx === null) { console.log("FATAL: no audio device"); process.exit(1); }
+  const ctx = new AudioContext();
+  if (ctx.state !== "running") { console.log("FATAL: no audio device"); process.exit(1); }
   console.log(`device open: ${ctx.sampleRate}Hz, ${ffi.audioChannels()}ch`);
 
   const t0 = ctx.currentTime;

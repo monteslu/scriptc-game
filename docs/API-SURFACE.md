@@ -4,13 +4,21 @@ Three support tiers, marked throughout:
 
 - **S** shipped in v1, conformance-tested
 - **D** deferred (post-v1, path known)
-- **X** intentionally out (with reason); "web-shaped, not web-compatible"
+- **X** intentionally out, with a reason
 
-The public module (working name `sg`) exposes: `sg.run`, `sg.screen`,
-`sg.input`, `sg.audio`, `sg.assets`, `sg.fonts`, plus the `Context2D`
-object handed to `draw()`.
+The goal is web COMPATIBILITY, not merely web shape: where a spec exists we
+match it, and a deviation is a bug with a comment at the site explaining why
+it has not been fixed yet. Where the web defines nothing (the Standard
+Gamepad names no button constants), we do not invent a global either --
+conveniences belong in `engine/`, which is optional.
 
-The 3D surface (WebGL2RenderingContext via `sg.gl()`, and the
+Games import from **`web/globals.js`** and get the browser surface:
+`document`, `window`, `navigator`, `requestAnimationFrame`, `Image`, `fetch`,
+`FontFace`, `AudioContext` (and every Web Audio node type), `Math`, and the
+Gamepad interfaces. See [WRITING-GAMES.md](WRITING-GAMES.md) for the
+author-facing guide.
+
+The 3D surface (`canvas.getContext("webgl2")`, and the
 threeTS-lite library) is specified separately in
 [WEBGL-AND-3D.md](WEBGL-AND-3D.md); it is D-tier by schedule (Phases 8/9,
 post-v0.1), S-tier by design commitment.
@@ -19,24 +27,29 @@ post-v0.1), S-tier by design commitment.
 
 ## Entry point
 
+There is no framework entry point to call. A game registers a `load` handler
+and drives itself with `requestAnimationFrame`, exactly as in a page:
+
 ```ts
-sg.run({
-  width: 640, height: 360,        // logical size; window scales integer-ly
-  title: "my game",
-  scale: 0,                        // 0 = auto integer scale to display
-  vsync: true,
-  fixedStep: 1000 / 60,            // ms; update() cadence
-  update(dtMs: number): void,      // fixed-step simulation
-  draw(ctx: Context2D, alpha: number): void,  // alpha = interpolation 0..1
-  onQuit(): boolean,               // return false to veto (S)
+window.addEventListener("load", () => {
+  const canvas = document.getElementById("game-canvas");
+  const ctx = canvas.getContext("2d");
+
+  function frame(time: number): void {
+    // update + draw
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
 });
-sg.quit(): void
-sg.screen.width / height / scale  // logical + actual
 ```
 
-The framework owns the loop. There is no requestAnimationFrame. (X: rAF,
-setTimeout-driven frames; reason: no callbacks across FFI and no reason to
-pretend, the loop contract is explicit.)
+Canvas size and title come from the game's `game.json`, which is the native
+equivalent of what a page expresses in HTML. The HOST owns the outer loop and
+drives rAF callbacks (`host/runtime.ts`); nothing about it appears in game
+source.
+
+`requestAnimationFrame` is a proper QUEUE: two independent systems
+registering in the same frame both run, as a browser does.
 
 ---
 
@@ -89,14 +102,17 @@ isPointInPath isPointInStroke`
   line-metrics call).
 - `font` shorthand parsing, `textAlign textBaseline`: S.
 - `direction letterSpacing wordSpacing`: D.
-- `sg.fonts.register(path, family?)`: S (typeface load; replaces
-  GlobalFonts).
+- `new FontFace(family, "url(file.ttf)").load()` + `document.fonts.add(face)`:
+  S. The spec path; the promise settles on a later turn.
 
 ### Images
 
-- `sg.assets.image(path) -> GameImage` (decode via Skia codecs: png, jpg,
-  webp, gif-first-frame): S.
-- `drawImage(img, dx, dy)` / 5-arg / 9-arg: S. Draws of another canvas
+- `new Image()` with `src` / `onload` / `onerror` / `decode()` (Skia codecs:
+  png, jpg, webp, bmp, gif-first-frame): S. `Image` IS the drawable, as in a
+  browser; there is no separate bitmap type on the game-facing surface.
+- `drawImage(img, dx, dy)` / `drawImageScaled` (5-arg) / `drawImageRect`
+  (9-arg): S. The dialect has no overloads, so each arity is its own method
+  name. Draws of another canvas
   (offscreen surface): S via `sg.createCanvas(w, h)` returning a
   Context2D whose backing surface can be a drawImage source
   (skiac_canvas_draw_surface exists).
@@ -104,7 +120,7 @@ isPointInPath isPointInStroke`
   direction; skiac_canvas_put_image_data exists).
 - `getImageData`: D-tier ergonomics, S-tier existence: implemented via the
   per-pixel readback protocol, documented as debug-speed. Real use cases
-  get `sg.screenshot(path)` (native-side PNG write): S.
+  get a host-side PNG write, driven by `SG_SHOT`: S.
 - `imageSmoothingEnabled/Quality`: S.
 
 ### X (out, with reasons)
@@ -125,7 +141,9 @@ preserved (`current_sample` counters render-side).
 
 ### S in v1
 
-- `AudioContext` (one, created by `sg.run`; `sampleRate`, `currentTime`,
+- `AudioContext` (`new AudioContext()`; the device is a process-wide
+  singleton, so a second construction returns the same context). `sampleRate`,
+  `currentTime`,
   `destination`, `state`, `suspend/resume`).
 - Nodes (all 15 engine types): Gain, Oscillator, BufferSource, BiquadFilter,
   Delay, StereoPanner, Panner, DynamicsCompressor, WaveShaper, Convolver,
@@ -184,16 +202,22 @@ preserved (`current_sample` counters render-side).
 
 ---
 
-## Assets (`sg.assets`)
+## Assets (web APIs, web root)
 
-- `sg.assets.image(path)`, `sg.assets.audio(path)`, `sg.assets.json(path)`,
-  `sg.assets.text(path)`, `sg.assets.bytes(path)`: S, synchronous (native
-  decode is fast; load screens can chunk over frames if needed).
-- Paths resolve relative to the binary's directory (`process.argv[1]`
-  dirname per scriptc's documented argv shape), overridable with
-  `SG_ASSETS_DIR` env var: S.
-- `comptime()` baking helpers for metadata: S (documented pattern, not
-  framework magic).
+The game directory is the web root, with `public/` preferred when present, the
+same rule jsgamelauncher uses. There is no `sg.assets`: assets load through the
+same APIs a page uses.
+
+- `new Image()` + `src`, `fetch(url)` -> `arrayBuffer` / `text` / `json`,
+  `FontFace.load()`, `decodeAudioData`: S.
+- Relative paths resolve against the web root; `http://`, `https://`, `//`,
+  `data:` and `blob:` are treated as real URLs. This build has no network
+  stack, so those report `ok === false` rather than reading a file: S.
+- The web root is baked at build time and overridable with `SG_GAME_DIR`: S.
+- Failures warn to the terminal naming the resolved path, since an unhandled
+  rejection is otherwise silent: S.
+- `engine/assets.ts` adds an optional batching loader with progress and a
+  `failed()` list. Optional: a game can skip it entirely.
 - Single-file pak mode: D.
 
 ---

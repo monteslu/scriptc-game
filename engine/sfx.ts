@@ -31,6 +31,23 @@ export function blip(ctx: AudioContext, freq: number, durationSec: number,
   osc.stop(t + durationSec);
 }
 
+/** A short downward pew: projectiles. */
+export function shoot(ctx: AudioContext, volume: number): void {
+  const t = ctx.currentTime;
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = "sawtooth";
+  // A fast downward sweep is what reads as "launch" rather than "blip".
+  osc.frequency.setValueAtTime(880, t);
+  osc.frequency.exponentialRampToValueAtTime(180, t + 0.09);
+  gain.gain.setValueAtTime(volume, t);
+  gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.1);
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.start(t);
+  osc.stop(t + 0.11);
+}
+
 /** A rising two-tone chirp: pickups, rewards. */
 export function pickup(ctx: AudioContext, volume: number): void {
   const t = ctx.currentTime;

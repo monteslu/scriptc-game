@@ -16,7 +16,7 @@ import * as ffi from "../host/ffi.js";
 import * as sk from "../host/skia-ffi.js";
 import { readFileSync } from "node:fs";
 import { Context2D } from "../web/canvas/context.js";
-import { decodeImage } from "../web/canvas/image.js";
+import { imageFromBytes } from "../web/canvas/image.js";
 import { createCanvas, getImageData } from "../web/canvas/offscreen.js";
 
 let failures = 0;
@@ -47,9 +47,9 @@ function main(): void {
   for (let i = 0; i < supported.length; i++) {
     const fmt = supported[i];
     const path = `${dir}/test.${fmt}`;
-    const img = decodeImage(readFileSync(path));
+    const img = imageFromBytes(readFileSync(path));
 
-    if (!img.valid) {
+    if (!img.complete) {
       console.log(`FAIL: ${fmt} did not decode`);
       failures += 1;
       checks += 1;
@@ -95,12 +95,12 @@ function main(): void {
 
   for (let i = 0; i < unsupported.length; i++) {
     const fmt = unsupported[i];
-    const img = decodeImage(readFileSync(`${dir}/test.${fmt}`));
-    console.log(`${fmt}: ${img.valid ? "decoded (codec was ADDED upstream)" : "not supported by this Skia build"}`);
-    check(!img.valid,
+    const img = imageFromBytes(readFileSync(`${dir}/test.${fmt}`));
+    console.log(`${fmt}: ${img.complete ? "decoded (codec was ADDED upstream)" : "not supported by this Skia build"}`);
+    check(!img.complete,
           `${fmt} now decodes -- this Skia build gained a codec, update the ` +
           "supported list in test/imagetest.ts and docs/API-SURFACE.md");
-    if (img.valid) img.dispose();
+    if (img.complete) img.dispose();
   }
 
   console.log(`\nimage test: ${checks - failures}/${checks} checks passed`);

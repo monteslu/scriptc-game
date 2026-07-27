@@ -210,8 +210,8 @@ animation clips, IBL/environment, post-processing chain, GLTFLoader at
 runtime, LOD, morph targets.
 
 **X:** WebGPU/WebGL1 paths, NodeMaterial graphs, the editor ecosystem,
-DOM-coupled anything (TextureLoader-from-URL etc.: assets come via
-`sg.assets`).
+DOM-coupled anything (TextureLoader-from-URL etc.: assets come via `fetch`
+and `new Image()`, resolved against the web root).
 
 ### Dialect adaptations (the design deltas from three)
 

@@ -13,7 +13,7 @@
  */
 import * as ffi from "../host/ffi.js";
 import { readFileSync } from "node:fs";
-import { decodeImage } from "../web/canvas/image.js";
+import { imageFromBytes } from "../web/canvas/image.js";
 import { createCanvas, getImageData } from "../web/canvas/offscreen.js";
 
 let failures = 0;
@@ -32,8 +32,8 @@ function main(): void {
   const args = process.argv;
   const outDir = args.length > 2 ? args[2] : "test/out";
 
-  const strip = decodeImage(readFileSync("examples/dodge/public/coin.png"));
-  if (!strip.valid) { console.log("FATAL: coin.png did not decode"); process.exit(2); }
+  const strip = imageFromBytes(readFileSync("examples/dodge/public/coin.png"));
+  if (!strip.complete) { console.log("FATAL: coin.png did not decode"); process.exit(2); }
   check(strip.width === CELL * FRAMES, `strip is ${strip.width}px, want ${CELL * FRAMES}`);
   check(strip.height === CELL, `strip is ${strip.height}px tall, want ${CELL}`);
 

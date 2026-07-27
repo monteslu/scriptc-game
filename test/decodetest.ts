@@ -14,7 +14,7 @@
  */
 import * as ffi from "../host/ffi.js";
 import {
-  createOfflineAudioContext, closeAudio, AudioContext, AudioBuffer,
+  OfflineAudioContext, closeAudio, AudioContext, AudioBuffer,
 } from "../web/audio/context.js";
 
 let failures = 0;
@@ -75,7 +75,7 @@ function main(): void {
   const args = process.argv;
   const dir = args.length > 2 ? args[2] : "test/out";
 
-  const ctx = createOfflineAudioContext(RATE, 2);
+  const ctx = OfflineAudioContext.create(2, 0, RATE);
   if (ctx === null) { console.log("FATAL: offline context"); process.exit(2); }
 
   const formats: string[] = ["mp3", "wav", "ogg", "flac"];

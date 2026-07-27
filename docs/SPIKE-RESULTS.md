@@ -1,9 +1,15 @@
-# Phase 0 Spike Results
+# Engineering notes
 
-Run 2026-07-27. Host: Linux x86_64, Node v24.16.0, clang 21.1.8,
-scriptc 0.0.17 (latest; FFI landed in 0.0.15, so it is two releases old).
+What was measured, what broke, and why things are built the way they are.
+Kept because most of it is the kind of thing that is expensive to rediscover:
+upstream quirks, spec details that bite, and numbers that shaped the design.
 
-**Verdict: Phase 0 gate PASSED.** All kill criteria cleared, with one real
+Host for all measurements: Linux x86_64, Node v24.16.0, clang 21.1.8,
+scriptc 0.0.17 (FFI landed in 0.0.15, so it is two releases old).
+
+## Toolchain validation
+
+**Verdict: everything needed to proceed works.** One real
 upstream compiler bug found that has a cheap, mechanical workaround.
 
 ## Results
@@ -119,7 +125,7 @@ the rule becomes optional (harmless either way).
 
 ## Gate decision
 
-Proceed to Phase 1. No kill criterion was met; the FFI overhead result
+Proceed. Nothing blocking was found; the FFI overhead result
 strengthens the design, and the one bug found is contained by a codegen
 rule.
 
@@ -195,7 +201,7 @@ uninterpretable across machines.
 
 ## Added ahead of plan
 
-- **`sg_surface_save_png(path)`** (PLAN 2.4). Pulled forward because a
+- **`sg_surface_save_png(path)`**, ahead of schedule. Pulled forward because a
   render pipeline that is never looked at is not verified: the first
   screenshot is what proved pixels were real. Keeps readback native (no
   per-pixel FFI, and format 1 cannot return bytes anyway). The conformance
@@ -543,3 +549,119 @@ library. Effects are scheduled against `ctx.currentTime` rather than fired
 immediately, because the audio thread renders AHEAD: "now" on the main thread
 is already past for the mixer, and scheduling is what preserves an envelope's
 shape.
+
+---
+
+# The web-shape reorganization
+
+Run 2026-07-27. The tree was reorganized so that **a game is browser code**,
+not code that happens to use web-shaped names. Three commits: the tier split,
+the browser surface, and the example port.
+
+## What was wrong
+
+Games had to `extends Game`, `import { readFileSync } from "node:fs"`, read
+`process.env`, call `ffi.fontRegister(...)`, and import `sqrt` from a runtime
+module. None of that runs in a browser, so "portable web game" was a claim
+rather than a property.
+
+## The tiers
+
+| | |
+| --- | --- |
+| `web/` | browser API shims; the only thing a game imports |
+| `engine/` | optional conveniences; a game must be able to skip it |
+| `host/` | FFI wall, frame loop, resources, tasks; games never touch it |
+
+`runtime/canvas/enums.ts` was two files in a trenchcoat: Skia enum ints are
+ABI (now `host/skia-enums.ts`), the CSS composite-name map is a WEB SPEC table
+(now `web/canvas/enums.ts`).
+
+## Bare globals are NOT possible today
+
+The plan called for game code with no import at all. Six approaches were tried
+against scriptc 0.0.17; every one is blocked:
+
+| attempt | result |
+| --- | --- |
+| bind in entry, `import "./game.ts"` | `SC0001` -- module-scoped, does not cross |
+| tsconfig listing a `globals.d.ts` | ignored; only *options* are adopted |
+| `/// <reference>` + `declare global { var document }` | name resolves, then `SC1030` TDZ |
+| same with `const` | resolves, but a declaration has no backing value |
+| `(globalThis as any).document = x` | `SC1090: assignment to non-variables` |
+| `declare function __sgDocument()` in the entry | `SC0001` again |
+
+The cause is structural: scriptc is a static AOT compiler with **no dynamic
+global table**. jsgamelauncher installs globals by mutating `globalThis`
+inside a `vm` context; there is no equivalent here.
+
+Interesting detail found in the compiler: `surfaces.ts:1490` ALREADY
+canonicalizes `globalThis.process` -> `process`, handles `global.x` aliasing,
+and tracks alias bindings. The blocker is one predicate, `isStdlibSymbol()`,
+which gates on provenance -- the symbol must come from scriptc's own ambient
+d.ts. So this is "let a project extend an allowlist that exists", not "add
+globals to a static compiler". Tracked as a scriptc feature branch.
+
+**What ships instead:** one import line per source file, satisfied in a
+browser by an import-map entry or bundler alias. Everything after it is
+literal browser code.
+
+## Ordering: two bugs, both found by running it
+
+1. **`document` must be built on FIRST TOUCH.** ES imports are hoisted, so a
+   generated entry cannot open a window "before" importing the game -- the
+   game's module body always runs first. Lazy init makes order stop mattering.
+2. **That still segfaulted**, because the game called `ctx.clear()` during
+   module evaluation, before `ffi.init()`. The browser already solves this:
+   scripts register, the page fires `load`. So `boot()` is split from `run()`,
+   and `window.addEventListener("load", ...)` is the documented place for
+   setup that needs the canvas -- which is what a page does anyway.
+
+## Spec corrections
+
+Three things were shipped wrong and caught by reading the actual specs
+(w3c.github.io/gamepad, webaudio.github.io/web-audio-api, and `lib.dom.d.ts`,
+which is generated from the IDL and settles what is genuinely a window
+global):
+
+- **`BTN_A` / `AXIS_LEFT_X` were exported as "web globals". They are not.**
+  The Gamepad spec names NO constants; the Standard Mapping is defined by
+  index, and browser code writes `pad.buttons[0].pressed`. Removed. The
+  examples declare their own labels, exactly as simple-jsgame-starter does in
+  its own utils.js.
+- **`Gamepad` was missing `timestamp`** (required by the IDL) and carried an
+  invented `hasRumble`. A page discovers haptics through the actuator, so that
+  is now `vibrationActuator.effects` (a spec attribute listing playable
+  effect types). An earlier `canPlay()` helper here was NOT a web API and
+  has been removed.
+- **`loadAudio(ctx, url)` was invented.** The spec path is
+  `fetch -> arrayBuffer -> decodeAudioData`, so `decodeAudioData(bytes)` is
+  implemented properly. It needed a new shim entry point that sniffs the
+  format from the header, because bytes carry no filename -- which is also
+  what a browser does.
+
+`lib.dom.d.ts` also settled that EVERY Web Audio interface is a window global
+and that node types are constructible (`new GainNode(ctx, options)`) alongside
+the `ctx.createGain()` factories. All are re-exported from globals now.
+
+**Process note:** those three were shipped on assumption and corrected on
+review. Checking the spec took minutes and found three real bugs; the lesson
+is to read the IDL before claiming something is a web API.
+
+## Other findings
+
+- **`Math` can be shadowed.** `import { SgMath as Math }` compiles, so
+  `web/math.ts` carries the whole surface (fenced transcendentals cross to
+  libm, native ones pass through) and a game writes `Math.sqrt` normally.
+  `Math.random` is deliberately absent rather than faked with a fixed seed.
+- **Circular imports are a hard error** (`SC1016`). The task queue had to move
+  to `host/tasks.ts`: web modules that defer (image load, audio decode) need
+  it, and globals imports THEM.
+- **A function stored in a field cannot be called as `this.onload()`**
+  (`SC1090` reads it as a method call). Copy to a local first.
+- **`Map` iteration is fenced** (`SC2004`), so held-key sets keep a parallel
+  array -- which is what a browser game does anyway, since the platform has no
+  "list the held keys" query.
+- **The game dir must be baked in at build time.** Deriving it from `argv[1]`
+  points at `build/`, where the binary lives, not at the assets. `SG_GAME_DIR`
+  overrides for a shipped bundle.

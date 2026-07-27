@@ -35,11 +35,11 @@
  */
 import * as ffi from "../host/ffi.js";
 import { Context2D } from "./canvas/context.js";
-import { GameImage, decodeImage } from "./canvas/image.js";
+import { Image } from "./canvas/image.js";
 import { Input } from "./input/input.js";
 import { Gamepad, gamepads as sparseGamepads } from "./input/gamepad.js";
 import { SgMath } from "./math.js";
-import { resolveUrl, readBinary, fileExists, isExternalUrl } from "../host/resources.js";
+import { resolveUrl, readBinary, fileExists, isExternalUrl, warnAsset } from "../host/resources.js";
 import { queueTask } from "../host/tasks.js";
 
 /* ---- the task queue ----
@@ -136,6 +136,26 @@ export class HTMLCanvasElement {
 
   /** Style is accepted and ignored, as in a launcher with no CSS. */
   style = new CanvasStyle();
+
+  /* Element.requestFullscreen(): Promise<void>.
+   *
+   * Only the screen canvas can go fullscreen; an offscreen surface has no
+   * window, so the promise rejects as the spec says it should for an element
+   * that cannot be presented. Resolution is deferred like every other async
+   * shim here. */
+  requestFullscreen(): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      if (this.surface !== 0) {
+        queueTask(() => { reject(new Error("only the screen canvas can be fullscreened")); });
+        return;
+      }
+      const rc = ffi.setFullscreen(1);
+      queueTask(() => {
+        if (rc === 0) { __setFullscreenElement(this); resolve(); }
+        else reject(new Error("fullscreen request failed"));
+      });
+    });
+  }
 }
 
 export class CanvasStyle {
@@ -171,7 +191,7 @@ export class SgDocument {
 
   set title(value: string) { /* window title: not wired yet */ }
 
-  addEventListener(type: string, listener: (e: KeyboardEvent) => void): void {
+  addEventListener(type: string, listener: (e: UIEvent) => void): void {
     addEventListener(type, listener);
   }
 }
@@ -182,8 +202,26 @@ export class SgDocument {
  * uses `addEventListener("keydown", ...)` works. `code` is the W3C name
  * (keycodes.ts maps SDL scancodes, which are the same USB HID basis).
  */
-export class KeyboardEvent {
+/* KeyboardEvent and MouseEvent are ONE class here, and this is the single
+ * place the tree knowingly departs from the IDL. The reason is a dialect
+ * limit, not a preference:
+ *
+ *   - `addEventListener` has ONE signature (no overloads: SC2001 on function
+ *     unions), so its listener parameter has ONE type.
+ *   - Function parameters are contravariant, so a `(e: MouseEvent) => void`
+ *     handler is REJECTED by a `(e: UIEvent) => void` parameter. Verified:
+ *     "Argument of type '(e: KeyboardEvent) => void' is not assignable".
+ *   - Downcasting a base to a subclass inside the handler is also blocked
+ *     (SC1090), so the DOM's own `(e: Event)` + narrow model is unavailable.
+ *
+ * So one record carries both field sets. Every call site stays spec-correct
+ * (`e.code` in a keydown handler, `e.clientX` in a mousemove handler) and
+ * runs unchanged in a browser, because browser handlers only read the
+ * fields that apply to the event they registered for. What a game CANNOT
+ * do here is rely on `e.clientX` being absent from a KeyboardEvent. */
+export class UIEvent {
   type = "";
+  /* KeyboardEvent */
   code = "";
   key = "";
   repeat = false;
@@ -191,31 +229,51 @@ export class KeyboardEvent {
   ctrlKey = false;
   shiftKey = false;
   metaKey = false;
+  /* MouseEvent */
+  clientX = 0;
+  clientY = 0;
+  offsetX = 0;
+  offsetY = 0;
+  button = 0;
+  buttons = 0;
   /** No default action exists to prevent; present so handlers can call it. */
   preventDefault(): void {}
   stopPropagation(): void {}
 }
 
-let keyDownListeners: ((e: KeyboardEvent) => void)[] = [];
-let keyUpListeners: ((e: KeyboardEvent) => void)[] = [];
+let keyDownListeners: ((e: UIEvent) => void)[] = [];
+let keyUpListeners: ((e: UIEvent) => void)[] = [];
+let mouseMoveListeners: ((e: UIEvent) => void)[] = [];
+let mouseDownListeners: ((e: UIEvent) => void)[] = [];
+let mouseUpListeners: ((e: UIEvent) => void)[] = [];
 
-export function addEventListener(type: string, listener: (e: KeyboardEvent) => void): void {
+/* THE event entry point, with the spec's own signature. Keyboard, mouse,
+ * load and fullscreenchange all register through this one function, exactly
+ * as in a page.
+ *
+ * A handler declared with no parameters is accepted (TypeScript allows
+ * fewer parameters than the signature), so `addEventListener("load", () =>
+ * {...})` needs no separate no-arg entry point. */
+export function addEventListener(type: string, listener: (e: UIEvent) => void): void {
   if (type === "keydown") keyDownListeners.push(listener);
   else if (type === "keyup") keyUpListeners.push(listener);
+  else if (type === "mousemove") mouseMoveListeners.push(listener);
+  else if (type === "mousedown") mouseDownListeners.push(listener);
+  else if (type === "mouseup") mouseUpListeners.push(listener);
+  else if (type === "load" || type === "DOMContentLoaded") addLoadListener(listener);
+  else if (type === "fullscreenchange") fullscreenListeners.push(listener);
 }
 
-/** `window.addEventListener("load", fn)` -- the no-argument event shape. */
-export function addEventListenerNoArg(type: string, listener: () => void): void {
-  if (type === "load" || type === "DOMContentLoaded") addLoadListener(listener);
-}
-
-export function removeEventListener(type: string, listener: (e: KeyboardEvent) => void): void {
+export function removeEventListener(type: string, listener: (e: UIEvent) => void): void {
   // Identity comparison on function values is not available in the dialect,
   // so removal clears the whole list for that type. Documented rather than
   // silently wrong: games that need finer control should gate inside the
   // handler.
   if (type === "keydown") keyDownListeners = [];
   else if (type === "keyup") keyUpListeners = [];
+  else if (type === "mousemove") mouseMoveListeners = [];
+  else if (type === "mousedown") mouseDownListeners = [];
+  else if (type === "mouseup") mouseUpListeners = [];
 }
 
 /** Host-only: turns this frame's key edges into listener callbacks. */
@@ -223,7 +281,7 @@ export function __dispatchKeyEvents(input: Input): void {
   if (keyDownListeners.length === 0 && keyUpListeners.length === 0) return;
   const pressed = input.pressedKeys();
   for (let i = 0; i < pressed.length; i++) {
-    const e = new KeyboardEvent();
+    const e = new UIEvent();
     e.type = "keydown";
     e.code = pressed[i];
     e.key = pressed[i];
@@ -231,7 +289,7 @@ export function __dispatchKeyEvents(input: Input): void {
   }
   const released = input.releasedKeys();
   for (let i = 0; i < released.length; i++) {
-    const e = new KeyboardEvent();
+    const e = new UIEvent();
     e.type = "keyup";
     e.code = released[i];
     e.key = released[i];
@@ -239,38 +297,17 @@ export function __dispatchKeyEvents(input: Input): void {
   }
 }
 
-/* ---- mouse events ----
- *
- * `button` follows the WEB numbering (0 left, 1 middle, 2 right), not SDL's
- * 1-based scheme, so handlers written for a page compare correctly.
+/* KeyboardEvent / MouseEvent: the spec names games actually write. Both are
+ * UIEvent (see the note there). `button` follows the WEB numbering
+ * (0 left, 1 middle, 2 right), not SDL's 1-based scheme.
  */
-export class MouseEvent {
-  type = "";
-  clientX = 0;
-  clientY = 0;
-  offsetX = 0;
-  offsetY = 0;
-  button = 0;
-  buttons = 0;
-  preventDefault(): void {}
-  stopPropagation(): void {}
-}
-
-let mouseMoveListeners: ((e: MouseEvent) => void)[] = [];
-let mouseDownListeners: ((e: MouseEvent) => void)[] = [];
-let mouseUpListeners: ((e: MouseEvent) => void)[] = [];
-
-export function addMouseListener(type: string, listener: (e: MouseEvent) => void): void {
-  if (type === "mousemove") mouseMoveListeners.push(listener);
-  else if (type === "mousedown") mouseDownListeners.push(listener);
-  else if (type === "mouseup") mouseUpListeners.push(listener);
-}
+export { UIEvent as KeyboardEvent, UIEvent as MouseEvent };
 
 /** Host-only: turns this frame's mouse state into listener callbacks. */
 export function __dispatchMouseEvents(input: Input, lastX: number, lastY: number): void {
   if (input.mouseX !== lastX || input.mouseY !== lastY) {
     for (let i = 0; i < mouseMoveListeners.length; i++) {
-      const e = new MouseEvent();
+      const e = new UIEvent();
       e.type = "mousemove";
       e.clientX = input.mouseX; e.offsetX = input.mouseX;
       e.clientY = input.mouseY; e.offsetY = input.mouseY;
@@ -282,7 +319,7 @@ export function __dispatchMouseEvents(input: Input, lastX: number, lastY: number
   for (let sdlBtn = 1; sdlBtn <= 3; sdlBtn++) {
     if (input.mouseWasPressed(sdlBtn)) {
       for (let i = 0; i < mouseDownListeners.length; i++) {
-        const e = new MouseEvent();
+        const e = new UIEvent();
         e.type = "mousedown";
         e.button = sdlBtn === 1 ? 0 : (sdlBtn === 2 ? 1 : 2);
         e.clientX = input.mouseX; e.offsetX = input.mouseX;
@@ -292,7 +329,7 @@ export function __dispatchMouseEvents(input: Input, lastX: number, lastY: number
     }
     if (input.mouseWasReleased(sdlBtn)) {
       for (let i = 0; i < mouseUpListeners.length; i++) {
-        const e = new MouseEvent();
+        const e = new UIEvent();
         e.type = "mouseup";
         e.button = sdlBtn === 1 ? 0 : (sdlBtn === 2 ? 1 : 2);
         e.clientX = input.mouseX; e.offsetX = input.mouseX;
@@ -315,69 +352,11 @@ export const navigator = new SgNavigator();
 
 /* ---- Image ----
  *
- * `new Image()`, set `.src`, get `onload`. The decode is synchronous
- * underneath, but the callback fires from the task queue so attaching
- * `onload` AFTER setting `src` still works -- which is how most real code is
- * written.
+ * Defined in web/canvas/image.ts (Context2D needs the type, and importing it
+ * from here would be circular) and re-exported so a game gets it from the
+ * same place as every other global.
  */
-export class Image {
-  width = 0;
-  height = 0;
-  complete = false;
-  onload: (() => void) | null = null;
-  onerror: (() => void) | null = null;
-  /** The decoded bitmap; drawImage takes this. */
-  bitmap: GameImage | null = null;
-  private srcUrl = "";
-
-  get src(): string { return this.srcUrl; }
-
-  set src(url: string) {
-    this.srcUrl = url;
-    const path = resolveUrl(url);
-    // Decode NOW (it is a native call) but report LATER, so ordering matches
-    // a browser: the assignment returns before any handler runs.
-    const bytes = readBinary(path);
-    if (bytes === null) {
-      queueTask(() => { this.fireError(); });
-      return;
-    }
-    const img = decodeImage(bytes);
-    if (!img.valid) {
-      queueTask(() => { this.fireError(); });
-      return;
-    }
-    this.bitmap = img;
-    this.width = img.width;
-    this.height = img.height;
-    queueTask(() => {
-      this.complete = true;
-      this.fireLoad();
-    });
-  }
-
-  /* A field holding a function cannot be called as `this.onload()` (SC1090
-   * reads it as a method call), so it is copied to a local first. */
-  private fireLoad(): void {
-    const fn = this.onload;
-    if (fn !== null) fn();
-  }
-
-  private fireError(): void {
-    const fn = this.onerror;
-    if (fn !== null) fn();
-  }
-
-  /** The modern promise form. Settles on a later turn, as the spec requires. */
-  decode(): Promise<void> {
-    return new Promise<void>((resolve, reject) => {
-      queueTask(() => {
-        if (this.bitmap !== null) resolve();
-        else reject(new Error(`could not decode ${this.srcUrl}`));
-      });
-    });
-  }
-}
+export { Image };
 
 /* ---- fetch ----
  *
@@ -447,10 +426,13 @@ export class Response {
 export function fetch(url: string): Promise<Response> {
   return new Promise<Response>((resolve) => {
     if (isExternalUrl(url)) {
+      warnAsset("fetch", url, "this build has no network stack");
       queueTask(() => { resolve(Response.networkError(url)); });
       return;
     }
-    const bytes = readBinary(resolveUrl(url));
+    const path = resolveUrl(url);
+    const bytes = readBinary(path);
+    if (bytes === null) warnAsset("fetch", url, `not found at ${path}`);
     // Resolves on a later turn even though the read already happened.
     queueTask(() => { resolve(new Response(url, bytes)); });
   });
@@ -458,17 +440,11 @@ export function fetch(url: string): Promise<Response> {
 
 /* ---- audio ----
  *
- * `new AudioContext()` as the spec spells it. The underlying device is a
- * process-wide singleton (one SDL device, one graph), so a second
- * construction returns the same context rather than failing -- which is also
- * what a browser effectively gives a game that only ever makes one.
+ * `new AudioContext()`, exactly as the spec spells it: no arguments, and it
+ * never returns null. A device that will not open is reported through
+ * `state` ("suspended" rather than "running"), which is a state the spec
+ * already defines, instead of a null the web never produces.
  */
-import {
-  AudioContext as SgAudioContext, AudioBuffer, createAudioContext,
-} from "./audio/context.js";
-
-let audioInstance: SgAudioContext | null = null;
-
 /* The Web Audio interfaces are ALL window globals -- verified against
  * lib.dom.d.ts, which is generated from the IDL: AudioContext,
  * OfflineAudioContext, AudioNode, AudioParam, AudioBuffer and every node
@@ -476,23 +452,13 @@ let audioInstance: SgAudioContext | null = null;
  * spec (`new GainNode(ctx, options)`) alongside the older ctx.createGain()
  * factories, so both spellings must work here. */
 export {
-  AudioContext, AudioNode, AudioParam, AudioBuffer,
+  AudioContext, OfflineAudioContext, AudioNode, AudioParam, AudioBuffer,
   AudioScheduledSourceNode, AudioBufferSourceNode,
   GainNode, OscillatorNode, BiquadFilterNode, DelayNode,
   StereoPannerNode, PannerNode, DynamicsCompressorNode, WaveShaperNode,
   AnalyserNode, ConvolverNode, ChannelMergerNode, ChannelSplitterNode,
   ConstantSourceNode, IIRFilterNode,
 } from "./audio/context.js";
-
-/** The Web Audio entry point. Returns null only if no device could open. */
-export function AudioContextOrNull(): SgAudioContext | null {
-  if (audioInstance === null) {
-    // 1024 frames is ~21ms at 48kHz: low enough to feel immediate, high
-    // enough that a frame spike cannot starve the mixer.
-    audioInstance = createAudioContext(48000, 1024);
-  }
-  return audioInstance;
-}
 
 /* ---- fonts ----
  *
@@ -524,7 +490,9 @@ export class FontFace {
 
   load(): Promise<FontFace> {
     return new Promise<FontFace>((resolve, reject) => {
-      const rc = ffi.fontRegister(resolveUrl(this.url));
+      const path = resolveUrl(this.url);
+      const rc = ffi.fontRegister(path);
+      if (rc !== 0) warnAsset("font", this.url, `not found or unreadable at ${path}`);
       queueTask(() => {
         if (rc === 0) { this.status = "loaded"; resolve(this); }
         else { this.status = "error"; reject(new Error(`could not load font ${this.url}`)); }
@@ -563,6 +531,21 @@ import { surfaceGetCanvas as __skSurfaceGetCanvas } from "../host/skia-ffi.js";
  */
 let screenCanvas: HTMLCanvasElement | null = null;
 let documentInstance: SgDocument | null = null;
+let fullscreenEl: HTMLCanvasElement | null = null;
+
+/** Tracks document.fullscreenElement and fires `fullscreenchange`. */
+export function __setFullscreenElement(el: HTMLCanvasElement | null): void {
+  const changed = fullscreenEl !== el;
+  fullscreenEl = el;
+  if (!changed) return;
+  for (let i = 0; i < fullscreenListeners.length; i++) {
+    const e = new UIEvent();
+    e.type = "fullscreenchange";
+    fullscreenListeners[i](e);
+  }
+}
+
+let fullscreenListeners: ((e: UIEvent) => void)[] = [];
 
 /* The canvas the game will draw into.
  *
@@ -601,12 +584,32 @@ class DocumentProxy {
   createElement(name: string): HTMLCanvasElement | null {
     return doc().createElement(name);
   }
-  addEventListener(type: string, listener: (e: KeyboardEvent) => void): void {
+  addEventListener(type: string, listener: (e: UIEvent) => void): void {
     addEventListener(type, listener);
   }
   get body(): DocumentBody { return doc().body; }
   get readyState(): string { return "complete"; }
   get fonts(): FontFaceSet { return fonts; }
+
+  /* The Fullscreen API's document half. `fullscreenElement` is the canvas
+   * when fullscreen and null otherwise, exactly as in a page, so the usual
+   * toggle idiom works unchanged:
+   *
+   *   if (document.fullscreenElement === null) canvas.requestFullscreen();
+   *   else document.exitFullscreen();
+   */
+  get fullscreenElement(): HTMLCanvasElement | null { return fullscreenEl; }
+  get fullscreenEnabled(): boolean { return true; }
+
+  exitFullscreen(): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      const rc = ffi.setFullscreen(0);
+      queueTask(() => {
+        if (rc === 0) { __setFullscreenElement(null); resolve(); }
+        else reject(new Error("exiting fullscreen failed"));
+      });
+    });
+  }
 }
 
 export const document = new DocumentProxy();
@@ -621,14 +624,11 @@ export class SgWindow {
   get innerWidth(): number { return ffi.screenWidth(); }
   get innerHeight(): number { return ffi.screenHeight(); }
   devicePixelRatio = 1;
-  addEventListener(type: string, listener: (e: KeyboardEvent) => void): void {
+  addEventListener(type: string, listener: (e: UIEvent) => void): void {
     addEventListener(type, listener);
   }
-  /** The `load` / `DOMContentLoaded` shape, whose handler takes no event. */
-  onLoad(listener: () => void): void { addLoadListener(listener); }
-  /** mousemove / mousedown / mouseup. */
-  onMouse(type: string, listener: (e: MouseEvent) => void): void {
-    addMouseListener(type, listener);
+  removeEventListener(type: string, listener: (e: UIEvent) => void): void {
+    removeEventListener(type, listener);
   }
   requestAnimationFrame(cb: FrameCallback): number { return requestAnimationFrame(cb); }
   cancelAnimationFrame(id: number): void { cancelAnimationFrame(id); }
@@ -659,7 +659,7 @@ export { SgMath as Math };
  * exactly that in its own utils.js), which keeps the names a game-side
  * choice rather than something a "browser global" has to provide. */
 export {
-  Gamepad, GamepadButton, GamepadEffectParameters, VibrationActuator,
+  Gamepad, GamepadButton, GamepadEffectParameters, GamepadHapticActuator,
 } from "./input/gamepad.js";
 
 /* ---- the load event ----
@@ -675,13 +675,18 @@ export {
  * handler sees a live document in both worlds. A game that only calls
  * requestAnimationFrame needs none of this: callbacks already run after
  * boot. */
-let loadListeners: (() => void)[] = [];
+let loadListeners: ((e: UIEvent) => void)[] = [];
 let loadFired = false;
 
-export function addLoadListener(fn: () => void): void {
+/* Internal: reached through addEventListener("load", fn), which is the only
+ * spelling a game should use. */
+function addLoadListener(fn: (e: UIEvent) => void): void {
   // Registering after the event already fired still runs it, as a browser
   // does for a `load` handler attached to an already-complete document.
-  if (loadFired) { queueTask(fn); return; }
+  if (loadFired) {
+    queueTask(() => { const e = new UIEvent(); e.type = "load"; fn(e); });
+    return;
+  }
   loadListeners.push(fn);
 }
 
@@ -691,5 +696,9 @@ export function __fireLoad(): void {
   loadFired = true;
   const batch = loadListeners;
   loadListeners = [];
-  for (let i = 0; i < batch.length; i++) batch[i]();
+  for (let i = 0; i < batch.length; i++) {
+    const e = new UIEvent();
+    e.type = "load";
+    batch[i](e);
+  }
 }

@@ -11,7 +11,7 @@
  */
 import {
   window, document, navigator, requestAnimationFrame,
-  KeyboardEvent, MouseEvent, FontFace, GamepadEffectParameters,
+  KeyboardEvent, MouseEvent, FontFace,
 } from "../../web/globals.js";
 
 const FONT = "DejaVu Sans";
@@ -27,7 +27,7 @@ const BUTTON_NAMES: string[] = [
 ];
 const AXIS_NAMES: string[] = ["LX", "LY", "RX", "RY"];
 
-window.onLoad(() => {
+window.addEventListener("load", () => {
   const canvas = document.getElementById("game-canvas");
   const ctx = canvas.getContext("2d")!;
   const W = canvas.width;
@@ -60,9 +60,9 @@ window.onLoad(() => {
   let mouseX = 0;
   let mouseY = 0;
   const mouseButtons = new Map<number, boolean>();
-  window.onMouse("mousemove", (e: MouseEvent) => { mouseX = e.clientX; mouseY = e.clientY; });
-  window.onMouse("mousedown", (e: MouseEvent) => { mouseButtons.set(e.button, true); });
-  window.onMouse("mouseup", (e: MouseEvent) => { mouseButtons.set(e.button, false); });
+  window.addEventListener("mousemove", (e: MouseEvent) => { mouseX = e.clientX; mouseY = e.clientY; });
+  window.addEventListener("mousedown", (e: MouseEvent) => { mouseButtons.set(e.button, true); });
+  window.addEventListener("mouseup", (e: MouseEvent) => { mouseButtons.set(e.button, false); });
 
   /* Map iteration is fenced in the static tier (SC2004), so the set of
    * currently-held keys is maintained as an array on the events themselves
@@ -83,11 +83,11 @@ window.onLoad(() => {
       const pads = navigator.getGamepads();
       const p = pads.length > 0 ? pads[0] : null;
       if (p !== null && p.connected) {
-        const fx = new GamepadEffectParameters();
-        fx.duration = 300;
-        fx.weakMagnitude = 0.6;
-        fx.strongMagnitude = 0.9;
-        p.vibrationActuator.playEffect("dual-rumble", fx);
+        p.vibrationActuator.playEffect("dual-rumble", {
+          duration: 300,
+          weakMagnitude: 0.6,
+          strongMagnitude: 0.9,
+        });
       }
     }
 
@@ -185,7 +185,8 @@ window.onLoad(() => {
     ctx.fillStyle = "#7fd1ff";
     ctx.fillText(`slot ${pad.index}: ${pad.id}`, x, y + 14);
     ctx.fillStyle = "#5b6672";
-    ctx.fillText(pad.vibrationActuator.canPlay("dual-rumble") ? "rumble: yes" : "rumble: no", x, y + 30);
+    const canRumble = pad.vibrationActuator.effects.length > 0;
+    ctx.fillText(canRumble ? "rumble: yes" : "rumble: no", x, y + 30);
 
     for (let b = 0; b < BUTTON_COUNT; b++) {
       const col = b % 6;

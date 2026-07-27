@@ -11,7 +11,7 @@
 import * as ffi from "../host/ffi.js";
 import { readFileSync } from "node:fs";
 import {
-  createOfflineAudioContext, closeAudio, AudioContext,
+  OfflineAudioContext, closeAudio, AudioContext,
 } from "../web/audio/context.js";
 
 let failures = 0;
@@ -83,7 +83,7 @@ function main(): void {
   const args = process.argv;
   const outDir = args.length > 2 ? args[2] : "test/out";
 
-  const ctx = createOfflineAudioContext(RATE, 2);
+  const ctx = OfflineAudioContext.create(2, 0, RATE);
   if (ctx === null) { console.log("FATAL: offline context"); process.exit(2); }
   console.log(`offline context: ${ctx.sampleRate}Hz`);
   check(ctx.sampleRate === RATE, `sample rate is ${ctx.sampleRate}, want ${RATE}`);

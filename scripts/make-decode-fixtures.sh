@@ -6,7 +6,7 @@
 # (they are derived, and one of them is 3.9MB of music).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SRC="${1:-$ROOT/examples/dodge/assets/music.mp3}"
+SRC="${1:-$ROOT/examples/dodge/public/music.mp3}"
 OUT="${2:-$ROOT/test/out}"
 
 [ -f "$SRC" ] || { echo "source not found: $SRC" >&2; exit 1; }

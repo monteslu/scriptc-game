@@ -10,7 +10,18 @@
  * express a web idiom the difference is called out in a comment.
  */
 import * as ffi from "../../host/ffi.js";
+
+/* 1024 frames is ~21ms at 48kHz: low enough to feel immediate, high enough
+ * that one slow frame cannot starve the mixer. */
+const DEFAULT_RATE = 48000;
+const DEFAULT_BUFFER_FRAMES = 1024;
+
+/* Set only while __adopt runs, so the constructor skips opening a device it
+ * is about to be handed. The dialect has no constructor overloads and no
+ * private constructors, so this flag is the seam. */
+let adopting = false;
 import { queueTask as queueAudioTask } from "../../host/tasks.js";
+import { warnAsset } from "../../host/resources.js";
 import {
   P_FREQUENCY, P_DETUNE, P_GAIN, P_Q, P_DELAY_TIME, P_PAN, P_OFFSET, P_TYPE,
   P_LOOP, P_THRESHOLD, P_KNEE, P_RATIO, P_ATTACK, P_RELEASE,
@@ -84,6 +95,10 @@ export class AudioNode {
     return destination;
   }
 
+  /* The spec spells this `connect(destination, output, input)`. The dialect
+   * has no overloads, so the 3-argument form needs its own name. NOT a web
+   * API: a browser has only `connect`, and code using this will not run in a
+   * page. Games routing single-output nodes want `connect`. */
   connectOutput(destination: AudioNode, outputIndex: number, inputIndex: number): AudioNode {
     ffi.audioConnect(this.nodeId, destination.nodeId, outputIndex, inputIndex);
     return destination;
@@ -269,26 +284,69 @@ export class IIRFilterNode extends AudioNode {}
 
 /* AudioContext.
  *
- * One per process, created by sg.run (or explicitly in a test). The
- * destination is a real engine node, as on the web.
+ * `new AudioContext()` with NO required arguments, as the spec spells it.
+ *
+ * Opening the device can fail here in a way it cannot in a browser (no sound
+ * card, no ALSA, a headless box). That does NOT become a null return: the web
+ * has no such thing, and a shim that invents one forces every game into a
+ * null check that would be dead code in a page. Instead a failed device is
+ * reported through `state`, which the spec already defines as
+ * "suspended" | "running" | "closed" | "interrupted". A game that cares
+ * checks `state`; a game that does not still runs, silently.
+ *
+ * `latencyHint` is accepted and ignored: SDL takes a concrete buffer size,
+ * which is the same knob spelled differently.
  */
 export class AudioContext {
   destination: AudioNode;
   sampleRate = 0;
   private offline = false;
+  private dead = false;
 
-  /* `latencyHint` is not modelled: SDL takes a buffer size, which is the
-   * same knob spelled concretely, and it is passed to init instead. */
-  constructor(destinationId: number, sampleRate: number, offline: boolean) {
-    this.destination = new AudioNode(destinationId);
-    this.sampleRate = sampleRate;
-    this.offline = offline;
+  constructor() {
+    if (adopting) {           // __adopt is wiring an already-open device
+      this.destination = new AudioNode(-1);
+      return;
+    }
+    if (ffi.audioInit(DEFAULT_RATE, DEFAULT_BUFFER_FRAMES) !== 0) {
+      this.dead = true;
+      this.destination = new AudioNode(-1);
+      return;
+    }
+    const dest = ffi.audioCreateNode("destination");
+    if (dest < 0) {
+      this.dead = true;
+      this.destination = new AudioNode(-1);
+      return;
+    }
+    this.destination = new AudioNode(dest);
+    this.sampleRate = ffi.audioRate();
+  }
+
+  /* Host/test seam: builds a context around an ALREADY-OPEN device, which
+   * is what the offline renderer needs. Not a web API, not exported to
+   * games, and deliberately not reachable through web/globals.js. */
+  static __adopt(destinationId: number, sampleRate: number, offline: boolean): AudioContext {
+    adopting = true;
+    const ctx = new AudioContext();
+    adopting = false;
+    ctx.destination = new AudioNode(destinationId);
+    ctx.sampleRate = sampleRate;
+    ctx.offline = offline;
+    ctx.dead = destinationId < 0;
+    return ctx;
   }
 
   /** Seconds of audio rendered: the spec's monotonically rising clock. */
   get currentTime(): number { return ffi.audioTime(); }
 
-  get state(): string { return this.offline ? "suspended" : "running"; }
+  /* AudioContextState. "suspended" covers both a genuinely suspended
+   * context and one whose device never opened, which is what the spec's
+   * own wording describes for a context that is not progressing. */
+  get state(): string {
+    if (this.dead) return "suspended";
+    return this.offline ? "suspended" : "running";
+  }
 
   suspend(): void { ffi.audioSuspend(1); }
   resume(): void { ffi.audioSuspend(0); }
@@ -353,6 +411,10 @@ export class AudioContext {
     const graph = ffi.audioGraphId();
     const id = ffi.audioNextBufferId();
     const rc = graph < 0 ? -1 : ffi.audioDecodeBytes(graph, id, audioData);
+    if (rc < 0) {
+      warnAsset("audio decode", `${audioData.length} bytes`,
+                graph < 0 ? "no audio device" : "unrecognised format");
+    }
     const frames = ffi.decodeFrames();
     const channels = ffi.decodeChannels();
     const rate = ffi.decodeRate();
@@ -393,20 +455,17 @@ export class AudioContext {
   }
 }
 
-/** Opens the audio device and returns a live context. null on failure. */
-export function createAudioContext(sampleRate: number, bufferFrames: number): AudioContext | null {
-  if (ffi.audioInit(sampleRate, bufferFrames) !== 0) return null;
-  const dest = ffi.audioCreateNode("destination");
-  if (dest < 0) return null;
-  return new AudioContext(dest, ffi.audioRate(), false);
-}
-
-/** A context with NO device, for tests and faster-than-realtime rendering. */
-export function createOfflineAudioContext(sampleRate: number, channels: number): AudioContext | null {
-  if (ffi.audioInitOffline(sampleRate, channels) !== 0) return null;
-  const dest = ffi.audioCreateNode("destination");
-  if (dest < 0) return null;
-  return new AudioContext(dest, ffi.audioRate(), true);
+/* OfflineAudioContext(numberOfChannels, length, sampleRate), as the spec
+ * spells it. Renders faster than realtime with no device; `length` is
+ * accepted for spec shape, and the renderer takes its frame count at
+ * startRendering time. */
+export class OfflineAudioContext extends AudioContext {
+  static create(numberOfChannels: number, length: number, sampleRate: number): AudioContext | null {
+    if (ffi.audioInitOffline(sampleRate, numberOfChannels) !== 0) return null;
+    const dest = ffi.audioCreateNode("destination");
+    if (dest < 0) return null;
+    return AudioContext.__adopt(dest, ffi.audioRate(), true);
+  }
 }
 
 export function closeAudio(): void { ffi.audioQuit(); }
