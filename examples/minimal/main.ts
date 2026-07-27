@@ -6,7 +6,7 @@
  * needs the canvas belongs here. */
 import { window, document, requestAnimationFrame } from "../../web/globals.js";
 
-window.onLoad(() => {
+window.addEventListener("load", () => {
   const canvas = document.getElementById("game-canvas");
   const ctx = canvas.getContext("2d")!;
   let x = 0;

@@ -96,7 +96,13 @@ export function hostInput(): Input { return input; }
 export function boot(opts: HostOptions): number {
   setGameDir(opts.gameDir);
 
-  let flags = 0;
+  /* Bit 0 resizable, bit 1 no-vsync.
+   *
+   * Resizable by default: the canvas keeps its logical size and the renderer
+   * integer-scales it with letterboxing, so a game never sees the window
+   * size change. Without this the window is pinned to game.json's pixel
+   * dimensions, which on a high-DPI display can be a postage stamp. */
+  let flags = 1;
   if (!opts.vsync) flags += 2;
 
   const rc = ffi.init(opts.width, opts.height, flags);

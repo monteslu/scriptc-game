@@ -15,7 +15,7 @@
  *
  * Every check here would also pass in a browser. That is the point.
  */
-import { Image, fetch, FontFace, AudioContextOrNull } from "../web/globals.js";
+import { Image, fetch, FontFace, AudioContext } from "../web/globals.js";
 import { setGameDir } from "../host/resources.js";
 import { drainTasks, hasTasks } from "../host/tasks.js";
 
@@ -135,8 +135,8 @@ async function main(): Promise<void> {
    *
    * Skipped without an audio device, since there is no graph to decode into;
    * the harness runs with SDL_AUDIODRIVER=dummy so it normally runs. */
-  const audio = AudioContextOrNull();
-  if (audio !== null) {
+  const audio = new AudioContext();
+  if (audio.state === "running") {
     let audioDecoded = false;
     fetch("music.mp3")
       .then((res) => res.arrayBuffer())

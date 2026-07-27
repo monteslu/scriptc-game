@@ -631,7 +631,9 @@ global):
   its own utils.js.
 - **`Gamepad` was missing `timestamp`** (required by the IDL) and carried an
   invented `hasRumble`. A page discovers haptics through the actuator, so that
-  is now `vibrationActuator.effects` / `canPlay("dual-rumble")`.
+  is now `vibrationActuator.effects` (a spec attribute listing playable
+  effect types). An earlier `canPlay()` helper here was NOT a web API and
+  has been removed.
 - **`loadAudio(ctx, url)` was invented.** The spec path is
   `fetch -> arrayBuffer -> decodeAudioData`, so `decodeAudioData(bytes)` is
   implemented properly. It needed a new shim entry point that sniffs the

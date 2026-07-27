@@ -16,7 +16,7 @@ import { createGameLoop, LoopOptions } from "../../engine/loop.js";
 
 const SIZE = 48;
 
-window.onLoad(() => {
+window.addEventListener("load", () => {
   const canvas = document.getElementById("game-canvas");
   const ctx = canvas.getContext("2d")!;
   const W = canvas.width;

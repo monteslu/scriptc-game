@@ -14,7 +14,7 @@
  * the loading screen: it is reported by name and the game starts anyway.
  */
 import {
-  window, document, AudioContextOrNull, FontFace,
+  window, document, AudioContext, FontFace,
 } from "../../web/globals.js";
 import { createResourceLoader } from "../../engine/assets.js";
 import { createGameLoop, LoopOptions } from "../../engine/loop.js";
@@ -28,7 +28,7 @@ class Spinner {
   size: number = 0;
 }
 
-window.onLoad(() => {
+window.addEventListener("load", () => {
   const canvas = document.getElementById("game-canvas");
   const ctx = canvas.getContext("2d")!;
   const W = canvas.width;
@@ -40,7 +40,7 @@ window.onLoad(() => {
     document.fonts.add(face);
   });
 
-  const audio = AudioContextOrNull();
+  const audio = new AudioContext();
   const loader = createResourceLoader(audio);
 
   loader.addImage("player", "player.png");
@@ -75,7 +75,7 @@ window.onLoad(() => {
     }
 
     const track = res.getSound("music");
-    if (audio !== null && track !== null) {
+    if (track !== null) {
       const src = audio.createBufferSource();
       src.buffer = track;
       src.loop = true;

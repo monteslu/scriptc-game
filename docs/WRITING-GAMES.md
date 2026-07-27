@@ -232,14 +232,20 @@ declare them in your own game:
 const BTN_A = 0, BTN_START = 9, BTN_DPAD_UP = 12;
 ```
 
-Rumble follows the spec too:
+Rumble follows the spec too. `GamepadEffectParameters` is a **dictionary**,
+so it is an object literal, not a constructor:
 
 ```ts
-const fx = new GamepadEffectParameters();
-fx.duration = 300;
-fx.strongMagnitude = 0.9;
-pad.vibrationActuator.playEffect("dual-rumble", fx);
+pad.vibrationActuator.playEffect("dual-rumble", {
+  duration: 300,
+  strongMagnitude: 0.9,
+  weakMagnitude: 0.25,
+});
 ```
+
+Support is reported by `vibrationActuator.effects`, which lists the
+`GamepadHapticEffectType` values the pad can play. There is no `canPlay()`
+method; the spec does not define one.
 
 ---
 
@@ -285,6 +291,8 @@ A short, honest list.
 | **`Math` is imported** | The static tier fences `sqrt`/`sin`/`cos`/`pow`/`PI`, so they cross to libm. Import `Math` from the same module and write `Math.sqrt` normally. |
 | **No `Math.random`** | Unavailable, and deliberately not faked with a fixed seed, because a silent identical "random" sequence every run is worse than a compile error. Seed your own PRNG; `examples/dodge` has a four-line xorshift32. |
 | **No DOM** | `getElementById` returns THE canvas whatever id you pass; there is nothing else to query. Same shortcut jsgamelauncher takes. |
+| **One event record** | `KeyboardEvent` and `MouseEvent` are the same class, carrying both field sets. `addEventListener` has one signature (the dialect has no overloads, and function parameters are contravariant, so a mouse handler cannot satisfy a keyboard-typed parameter). Every call site stays spec-correct; what you cannot rely on is `e.clientX` being *absent* from a keydown event. |
+| **`new AudioContext()` can be silent** | It never returns null, as on the web. A device that will not open reports `state === "suspended"` instead of `"running"`. |
 | **No network** | `fetch` of an `http(s)://` URL returns `ok === false`. Local paths work. |
 | **Some dialect fences** | `Number.toString(radix)`, `Map` iteration and a few others need the dynamic engine. `scriptc coverage <file>` reports what a file uses. See [DIALECT.md](DIALECT.md). |
 

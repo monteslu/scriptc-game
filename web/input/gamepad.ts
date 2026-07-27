@@ -20,6 +20,7 @@
  */
 import * as ffi from "../../host/ffi.js";
 import { readMailbox } from "../../host/mailbox.js";
+import { queueTask } from "../../host/tasks.js";
 
 /** SDL_GameControllerButton indices. */
 const SDL_BTN_A = 0;
@@ -85,58 +86,83 @@ export const AXIS_LEFT_Y = 1;
 export const AXIS_RIGHT_X = 2;
 export const AXIS_RIGHT_Y = 3;
 
-/* GamepadHapticActuator, web-shaped.
+/* GamepadEffectParameters, verbatim from the W3C Gamepad spec:
  *
- * playEffect takes the effect NAME and an options record, as the spec does,
- * rather than three positional numbers. The dialect has no optional object
- * properties, so `GamepadEffectParameters` is a class with the spec's
- * defaults; `new GamepadEffectParameters()` then setting what you care about
- * is the closest readable equivalent of the web's object literal.
+ *   dictionary GamepadEffectParameters {
+ *     unsigned long long duration = 0;
+ *     unsigned long long startDelay = 0;
+ *     double strongMagnitude = 0.0;
+ *     double weakMagnitude = 0.0;
+ *     double leftTrigger = 0.0;
+ *     double rightTrigger = 0.0;
+ *   };
  *
- * Returns a resolved Promise like the spec. There is nothing to await -- the
- * effect either starts or the pad has no motors -- but returning the same
- * shape means web code reads identically, and it leaves room to resolve on
- * completion later without a breaking change.
+ * An INTERFACE, not a class, because a dictionary is not constructible: on
+ * the web you pass an object literal, and `new GamepadEffectParameters()`
+ * is a ReferenceError in a page. Games write the literal form:
+ *
+ *   pad.vibrationActuator.playEffect("dual-rumble", { duration: 300 });
  */
-export class GamepadEffectParameters {
-  duration = 0;
-  startDelay = 0;
-  strongMagnitude = 0;
-  weakMagnitude = 0;
+export interface GamepadEffectParameters {
+  duration?: number;
+  startDelay?: number;
+  strongMagnitude?: number;
+  weakMagnitude?: number;
+  leftTrigger?: number;
+  rightTrigger?: number;
 }
 
-export class VibrationActuator {
-  /* GamepadHapticEffectType values this actuator can play.
-   *
-   * The spec has no "does it rumble" boolean -- a page reads `effects` (or
-   * checks vibrationActuator itself) to discover support. Empty means the
-   * device has no motors, and playEffect then resolves without doing
-   * anything, which is what the spec asks for. */
+/* GamepadHapticActuator.
+ *
+ * The surface is exactly `effects`, `playEffect` and `reset`. There is
+ * deliberately no `canPlay()` and no `type`: neither exists in the spec, and
+ * a convenience invented here would be a method that works natively and
+ * throws in a browser, which is the worst possible failure mode for a
+ * project whose thesis is that the same source runs in both.
+ *
+ * Feature detection per spec is reading `effects`, or checking that
+ * `vibrationActuator` exists at all. */
+export class GamepadHapticActuator {
+  /* GamepadHapticEffectType values this actuator can play. Empty means the
+   * device has no motors, and playEffect then resolves "complete" without
+   * doing anything. */
   effects: string[] = [];
-  /** Legacy alias kept for the spec's older `type` spelling. */
-  type = "dual-rumble";
   private slot = 0;
 
   constructor(slot: number) { this.slot = slot; }
 
-  /** True when this actuator can play `effect`. */
-  canPlay(effect: string): boolean {
+  private supports(effect: string): boolean {
     for (let i = 0; i < this.effects.length; i++) {
       if (this.effects[i] === effect) return true;
     }
     return false;
   }
 
+  /* Resolves on a LATER turn, like every other promise in the tree: the
+   * spec returns a real Promise<GamepadHapticsResult>, and code that
+   * chains off it must not see it settle inside the calling turn. */
   playEffect(type: string, params: GamepadEffectParameters): Promise<string> {
-    if (type !== "dual-rumble") return Promise.resolve("invalid-effect-type");
-    if (!this.canPlay(type)) return Promise.resolve("complete");
-    ffi.padRumble(this.slot, params.weakMagnitude, params.strongMagnitude, params.duration);
-    return Promise.resolve("complete");
+    return new Promise<string>((resolve) => {
+      if (type !== "dual-rumble" && type !== "trigger-rumble") {
+        queueTask(() => { resolve("invalid-effect-type"); });
+        return;
+      }
+      if (this.supports(type)) {
+        // Dictionary members are optional with spec defaults of 0.
+        ffi.padRumble(this.slot,
+                      params.weakMagnitude ?? 0,
+                      params.strongMagnitude ?? 0,
+                      params.duration ?? 0);
+      }
+      queueTask(() => { resolve("complete"); });
+    });
   }
 
   reset(): Promise<string> {
-    ffi.padRumble(this.slot, 0, 0, 0);
-    return Promise.resolve("complete");
+    return new Promise<string>((resolve) => {
+      ffi.padRumble(this.slot, 0, 0, 0);
+      queueTask(() => { resolve("complete"); });
+    });
   }
 }
 
@@ -159,11 +185,11 @@ export class Gamepad {
   timestamp = 0;
 
   /** The web's `gamepad.vibrationActuator`. */
-  vibrationActuator = new VibrationActuator(0);
+  vibrationActuator = new GamepadHapticActuator(0);
 
   constructor(index: number) {
     this.index = index;
-    this.vibrationActuator = new VibrationActuator(index);
+    this.vibrationActuator = new GamepadHapticActuator(index);
     for (let i = 0; i < AXIS_COUNT; i++) this.axes.push(0);
     for (let i = 0; i < BUTTON_COUNT; i++) this.buttons.push(new GamepadButton());
   }

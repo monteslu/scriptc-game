@@ -15,10 +15,10 @@
  */
 import {
   window, document, navigator, requestAnimationFrame,
-  Image, KeyboardEvent, AudioContextOrNull, FontFace, fetch, AudioBuffer,
+  Image, KeyboardEvent, AudioContext, FontFace, fetch, AudioBuffer,
   Math, Gamepad, GamepadEffectParameters,
 } from "../../web/globals.js";
-import { pickup, hit, dash as dashSfx, gameOver } from "../../engine/sfx.js";
+import { pickup, hit, dash as dashSfx, gameOver, shoot } from "../../engine/sfx.js";
 
 const TAU = Math.PI * 2;
 
@@ -30,6 +30,8 @@ const TAU = Math.PI * 2;
  * are identical here.
  *   w3c.github.io/gamepad/#remapping */
 const BTN_A = 0;
+const BTN_X = 2;                // square / X, the fire button
+const BTN_R2 = 7;               // right trigger, also fires
 const BTN_START = 9;
 const BTN_DPAD_UP = 12;
 const BTN_DPAD_DOWN = 13;
@@ -43,6 +45,15 @@ const PLAYER_SPEED = 0.34;      // px per ms
 const DASH_SPEED = 0.95;
 const DASH_MS = 140;
 const DASH_COOLDOWN_MS = 620;
+
+const MISSILE_SPEED = 0.78;     // px per ms
+const MISSILE_R = 4;
+const MISSILE_COOLDOWN_MS = 190;
+const MISSILE_LIFE_MS = 1600;
+
+/* Dodging pays: a graze is worth 6x a missile kill. */
+const GRAZE_BONUS = 12;
+const GRAZE_MARGIN = 26;        // px of clearance that still counts as close
 
 /* Sticks never rest at exactly zero, so anything under the deadzone is
  * treated as centred; past it the value is rescaled so the usable range
@@ -65,9 +76,16 @@ function applyDeadzone(v: number): number {
 
 class Faller {
   x = 0; y = 0; vy = 0; size = 0; coin = false; alive = false;
+  /* Whether this hazard has already paid its near-miss bonus. Per-faller,
+   * so threading the same one twice does not pay twice. */
+  grazed = false;
 }
 
-window.onLoad(() => {
+class Missile {
+  x = 0; y = 0; vx = 0; vy = 0; lifeMs = 0; alive = false;
+}
+
+window.addEventListener("load", () => {
   const canvas = document.getElementById("game-canvas");
   const ctx = canvas.getContext("2d")!;
   const W = canvas.width;
@@ -95,15 +113,15 @@ window.onLoad(() => {
     document.fonts.add(face);
   });
 
-  const audio = AudioContextOrNull();
+  const audio = new AudioContext();
   let musicGain: ReturnType<typeof makeMusicBus> | null = null;
   let musicOn = true;
 
   function makeMusicBus() {
-    return audio!.createGain();
+    return audio.createGain();
   }
 
-  if (audio !== null) {
+  {
     /* The spec dance, identical in a browser:
      *   fetch -> arrayBuffer -> decodeAudioData -> BufferSource */
     fetch("music.mp3")
@@ -144,12 +162,15 @@ window.onLoad(() => {
 
   function rumble(weak: number, strong: number, ms: number): void {
     const p = pad();
-    if (p === null || !p.vibrationActuator.canPlay("dual-rumble")) return;
-    const fx = new GamepadEffectParameters();
-    fx.duration = ms;
-    fx.weakMagnitude = weak;
-    fx.strongMagnitude = strong;
-    p.vibrationActuator.playEffect("dual-rumble", fx);
+    if (p === null) return;
+    /* The spec form: an object literal, and `effects` is how a page checks
+     * support. playEffect resolves "complete" on a pad with no motors, so
+     * the check is a courtesy rather than a guard. */
+    p.vibrationActuator.playEffect("dual-rumble", {
+      duration: ms,
+      weakMagnitude: weak,
+      strongMagnitude: strong,
+    });
   }
 
   /* ---- state ---- */
@@ -164,13 +185,20 @@ window.onLoad(() => {
   let cooldownMs = 0;
   let invulnMs = 0;
   let spawnMs = 0;
-  let spawnEvery = 620;
+  let spawnEvery = 520;
   let elapsed = 0;
   let coinAnimMs = 0;
+  let fireCooldownMs = 0;
+  let grazeFlashMs = 0;
   let last = 0;
 
   const fallers: Faller[] = [];
   for (let i = 0; i < 64; i++) fallers.push(new Faller());
+
+  /* Pooled like the fallers: allocation in a frame loop is the thing to
+   * avoid, and a fixed ceiling also caps how much the screen can fill. */
+  const missiles: Missile[] = [];
+  for (let i = 0; i < 48; i++) missiles.push(new Missile());
 
   /* Deterministic pseudo-randomness: Math.random is unavailable in the
    * static tier, and a fixed seed also makes screenshots reproducible. */
@@ -187,9 +215,12 @@ window.onLoad(() => {
   function restart(): void {
     px = W / 2; py = H - 90;
     lives = 3; score = 0; over = false;
-    elapsed = 0; spawnEvery = 620;
+    elapsed = 0; spawnEvery = 520;
     dashMs = 0; cooldownMs = 0; invulnMs = 0;
     for (let i = 0; i < fallers.length; i++) fallers[i].alive = false;
+    for (let i = 0; i < missiles.length; i++) missiles[i].alive = false;
+    fireCooldownMs = 0;
+    grazeFlashMs = 0;
   }
 
   function spawn(): void {
@@ -197,11 +228,29 @@ window.onLoad(() => {
       const f = fallers[i];
       if (f.alive) continue;
       f.alive = true;
-      f.coin = rand() < 0.22;
+      f.grazed = false;
+      f.coin = rand() < 0.16;
       f.size = f.coin ? 16 : 22 + rand() * 26;
       f.x = f.size + rand() * (W - f.size * 2);
       f.y = -30;
       f.vy = (f.coin ? 0.2 : 0.16) + rand() * 0.22 + elapsed * 0.000008;
+      return;
+    }
+  }
+
+  /** Launches one missile along the current heading, from the ship's nose. */
+  function fire(): void {
+    for (let i = 0; i < missiles.length; i++) {
+      const m = missiles[i];
+      if (m.alive) continue;
+      m.alive = true;
+      // Spawned at the nose rather than the centre, so it does not appear
+      // to emerge from the middle of the sprite.
+      m.x = px + Math.cos(heading) * (PLAYER_R + 6);
+      m.y = py + Math.sin(heading) * (PLAYER_R + 6);
+      m.vx = Math.cos(heading) * MISSILE_SPEED;
+      m.vy = Math.sin(heading) * MISSILE_SPEED;
+      m.lifeMs = MISSILE_LIFE_MS;
       return;
     }
   }
@@ -254,7 +303,21 @@ window.onLoad(() => {
       dashMs = DASH_MS;
       cooldownMs = DASH_COOLDOWN_MS;
       rumble(0.25, 0.15, 70);
-      if (audio !== null) dashSfx(audio, SFX_VOLUME * 0.8);
+      dashSfx(audio, SFX_VOLUME * 0.8);
+    }
+
+    /* Fire is a SEPARATE button from dash (X/square or the right trigger),
+     * so getting out of a jam does not cost you the dodge. Holding is
+     * allowed; the cooldown does the rate limiting. */
+    if (fireCooldownMs > 0) fireCooldownMs -= dt;
+    const firePressed =
+      down("KeyJ") || down("KeyZ") || down("ControlLeft") ||
+      (p !== null && (p.buttons[BTN_X].pressed || p.buttons[BTN_R2].pressed));
+    if (firePressed && fireCooldownMs <= 0) {
+      fire();
+      fireCooldownMs = MISSILE_COOLDOWN_MS;
+      rumble(0.12, 0.05, 40);
+      shoot(audio, SFX_VOLUME * 0.45);
     }
 
     let speed = PLAYER_SPEED;
@@ -268,10 +331,42 @@ window.onLoad(() => {
     if (py > H - PLAYER_R) py = H - PLAYER_R;
 
     elapsed += dt;
-    if (spawnEvery > 190) spawnEvery -= dt * 0.02;
+    if (spawnEvery > 140) spawnEvery -= dt * 0.028;
     spawnMs -= dt;
     if (spawnMs <= 0) { spawnMs = spawnEvery; spawn(); }
     if (invulnMs > 0) invulnMs -= dt;
+
+    /* Missiles move, expire, and destroy hazards. Coins are deliberately
+     * NOT shootable: they are the reward for going toward danger, and
+     * letting a missile collect them would undercut that. */
+    for (let i = 0; i < missiles.length; i++) {
+      const m = missiles[i];
+      if (!m.alive) continue;
+      m.x += m.vx * dt;
+      m.y += m.vy * dt;
+      m.lifeMs -= dt;
+      if (m.lifeMs <= 0 || m.x < -20 || m.x > W + 20 || m.y < -20 || m.y > H + 20) {
+        m.alive = false;
+        continue;
+      }
+      for (let j = 0; j < fallers.length; j++) {
+        const f = fallers[j];
+        if (!f.alive || f.coin) continue;
+        const half = f.size / 2;
+        const mdx = m.x - f.x;
+        const mdy = m.y - f.y;
+        if ((mdx < 0 ? -mdx : mdx) < half + MISSILE_R &&
+            (mdy < 0 ? -mdy : mdy) < half + MISSILE_R) {
+          f.alive = false;
+          m.alive = false;
+          // Deliberately small: shooting is the escape hatch, not the
+          // scoring strategy. Dodging pays several times better.
+          score += 2;
+          pickup(audio, SFX_VOLUME * 0.3);
+          break;
+        }
+      }
+    }
 
     for (let i = 0; i < fallers.length; i++) {
       const f = fallers[i];
@@ -282,32 +377,49 @@ window.onLoad(() => {
       const half = f.size / 2;
       const dx = px - f.x;
       const dy = py - f.y;
-      const near = (dx < 0 ? -dx : dx) < half + PLAYER_R &&
-                   (dy < 0 ? -dy : dy) < half + PLAYER_R;
+      const adx = dx < 0 ? -dx : dx;
+      const ady = dy < 0 ? -dy : dy;
+
+      /* GRAZE: passing close to a hazard without touching it pays, and pays
+       * far better than shooting it. Dodging is the game; the missiles are
+       * the way out of a jam you could not dodge. Paid once per hazard, and
+       * only for a real near miss, so parking next to one earns nothing. */
+      if (!f.coin && !f.grazed) {
+        const gr = half + PLAYER_R + GRAZE_MARGIN;
+        if (adx < gr && ady < gr) {
+          f.grazed = true;
+          score += GRAZE_BONUS;
+          grazeFlashMs = 220;
+          pickup(audio, SFX_VOLUME * 0.22);
+        }
+      }
+
+      const near = adx < half + PLAYER_R && ady < half + PLAYER_R;
       if (!near) continue;
 
       if (f.coin) {
         f.alive = false;
         score += 10;
         rumble(0.15, 0, 45);
-        if (audio !== null) pickup(audio, SFX_VOLUME);
+        pickup(audio, SFX_VOLUME);
       } else if (invulnMs <= 0) {
         f.alive = false;
         lives -= 1;
         invulnMs = 1100;
         rumble(0.9, 1, 260);
-        if (audio !== null) hit(audio, SFX_VOLUME);
+        hit(audio, SFX_VOLUME);
         if (lives <= 0) {
           over = true;
           if (score > best) best = score;
           rumble(1, 1, 520);
-          if (audio !== null) gameOver(audio, SFX_VOLUME * 0.9);
+          gameOver(audio, SFX_VOLUME * 0.9);
         }
       }
     }
 
     score += dt * 0.004;
     coinAnimMs += dt;
+    if (grazeFlashMs > 0) grazeFlashMs -= dt;
   }
 
   function draw(): void {
@@ -320,6 +432,25 @@ window.onLoad(() => {
     }
     for (let gy = 0; gy <= H; gy += 50) {
       ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(W, gy); ctx.stroke();
+    }
+
+    for (let i = 0; i < missiles.length; i++) {
+      const m = missiles[i];
+      if (!m.alive) continue;
+      /* Drawn as a short streak along the direction of travel rather than a
+       * dot: at this speed a dot reads as a flicker. */
+      const tailX = m.x - m.vx * 18;
+      const tailY = m.y - m.vy * 18;
+      ctx.strokeStyle = "#9fe8ff";
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(tailX, tailY);
+      ctx.lineTo(m.x, m.y);
+      ctx.stroke();
+      ctx.fillStyle = "#ffffff";
+      ctx.beginPath();
+      ctx.arc(m.x, m.y, MISSILE_R * 0.6, 0, TAU, false);
+      ctx.fill("nonzero");
     }
 
     for (let i = 0; i < fallers.length; i++) {
@@ -374,6 +505,18 @@ window.onLoad(() => {
       }
     }
 
+    /* A ring on a successful graze, so the reward is legible in the moment
+     * rather than only as a number that ticked up. */
+    if (grazeFlashMs > 0) {
+      ctx.globalAlpha = grazeFlashMs / 220 * 0.7;
+      ctx.strokeStyle = "#ffd257";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(px, py, PLAYER_R + 10 + (220 - grazeFlashMs) * 0.05, 0, TAU, false);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+
     drawHud();
     if (over) drawGameOver();
   }
@@ -406,7 +549,9 @@ window.onLoad(() => {
     ctx.textAlign = "left";
     ctx.fillStyle = "#4d5866";
     const p = pad();
-    ctx.fillText(p === null ? "keyboard: arrows/WASD, space to dash" : `pad: ${p.id}`,
+    ctx.fillText(p === null
+                   ? "arrows/WASD move   space dash   J fire"
+                   : `pad: ${p.id}`,
                  16, H - 14);
     ctx.textAlign = "right";
     ctx.fillText(`${musicOn ? "M: music on" : "M: music off"}    F: fullscreen`,
