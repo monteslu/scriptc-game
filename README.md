@@ -100,22 +100,28 @@ same stack driven through the optional engine, with a loading screen.
 
 ## Building
 
-Two things are needed that this repo does not vendor, because both are large
-prebuilt toolchains rather than source:
+Three things are needed that this repo does not vendor: the compiler, and two
+upstream sources that are fetched and built rather than copied in (`versions.json`
+pins them). Each has a default location and an environment override.
 
 | Dependency | Default location | Override |
 | --- | --- | --- |
 | [scriptc](https://github.com/vercel-labs/scriptc) | `../scriptc/packages/cli/dist/main.js` (a sibling checkout) | `SCRIPTC_BIN` |
 | [build-libcanvas](https://github.com/monteslu/build-libcanvas) output | `~/code/cliemu/build-libcanvas/out/<target>` | `LIBCANVAS_OUT` |
+| [webaudio-node](https://github.com/monteslu/webaudio-node) source | `~/code/cliemu/webaudio-node` | `WEBAUDIO_SRC` |
+
+Run the two vendor steps once, then build:
 
 ```sh
-./scripts/fetch-archives.sh        # populates vendor/<target>/ from build-libcanvas
+./scripts/fetch-archives.sh        # vendor/<target>/libskiac.a  + headers
+./scripts/build-webaudio.sh        # vendor/<target>/libwebaudio.a
 ./scripts/build.sh examples/dodge  # -> build/dodge
 ./scripts/test.sh                  # every suite, headless
 ```
 
-`fetch-archives.sh` must run once before the first build; without it the link
-step fails with a bare `ar: ... libskiac.a: No such file or directory`.
+Skipping either vendor step fails at link time with a missing-archive error
+(`ar: ... libskiac.a: No such file or directory`, or an FFI manifest complaint
+about `libwebaudio.a`) rather than anything self-explanatory.
 
 ## Credits
 
