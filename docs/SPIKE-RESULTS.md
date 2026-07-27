@@ -431,3 +431,115 @@ where it would otherwise look wrong.
   may show an IME) and drains as a QUEUE, because text is a sequence rather
   than a state. Multi-byte UTF-8 is decoded properly, including surrogate
   pairs for astral-plane input.
+
+---
+
+# Phase 4 Results: Audio
+
+Run 2026-07-27, same host. webaudio-node's C++ graph runs NATIVE, driven from
+an SDL audio thread. 16/16 offline checks; live playback verified on the real
+device (PipeWire) via test/beeptest.ts.
+
+## 4.1 The emscripten audit: better than hoped
+
+6,641 lines across 25 files, and the engine uses **nothing** from emscripten
+except the `EMSCRIPTEN_KEEPALIVE` attribute: zero `EM_ASM`, zero
+`EMSCRIPTEN_BINDINGS`, zero `emscripten_*` calls, zero try/throw/catch. The
+export surface is already `extern "C"` with plain scalar/pointer signatures,
+and the graph API is already integer-handle-based
+(`createAudioGraph`/`createNode`/`processGraph`), which maps almost directly
+onto FFI format 1.
+
+So the port is a RECOMPILE, and the vendored source stays BYTE-IDENTICAL to
+upstream. Two stub headers do the whole job:
+
+- `shim/emscripten.h` supplies KEEPALIVE as a visibility attribute.
+- `shim/wasm_simd128.h` is EMPTY. Two files include it unconditionally even
+  though every use is guarded by `#ifdef __wasm_simd128__`; off-target that
+  macro is never defined, so the contents are never referenced, but the
+  include still has to resolve and clang's real header explodes off-target.
+
+Keeping upstream unpatched is what makes a webaudio-node bump a re-fetch
+rather than a re-port, and it is what makes the parity test meaningful: both
+sides run the same code, not a fork.
+
+Not built: `audio_decoders.cpp` hard-includes opusfile and libxaac headers
+with no guard, so it needs ~600 codec sources. Games ship wav/ogg; that file
+is skipped and the header-only decoders (dr_wav/dr_mp3/dr_flac, stb_vorbis)
+remain available.
+
+**Trap:** `src/wasm/webaudio.cpp` is a single-module AMALGAMATION that
+redefines every node and util. Linking it alongside the individual files is a
+wall of duplicate symbols. The source list mirrors upstream's own build
+script exactly.
+
+## 4.3 Threading
+
+SDL calls the audio callback on its own thread; the engine is not thread-safe
+against concurrent mutation, and scriptc's runtime must never be touched off
+the main thread. One lock-free SPSC ring bridges them: the main thread
+enqueues command records, and the audio thread drains the WHOLE ring at a
+QUANTUM BOUNDARY before rendering. Draining only between quanta is what makes
+it correct without a mutex -- a command never lands mid-render.
+
+Calls that must RETURN a value (create a node, register a buffer) run on the
+main thread instead. That is safe because a fresh node is unconnected: the
+audio thread cannot reach it until a connect command is drained.
+
+**Bug this design caused, and the fix:** offline rendering has no callback, so
+nothing drained the ring and every graph rendered silence. The C-level probe
+had worked because it called the engine directly while the TS path queued its
+whole graph. `sg_audio_render_offline` now drains first; it is the only
+consumer in offline mode, so it is safe there.
+
+## The argument-order trap
+
+`scheduleParamEvent` is `(graph, node, param, kind, VALUE, TIME, timeConstant)`
+-- value BEFORE time. The natural reading is the opposite, and getting it
+backwards silently corrupts every envelope: a ramp to 0.8 at t=2 becomes a
+ramp to 2 at t=0.8. Transcribed from the definition, not guessed.
+
+## What the offline test actually checks
+
+Rendering to a 32-bit float WAV checks the parts that can be wrong -- wiring,
+parameter ids, scheduling, node behaviour -- and produces a file comparable
+against the WASM build. Measured, not eyeballed:
+
+| check | result |
+| --- | --- |
+| nothing connected | peak 0 (the control) |
+| 440Hz sine at gain 0.5 | peak 0.5000, mean 0.3183 (= 2/pi x 0.5, a perfect sine) |
+| gain 0.5 -> 0.1 | peak 0.1000 |
+| 440Hz -> 880Hz | 87 -> 177 zero crossings, exactly double |
+| disconnect() | peak 0 |
+
+Zero crossings are the check that matters most: amplitude looks perfect when
+a frequency lands in the wrong parameter slot, and only counting cycles
+catches it.
+
+## Fixed upstream
+
+`disconnectNodes` was a no-op stub, so a disconnected node fed its destination
+forever. `src/javascript/AudioNode.js` already called the engine with both the
+"one destination" and "everything" shapes, so that path was dead code.
+Implemented in monteslu/webaudio-node (commit 1a1aea7, pushed): removes one
+edge per call, since connecting a pair twice is legal and disconnect() undoes
+one connect(). Also added `disconnectOutput` and `disconnectFromParam`, which
+AudioNode.js called but the engine never defined (they would have thrown).
+Upstream suite: 68/68, including three new disconnect tests; verified the old
+no-op body fails two of them.
+
+## Live playback
+
+`test/beeptest.ts` opens the real device and plays five effects. It reports
+the ENGINE CLOCK, which only advances when the callback runs, so "the device
+is silent" is distinguishable from "the device never started": 2.432s
+advanced, 0 commands dropped. Deliberately NOT in scripts/test.sh -- it needs
+a sound card and makes noise.
+
+`runtime/audio/sfx.ts` synthesises blip/pickup/hit/dash/gameOver from
+oscillators and filters; a game ships a few numbers rather than a sample
+library. Effects are scheduled against `ctx.currentTime` rather than fired
+immediately, because the audio thread renders AHEAD: "now" on the main thread
+is already past for the mixer, and scheduling is what preserves an envelope's
+shape.

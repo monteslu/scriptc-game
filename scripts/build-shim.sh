@@ -26,7 +26,7 @@ INC="-I$DEST/include -I$ROOT/shim"
 clang -O2 -std=c11 -c "$ROOT/shim/sg_tables.c" -o "$OBJ/sg_tables.o" $INC
 
 SHIM_OBJS="$OBJ/sg_tables.o"
-for cpp in sg_core sg_input sg_skia_gen sg_skia_extra; do
+for cpp in sg_core sg_input sg_audio sg_skia_gen sg_skia_extra; do
   clang++ -O2 -std=c++17 -stdlib=libc++ -fno-exceptions \
           -c "$ROOT/shim/$cpp.cpp" -o "$OBJ/$cpp.o" $INC $SDL_CFLAGS
   SHIM_OBJS="$SHIM_OBJS $OBJ/$cpp.o"

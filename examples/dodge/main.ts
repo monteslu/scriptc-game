@@ -12,6 +12,8 @@ import { Game, GameOptions } from "../../runtime/loop/run.js";
 import { Context2D } from "../../runtime/canvas/context.js";
 import * as ffi from "../../runtime/ffi.js";
 import { sqrt, TAU } from "../../runtime/math.js";
+import { AudioContext, createAudioContext, closeAudio } from "../../runtime/audio/context.js";
+import { pickup, hit, dash as dashSfx, gameOver } from "../../runtime/audio/sfx.js";
 import {
   BTN_A, BTN_START, BTN_DPAD_LEFT, BTN_DPAD_RIGHT, BTN_DPAD_UP, BTN_DPAD_DOWN,
   AXIS_LEFT_X, AXIS_LEFT_Y, GamepadEffectParameters, Gamepad,
@@ -64,6 +66,9 @@ class Dodge extends Game {
   /* A fixed pool, never reallocated: a game loop that allocates per frame
    * hands the collector work forever. `alive` marks a slot in use. */
   fallers: Faller[] = [];
+
+  /** null when the device could not be opened; the game stays playable. */
+  audio: AudioContext | null = null;
 
   /** Deterministic pseudo-randomness: no Math.random in the static tier. */
   private seed = 0x2f6e2b1;
@@ -152,6 +157,7 @@ class Dodge extends Game {
       this.dashMs = DASH_MS;
       this.cooldownMs = DASH_COOLDOWN_MS;
       this.rumble(0.25, 0.15, 70);
+      if (this.audio !== null) dashSfx(this.audio, 0.22);
     }
 
     let speed = PLAYER_SPEED;
@@ -196,15 +202,18 @@ class Dodge extends Game {
         f.alive = false;
         this.score += 10;
         this.rumble(0.15, 0.0, 45);
+        if (this.audio !== null) pickup(this.audio, 0.3);
       } else if (this.invulnMs <= 0) {
         f.alive = false;
         this.lives -= 1;
         this.invulnMs = 1100;
         this.rumble(0.9, 1.0, 260);
+        if (this.audio !== null) hit(this.audio, 0.45);
         if (this.lives <= 0) {
           this.over = true;
           if (this.score > this.best) this.best = this.score;
           this.rumble(1.0, 1.0, 520);
+          if (this.audio !== null) gameOver(this.audio, 0.3);
         }
       }
     }
@@ -332,6 +341,12 @@ function main(): void {
   ffi.fontRegister("test/assets/DejaVuSans.ttf");
 
   const game = new Dodge();
+  /* 1024 frames is ~21ms at 48kHz: low enough that a hit sounds immediate,
+   * high enough that a frame spike cannot starve the mixer. Failure is not
+   * fatal -- a machine with no sound card should still play the game. */
+  game.audio = createAudioContext(48000, 1024);
+  if (game.audio === null) console.log("audio unavailable; running silent");
+
   const opts = new GameOptions();
   opts.width = W;
   opts.height = H;
@@ -344,6 +359,7 @@ function main(): void {
   if (shotFrameEnv !== undefined) opts.shotFrame = parseInt(shotFrameEnv, 10);
 
   const rc = game.run(opts);
+  closeAudio();
   console.log(`final score ${Math.floor(game.score)} (best ${Math.floor(game.best)})`);
   process.exit(rc);
 }

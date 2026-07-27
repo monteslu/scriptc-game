@@ -1018,6 +1018,178 @@
       "returns": "f64"
     },
     {
+      "name": "sgAudioInit",
+      "symbol": "sg_audio_init",
+      "params": [
+        "u32",
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgAudioInitOffline",
+      "symbol": "sg_audio_init_offline",
+      "params": [
+        "u32",
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgAudioQuit",
+      "symbol": "sg_audio_quit",
+      "params": [
+        "i32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "sgAudioRate",
+      "symbol": "sg_audio_rate",
+      "params": [
+        "i32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "sgAudioChannels",
+      "symbol": "sg_audio_channels",
+      "params": [
+        "i32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "sgAudioTime",
+      "symbol": "sg_audio_time",
+      "params": [
+        "i32"
+      ],
+      "returns": "f64"
+    },
+    {
+      "name": "sgAudioDropped",
+      "symbol": "sg_audio_dropped",
+      "params": [
+        "i32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "sgAudioSuspend",
+      "symbol": "sg_audio_suspend",
+      "params": [
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgAudioCreateNode",
+      "symbol": "sg_audio_create_node",
+      "params": [
+        "string"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgAudioConnect",
+      "symbol": "sg_audio_connect",
+      "params": [
+        "u32",
+        "u32",
+        "u32",
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgAudioDisconnect",
+      "symbol": "sg_audio_disconnect",
+      "params": [
+        "u32",
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgAudioStart",
+      "symbol": "sg_audio_start",
+      "params": [
+        "u32",
+        "f64"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgAudioStop",
+      "symbol": "sg_audio_stop",
+      "params": [
+        "u32",
+        "f64"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgAudioSetParam",
+      "symbol": "sg_audio_set_param",
+      "params": [
+        "u32",
+        "u32",
+        "f64"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgAudioScheduleParam",
+      "symbol": "sg_audio_schedule_param",
+      "params": [
+        "u32",
+        "u32",
+        "u32",
+        "f64",
+        "f64",
+        "f64"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgAudioRegisterBuffer",
+      "symbol": "sg_audio_register_buffer",
+      "params": [
+        "bytes",
+        "u32",
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgAudioSetNodeBuffer",
+      "symbol": "sg_audio_set_node_buffer",
+      "params": [
+        "u32",
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgAudioSetCurve",
+      "symbol": "sg_audio_set_curve",
+      "params": [
+        "u32",
+        "bytes"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgAudioRenderOffline",
+      "symbol": "sg_audio_render_offline",
+      "params": [
+        "string",
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
       "name": "sgInputInit",
       "symbol": "sg_input_init",
       "params": [
@@ -1486,7 +1658,8 @@
     }
   ],
   "libraries": [
-    "../vendor/linux-x86_64/libsggfx.a"
+    "../vendor/linux-x86_64/libsggfx.a",
+    "../vendor/linux-x86_64/libwebaudio.a"
   ],
   "system_libraries": [
     "SDL2",

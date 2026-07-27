@@ -58,6 +58,7 @@ const shimSrc = [
   "shim/sg_skia_gen.cpp",
   "shim/sg_skia_extra.cpp",
   "shim/sg_input.cpp",
+  "shim/sg_audio.cpp",
 ]
   .map((f) => readFileSync(join(root, f), "utf8"))
   .join("\n");
@@ -191,7 +192,12 @@ const vendor = `../vendor/${target}`;
 const manifest = {
   ffi_format: 1,
   functions,
-  libraries: [`${vendor}/libsggfx.a`],
+  /* libwebaudio.a is SEPARATE from libsggfx.a on purpose: it is fetched and
+   * built from webaudio-node by scripts/build-webaudio.sh, and keeping it its
+   * own archive means a webaudio bump does not force the 30-second Skia merge.
+   * Order matters to the linker, and sggfx (which calls into the engine) must
+   * come first. */
+  libraries: [`${vendor}/libsggfx.a`, `${vendor}/libwebaudio.a`],
   /* libc++, NOT libstdc++: build-libcanvas compiles Skia against LLVM's
    * libc++ (every symbol is `std::__1::`), so linking libstdc++ leaves
    * thousands of undefined std:: references. c++abi and unwind follow it.

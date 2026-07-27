@@ -11,5 +11,14 @@
     "source": "build-libcanvas out/linux-x86_64",
     "skia_gl_standard": "gl"
   },
-  "sdl": { "version": "2.32.10", "source": "system libsdl2-dev" }
+  "sdl": {
+    "version": "2.32.10",
+    "source": "system libsdl2-dev"
+  },
+  "webaudio": {
+    "version": "0.8.0",
+    "source": "https://github.com/monteslu/webaudio-node",
+    "commit": "1a1aea7",
+    "note": "C++ graph compiled native by scripts/build-webaudio.sh; source is UNPATCHED (shim/emscripten.h and shim/wasm_simd128.h stand in for the two headers it wants), so a bump is a re-fetch"
+  }
 }

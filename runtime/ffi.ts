@@ -64,6 +64,30 @@ declare function sgLog10(x: number): number;
 declare function sgHypot(x: number, y: number): number;
 declare function sgFmod(x: number, y: number): number;
 
+/* ---- audio ----
+ * The graph is webaudio-node's C++ engine, driven from an SDL audio thread.
+ * Mutations queue through a lock-free ring (shim/sg_audio.cpp); only calls
+ * that must RETURN a value run on the main thread. */
+declare function sgAudioInit(sampleRate: number, bufferFrames: number): number;
+declare function sgAudioInitOffline(sampleRate: number, channels: number): number;
+declare function sgAudioQuit(unused: number): void;
+declare function sgAudioRate(unused: number): number;
+declare function sgAudioChannels(unused: number): number;
+declare function sgAudioTime(unused: number): number;
+declare function sgAudioDropped(unused: number): number;
+declare function sgAudioSuspend(suspend: number): number;
+declare function sgAudioCreateNode(type: string): number;
+declare function sgAudioConnect(src: number, dst: number, oidx: number, iidx: number): number;
+declare function sgAudioDisconnect(src: number, dst: number): number;
+declare function sgAudioStart(node: number, when: number): number;
+declare function sgAudioStop(node: number, when: number): number;
+declare function sgAudioSetParam(node: number, param: number, value: number): number;
+declare function sgAudioScheduleParam(node: number, param: number, kind: number, time: number, value: number, extra: number): number;
+declare function sgAudioRegisterBuffer(data: Buffer, frames: number, channels: number): number;
+declare function sgAudioSetNodeBuffer(node: number, bufferId: number): number;
+declare function sgAudioSetCurve(node: number, data: Buffer): number;
+declare function sgAudioRenderOffline(path: string, frames: number): number;
+
 // input lifecycle
 declare function sgInputInit(unused: number): number;
 declare function sgInputQuit(unused: number): void;
@@ -182,6 +206,28 @@ export function mathLog2(x: number): number { return sgLog2(x); }
 export function mathLog10(x: number): number { return sgLog10(x); }
 export function mathHypot(x: number, y: number): number { return sgHypot(x, y); }
 export function mathFmod(x: number, y: number): number { return sgFmod(x, y); }
+
+export function audioInit(sampleRate: number, bufferFrames: number): number { return sgAudioInit(sampleRate, bufferFrames); }
+export function audioInitOffline(sampleRate: number, channels: number): number { return sgAudioInitOffline(sampleRate, channels); }
+export function audioQuit(): void { sgAudioQuit(0); }
+export function audioRate(): number { return sgAudioRate(0); }
+export function audioChannels(): number { return sgAudioChannels(0); }
+export function audioTime(): number { return sgAudioTime(0); }
+export function audioDropped(): number { return sgAudioDropped(0); }
+export function audioSuspend(v: number): number { return sgAudioSuspend(v); }
+export function audioCreateNode(type: string): number { return sgAudioCreateNode(type); }
+export function audioConnect(src: number, dst: number, oidx: number, iidx: number): number { return sgAudioConnect(src, dst, oidx, iidx); }
+export function audioDisconnect(src: number, dst: number): number { return sgAudioDisconnect(src, dst); }
+export function audioStart(node: number, when: number): number { return sgAudioStart(node, when); }
+export function audioStop(node: number, when: number): number { return sgAudioStop(node, when); }
+export function audioSetParam(node: number, param: number, value: number): number { return sgAudioSetParam(node, param, value); }
+export function audioScheduleParam(node: number, param: number, kind: number, time: number, value: number, extra: number): number {
+  return sgAudioScheduleParam(node, param, kind, time, value, extra);
+}
+export function audioRegisterBuffer(data: Buffer, frames: number, channels: number): number { return sgAudioRegisterBuffer(data, frames, channels); }
+export function audioSetNodeBuffer(node: number, bufferId: number): number { return sgAudioSetNodeBuffer(node, bufferId); }
+export function audioSetCurve(node: number, data: Buffer): number { return sgAudioSetCurve(node, data); }
+export function audioRenderOffline(path: string, frames: number): number { return sgAudioRenderOffline(path, frames); }
 
 export function inputInit(): number { return sgInputInit(0); }
 export function inputQuit(): void { sgInputQuit(0); }

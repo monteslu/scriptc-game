@@ -28,7 +28,7 @@ run() {
 }
 
 echo "==> building test programs"
-for entry in test/conformance.ts test/readbackprobe.ts test/inputtest.ts test/padvisual.ts; do
+for entry in test/conformance.ts test/readbackprobe.ts test/inputtest.ts test/padvisual.ts test/audiotest.ts; do
   ./scripts/build.sh "$entry" >/dev/null || { echo "build failed: $entry"; exit 1; }
 done
 
@@ -36,6 +36,10 @@ run "canvas conformance" ./scripts/conformance.sh
 run "pixel readback"     env SDL_VIDEODRIVER=dummy ./build/readbackprobe
 run "input + gamepads"   env SDL_VIDEODRIVER=dummy ./build/inputtest
 run "pad visual"         env SDL_VIDEODRIVER=dummy ./build/padvisual test/out/padvisual.png
+# Audio runs OFFLINE (no device): renders graphs to float WAVs and checks the
+# samples. test/beeptest.ts is the live-device check and is deliberately not
+# here -- it needs a sound card and makes noise.
+run "audio graph"        env SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./build/audiotest test/out
 
 echo
 if [ "$fails" -eq 0 ]; then
