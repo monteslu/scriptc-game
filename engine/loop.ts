@@ -20,6 +20,16 @@
  * renderer is handed `alpha`: how far between the last two simulation steps
  * this frame falls, 0..1. Interpolating position by alpha removes the
  * stutter that otherwise shows up as uneven motion.
+ *
+ * ## Frames are not updates
+ *
+ * `update` runs on WALL-CLOCK time, not once per frame. An uncapped loop
+ * (SG_NO_VSYNC, or a headless run with the dummy video driver) renders
+ * thousands of frames per second at ~0.18ms each, so ~90 frames pass
+ * between simulation steps and a 400-frame capture shows a game that has
+ * barely moved. That is the fixed timestep working, not a stall. A headless
+ * test that needs N updates must budget roughly N * step MILLISECONDS, not
+ * N frames.
  */
 import { requestAnimationFrame } from "../web/globals.js";
 
