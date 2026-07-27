@@ -23,13 +23,18 @@ jobs:
       matrix:
         include:
           - target: linux-x86_64
-            runner: ubuntu-22.04
+            runner: ubuntu-24.04
           - target: linux-aarch64
-            runner: ubuntu-22.04-arm
+            runner: ubuntu-24.04-arm
           - target: macos-aarch64
             runner: macos-14
-          - target: windows-x86_64
-            runner: windows-2022
+
+          # windows-x86_64 is NOT here yet, deliberately rather than
+          # quietly: build-libcanvas ships that platform as MSVC .lib
+          # archives with a libcanvas.lib, while fetch-archives.sh and the
+          # FFI manifest both assume Unix .a naming and `ar`. Wiring it up
+          # is a real change to the vendor step, not a matrix entry, and
+          # pretending otherwise would leave a lane that fails forever.
 
     steps:
       - uses: actions/checkout@v5
@@ -84,22 +89,18 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            clang libc++-dev libc++abi-dev libsdl2-dev \
+            clang-18 libc++-18-dev libc++abi-18-dev libsdl2-dev \
             libfontconfig1-dev libfreetype6-dev pkg-config \
             firefox xvfb
+          # scriptc emits LLVM IR with opaque pointers (`ptr`), which needs
+          # clang 15 or newer; the distro default is older on some images.
+          sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-18 100
+          sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-18 100
+          clang --version
 
       - name: macOS deps
         if: startsWith(matrix.target, 'macos')
         run: brew install sdl2 pkg-config
-
-      - name: Windows deps
-        if: startsWith(matrix.target, 'windows')
-        shell: bash
-        run: |
-          choco install -y llvm pkgconfiglite
-          # SDL2 has no chocolatey package that ships a pkg-config file;
-          # vcpkg is the supported route on this runner.
-          vcpkg install sdl2:x64-windows-static
 
       # ---- vendored archives ----
 
