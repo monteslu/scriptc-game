@@ -7,6 +7,9 @@
 # there. Within a single archive the linker iterates to a fixpoint, so
 # merging every member sidesteps the ordering problem completely.
 set -euo pipefail
+# `set -e` exits with no indication of WHERE. On a CI runner this script
+# died after `ar` with an empty log; a trap names the line instead.
+trap 'echo "build-shim.sh: failed at line $LINENO" >&2' ERR
 TARGET="${1:-linux-x86_64}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DEST="$ROOT/vendor/$TARGET"
