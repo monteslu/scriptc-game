@@ -29,3 +29,7 @@ test/golden/png/
 # a fresh clone is not an example. Test FIXTURES are generated instead --
 # see scripts/make-decode-fixtures.sh.
 test/fixtures/images/
+
+# Generated per-build entry modules: gen-entry.js writes these, and they
+# bake in an absolute game directory. Never committed.
+.sg-build/
