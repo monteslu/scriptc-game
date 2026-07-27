@@ -120,8 +120,14 @@ Run the two vendor steps once, then build:
 ./scripts/fetch-archives.sh        # vendor/<target>/libskiac.a  + headers
 ./scripts/build-webaudio.sh        # vendor/<target>/libwebaudio.a
 ./scripts/build.sh examples/dodge  # -> build/dodge
+./scripts/dev.sh examples/dodge    # rebuild + relaunch on every save
 ./scripts/test.sh                  # every suite, headless
 ```
+
+`dev.sh` watches the game plus `web/`, `engine/`, `host/` and `shim/`. A
+game-code change is about 7 seconds end to end, since the C++ shim is only
+recompiled when it actually changes. Install `inotify-tools` for instant
+change detection; without it the watcher polls once a second.
 
 Skipping either vendor step fails at link time with a missing-archive error
 (`ar: ... libskiac.a: No such file or directory`, or an FFI manifest complaint

@@ -23,12 +23,39 @@ INC="-I$DEST/include -I$ROOT/shim -I${WEBAUDIO_SRC:-$HOME/code/cliemu/webaudio-n
 # libc++, so every std:: symbol in the vendored archives is std::__1::.
 # Compiling the shim against libstdc++ would mismatch the ABI at the
 # skia_c.hpp boundary; the final link takes -lc++ -lc++abi (see gen-ffi.js).
-clang -O2 -std=c11 -c "$ROOT/shim/sg_tables.c" -o "$OBJ/sg_tables.o" $INC
+# Recompile only what changed.
+#
+# These seven translation units took 5.8s on EVERY build, including builds
+# where no C++ had been touched -- roughly half the edit-to-run latency for
+# someone iterating on game code, which is the common case.
+#
+# Staleness is judged against the .d file clang writes with -MMD: that lists
+# the source AND every header it pulled in, so editing sg_skia.h correctly
+# rebuilds each dependent object. A missing .d means "never built", which
+# compiles. Deleting obj/ forces a full rebuild.
+needs_build() {
+  local obj="$1" dep="${1%.o}.d"
+  [ -f "$obj" ] || return 0            # never built
+  [ -f "$dep" ] || return 0            # no dependency record: assume stale
+  local f
+  # Strip make-rule syntax (target:, line continuations) to get the file list.
+  for f in $(sed -e 's/^.*://' -e 's/\\$//' "$dep"); do
+    [ -f "$f" ] || return 0            # a dependency vanished
+    [ "$f" -nt "$obj" ] && return 0    # a dependency is newer
+  done
+  return 1
+}
+
+if needs_build "$OBJ/sg_tables.o"; then
+  clang -O2 -std=c11 -MMD -c "$ROOT/shim/sg_tables.c" -o "$OBJ/sg_tables.o" $INC
+fi
 
 SHIM_OBJS="$OBJ/sg_tables.o"
 for cpp in sg_core sg_input sg_audio sg_audio_decode sg_skia_gen sg_skia_extra; do
-  clang++ -O2 -std=c++17 -stdlib=libc++ -fno-exceptions \
-          -c "$ROOT/shim/$cpp.cpp" -o "$OBJ/$cpp.o" $INC $SDL_CFLAGS
+  if needs_build "$OBJ/$cpp.o"; then
+    clang++ -O2 -std=c++17 -stdlib=libc++ -fno-exceptions -MMD \
+            -c "$ROOT/shim/$cpp.cpp" -o "$OBJ/$cpp.o" $INC $SDL_CFLAGS
+  fi
   SHIM_OBJS="$SHIM_OBJS $OBJ/$cpp.o"
 done
 
