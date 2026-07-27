@@ -113,6 +113,13 @@ jobs:
           WEBAUDIO_SRC: ${{ github.workspace }}/webaudio-node
         run: ./scripts/build-webaudio.sh ${{ matrix.target }}
 
+      # WEBAUDIO_SRC is exported for every later step, not just the one
+      # above: shim/sg_audio_decode.cpp includes dr_mp3.h and friends from
+      # the same vendor directory, so build.sh needs it too.
+      - name: Export WEBAUDIO_SRC
+        shell: bash
+        run: echo "WEBAUDIO_SRC=${{ github.workspace }}/webaudio-node" >> "$GITHUB_ENV"
+
       # ---- build + test ----
 
       - name: Build every example

@@ -26,6 +26,13 @@ mkdir -p "$OBJ"
 # -I$ROOT/shim FIRST so our emscripten.h wins over any real one on the box.
 INCLUDES="-I$ROOT/shim -I$SRC -I$SRC/src/vendor"
 
+# audio_graph_simple.cpp uses std::string without including <string>; it
+# compiles anyway wherever <map> happens to pull the definition in
+# transitively, and fails where it does not (libstdc++ 12 on the CI
+# runners). Forced in from the command line rather than patched, so the
+# upstream source stays byte-identical -- see the note at the top.
+INCLUDES="$INCLUDES -include string"
+
 # Matches the shim's own flags: libc++ for ABI compatibility with Skia, and
 # no exceptions (the engine uses none -- verified, zero try/throw/catch).
 CXXFLAGS="-O2 -std=c++17 -stdlib=libc++ -fno-exceptions -fvisibility=hidden -DNDEBUG"

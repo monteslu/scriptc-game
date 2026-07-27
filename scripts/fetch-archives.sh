@@ -16,7 +16,10 @@ SRC="${LIBCANVAS_OUT:-$HOME/code/cliemu/build-libcanvas/out/$TARGET}"
 # release: CI runners have no checkout, and requiring one would mean every
 # platform in the matrix builds Skia from source for no reason.
 if [ ! -d "$SRC" ]; then
-  TAG="${LIBCANVAS_TAG:-$(python3 -c "import json;print(json.load(open('$ROOT/versions.json'))['canvas'].get('release_tag',''))")}"
+  # Parsed with sed rather than python3: on Windows runners the shell is
+  # MSYS bash but python3 is a native Windows build, so it cannot open the
+  # "/d/a/..." path this script computes. One less toolchain in the way.
+  TAG="${LIBCANVAS_TAG:-$(sed -n 's/.*"release_tag"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$ROOT/versions.json" | head -1)}"
   [ -n "$TAG" ] || { echo "no local build-libcanvas at $SRC and no canvas.release_tag in versions.json" >&2; exit 1; }
   URL="https://github.com/monteslu/build-libcanvas/releases/download/$TAG/libcanvas-$TARGET.tar.gz"
   echo "fetching $URL"
