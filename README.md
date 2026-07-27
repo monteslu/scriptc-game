@@ -1,14 +1,13 @@
 # scriptc-game
 
-**Working title. Public name TBD by monteslu before anything is published.**
+**Write a browser game. Compile it to a NATIVE binary.**
+**No chromium, No Electron, No node.js, No bun, No JIT, No V8**
 
-**Write a browser game. Compile it to a native binary.**
 
 A game here is ordinary web code: `document.getElementById`, `getContext("2d")`,
 `requestAnimationFrame`, `new Image()`, `fetch`, Web Audio, `navigator.getGamepads()`.
-It compiles ahead of time into one self-contained executable. No Node, no V8, no
-JavaScript engine in the binary. Skia, SDL2 and the webaudio-node C++ graph are
-statically linked behind a C-ABI shim.
+It compiles ahead of time into one self-contained executable, with Skia, SDL2 and
+the webaudio-node C++ graph statically linked behind a C-ABI shim.
 
 ```ts
 import { window, document, requestAnimationFrame } from "scriptc-game/web";
