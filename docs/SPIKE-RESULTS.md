@@ -1,9 +1,15 @@
-# Phase 0 Spike Results
+# Engineering notes
 
-Run 2026-07-27. Host: Linux x86_64, Node v24.16.0, clang 21.1.8,
-scriptc 0.0.17 (latest; FFI landed in 0.0.15, so it is two releases old).
+What was measured, what broke, and why things are built the way they are.
+Kept because most of it is the kind of thing that is expensive to rediscover:
+upstream quirks, spec details that bite, and numbers that shaped the design.
 
-**Verdict: Phase 0 gate PASSED.** All kill criteria cleared, with one real
+Host for all measurements: Linux x86_64, Node v24.16.0, clang 21.1.8,
+scriptc 0.0.17 (FFI landed in 0.0.15, so it is two releases old).
+
+## Toolchain validation
+
+**Verdict: everything needed to proceed works.** One real
 upstream compiler bug found that has a cheap, mechanical workaround.
 
 ## Results
@@ -119,7 +125,7 @@ the rule becomes optional (harmless either way).
 
 ## Gate decision
 
-Proceed. No kill criterion was met; the FFI overhead result
+Proceed. Nothing blocking was found; the FFI overhead result
 strengthens the design, and the one bug found is contained by a codegen
 rule.
 

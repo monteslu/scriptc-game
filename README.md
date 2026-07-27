@@ -134,8 +134,7 @@ Also relied on:
 | [docs/DIALECT.md](docs/DIALECT.md) | The scriptc TS dialect game code must obey, with rewrite patterns |
 | [docs/WEBGL-AND-3D.md](docs/WEBGL-AND-3D.md) | WebGL2 tier + the planned 3D library |
 | [docs/BUILD-AND-CI.md](docs/BUILD-AND-CI.md) | Archive matrix, cross-compilation, CI design, packaging |
-| [docs/SPIKE-RESULTS.md](docs/SPIKE-RESULTS.md) | Measured results and every bug found, phase by phase |
-| [docs/RISKS.md](docs/RISKS.md) | Risk register, kill criteria, open questions |
+| [docs/SPIKE-RESULTS.md](docs/SPIKE-RESULTS.md) | Engineering notes: measurements, upstream quirks, every bug found |
 
 ## Project notes
 
