@@ -98,6 +98,25 @@ Every number below comes from `./scripts/test.sh`, which runs headless.
 music, sound effects, and gamepad input with rumble. `examples/loader` is the
 same stack driven through the optional engine, with a loading screen.
 
+## Building
+
+Two things are needed that this repo does not vendor, because both are large
+prebuilt toolchains rather than source:
+
+| Dependency | Default location | Override |
+| --- | --- | --- |
+| [scriptc](https://github.com/vercel-labs/scriptc) | `../scriptc/packages/cli/dist/main.js` (a sibling checkout) | `SCRIPTC_BIN` |
+| [build-libcanvas](https://github.com/monteslu/build-libcanvas) output | `~/code/cliemu/build-libcanvas/out/<target>` | `LIBCANVAS_OUT` |
+
+```sh
+./scripts/fetch-archives.sh        # populates vendor/<target>/ from build-libcanvas
+./scripts/build.sh examples/dodge  # -> build/dodge
+./scripts/test.sh                  # every suite, headless
+```
+
+`fetch-archives.sh` must run once before the first build; without it the link
+step fails with a bare `ar: ... libskiac.a: No such file or directory`.
+
 ## Credits
 
 This project is assembled from other people's work. Each of these does the heavy
