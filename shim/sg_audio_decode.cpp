@@ -57,6 +57,82 @@ static bool ends_with(const char* s, const char* suffix) {
   return true;
 }
 
+/* Decodes ENCODED BYTES to interleaved float32 and registers them.
+ *
+ * This is what BaseAudioContext.decodeAudioData(ArrayBuffer) needs: the web
+ * hands the decoder a buffer, not a path. dr_libs and stb_vorbis all expose
+ * memory entry points, so nothing touches the filesystem here.
+ *
+ * The format is sniffed from the header rather than an extension, because
+ * bytes carry no filename -- which is also what a browser does. */
+extern "C" int32_t sg_audio_decode_bytes(uint32_t graph_id, uint32_t buffer_id,
+                                         const uint8_t* data, size_t len) {
+  if (!data || len < 12) { sg_mail_set("audio data too short"); return SG_EDECODE; }
+
+  float*   samples = NULL;
+  uint64_t frames = 0;
+  uint32_t channels = 0;
+  uint32_t rate = 0;
+  bool     free_with_drlibs = true;
+
+  /* Magic-number sniffing, in the order a real decoder would try:
+   *   "RIFF"...."WAVE"  wav
+   *   "fLaC"            flac
+   *   "OggS"            ogg/vorbis
+   *   "ID3" or 0xFFEx   mp3 (tagged or bare frame sync) */
+  const bool isWav  = data[0]=='R'&&data[1]=='I'&&data[2]=='F'&&data[3]=='F';
+  const bool isFlac = data[0]=='f'&&data[1]=='L'&&data[2]=='a'&&data[3]=='C';
+  const bool isOgg  = data[0]=='O'&&data[1]=='g'&&data[2]=='g'&&data[3]=='S';
+  const bool isMp3  = (data[0]=='I'&&data[1]=='D'&&data[2]=='3') ||
+                      (data[0]==0xFF && (data[1]&0xE0)==0xE0);
+
+  if (isWav) {
+    unsigned int ch=0, sr=0; drwav_uint64 n=0;
+    samples = drwav_open_memory_and_read_pcm_frames_f32(data, len, &ch, &sr, &n, NULL);
+    if (!samples) { sg_mail_set("wav decode failed"); return SG_EDECODE; }
+    frames=n; channels=ch; rate=sr;
+  } else if (isFlac) {
+    unsigned int ch=0, sr=0; drflac_uint64 n=0;
+    samples = drflac_open_memory_and_read_pcm_frames_f32(data, len, &ch, &sr, &n, NULL);
+    if (!samples) { sg_mail_set("flac decode failed"); return SG_EDECODE; }
+    frames=n; channels=ch; rate=sr;
+  } else if (isOgg) {
+    int ch=0, sr=0; short* pcm=NULL;
+    int n = stb_vorbis_decode_memory(data, (int)len, &ch, &sr, &pcm);
+    if (n < 0 || !pcm) { sg_mail_set("ogg decode failed"); return SG_EDECODE; }
+    size_t total = (size_t)n * (size_t)ch;
+    samples = (float*)malloc(total * sizeof(float));
+    if (!samples) { free(pcm); sg_mail_set("out of memory decoding ogg"); return SG_EAUDIO; }
+    for (size_t i = 0; i < total; i++) samples[i] = (float)pcm[i] / 32768.0f;
+    free(pcm);
+    frames=(uint64_t)n; channels=(uint32_t)ch; rate=(uint32_t)sr;
+    free_with_drlibs = false;
+  } else if (isMp3) {
+    drmp3_config cfg; memset(&cfg, 0, sizeof(cfg));
+    drmp3_uint64 n = 0;
+    samples = drmp3_open_memory_and_read_pcm_frames_f32(data, len, &cfg, &n, NULL);
+    if (!samples) { sg_mail_set("mp3 decode failed"); return SG_EDECODE; }
+    frames=n; channels=cfg.channels; rate=cfg.sampleRate;
+  } else {
+    sg_mail_set("unrecognised audio data (want wav, mp3, ogg or flac)");
+    return SG_EDECODE;
+  }
+
+  if (frames == 0 || channels == 0) {
+    if (samples) { if (free_with_drlibs) drwav_free(samples, NULL); else free(samples); }
+    sg_mail_set("decoded audio is empty");
+    return SG_EDECODE;
+  }
+
+  registerBuffer((int)graph_id, (int)buffer_id, samples, (int)frames, (int)channels);
+  if (free_with_drlibs) drwav_free(samples, NULL); else free(samples);
+
+  g_dec_frames = (uint32_t)frames;
+  g_dec_channels = channels;
+  g_dec_rate = rate;
+  return (int32_t)buffer_id;
+}
+
 /* Decodes a file to interleaved float32 and registers it with the graph.
  *
  * Returns the buffer id (>0), or a negative status. The caller reads

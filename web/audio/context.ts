@@ -10,6 +10,7 @@
  * express a web idiom the difference is called out in a comment.
  */
 import * as ffi from "../../host/ffi.js";
+import { queueTask as queueAudioTask } from "../../host/tasks.js";
 import {
   P_FREQUENCY, P_DETUNE, P_GAIN, P_Q, P_DELAY_TIME, P_PAN, P_OFFSET, P_TYPE,
   P_LOOP, P_THRESHOLD, P_KNEE, P_RATIO, P_ATTACK, P_RELEASE,
@@ -336,6 +337,31 @@ export class AudioContext {
   }
   createIIRFilter(): IIRFilterNode {
     return new IIRFilterNode(ffi.audioCreateNode("IIRFilter"));
+  }
+
+  /* BaseAudioContext.decodeAudioData(ArrayBuffer): Promise<AudioBuffer>.
+   *
+   * The spec shape. Bytes in, buffer out, format sniffed from the header --
+   * a browser has no filename either. The decode itself is a native call, but
+   * the promise settles on a LATER TURN so loading code behaves the same
+   * here and in a page.
+   *
+   * Pair it with fetch, exactly as on the web:
+   *   fetch(url).then(r => r.arrayBuffer()).then(b => ctx.decodeAudioData(b))
+   */
+  decodeAudioData(audioData: Buffer): Promise<AudioBuffer> {
+    const graph = ffi.audioGraphId();
+    const id = ffi.audioNextBufferId();
+    const rc = graph < 0 ? -1 : ffi.audioDecodeBytes(graph, id, audioData);
+    const frames = ffi.decodeFrames();
+    const channels = ffi.decodeChannels();
+    const rate = ffi.decodeRate();
+    return new Promise<AudioBuffer>((resolve, reject) => {
+      queueAudioTask(() => {
+        if (rc < 0) reject(new Error("could not decode audio data"));
+        else resolve(new AudioBuffer(id, frames, channels, rate));
+      });
+    });
   }
 
   /* Decodes an audio FILE (mp3/wav/flac/ogg) into a playable buffer.

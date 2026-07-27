@@ -1,38 +1,59 @@
-import { Game, GameOptions } from "../../engine/loop.js";
-import { Context2D } from "../../web/canvas/context.js";
-import * as ffi from "../../host/ffi.js";
+/* bounce: a square bouncing around the canvas, nudged with the arrow keys.
+ *
+ * Browser code. The only non-web line is the import that supplies the
+ * globals; in a page an import-map or bundler alias satisfies it and the
+ * rest of the file is unchanged.
+ */
+import {
+  window, document, requestAnimationFrame, KeyboardEvent,
+} from "../../web/globals.js";
 
-const W = 640;
-const H = 360;
 const SIZE = 48;
 
-class Bounce extends Game {
-  x = 100;
-  y = 80;
-  vx = 0.22;
-  vy = 0.17;
-  spin = 0;
+window.onLoad(() => {
+  const canvas = document.getElementById("game-canvas");
+  const ctx = canvas.getContext("2d")!;
+  const W = canvas.width;
+  const H = canvas.height;
 
-  update(dtMs: number): void {
-    if (this.input.isDown("Escape")) { this.stop(); return; }
-    if (this.input.isDown("ArrowLeft")) this.vx -= 0.002 * dtMs;
-    if (this.input.isDown("ArrowRight")) this.vx += 0.002 * dtMs;
-    if (this.input.isDown("ArrowUp")) this.vy -= 0.002 * dtMs;
-    if (this.input.isDown("ArrowDown")) this.vy += 0.002 * dtMs;
+  let x = 100;
+  let y = 80;
+  let vx = 0.22;
+  let vy = 0.17;
+  let spin = 0;
+  let last = 0;
 
-    this.x += this.vx * dtMs;
-    this.y += this.vy * dtMs;
-    if (this.x < 0) { this.x = 0; this.vx = -this.vx; }
-    if (this.y < 0) { this.y = 0; this.vy = -this.vy; }
-    if (this.x > W - SIZE) { this.x = W - SIZE; this.vx = -this.vx; }
-    if (this.y > H - SIZE) { this.y = H - SIZE; this.vy = -this.vy; }
-    this.spin += dtMs * 0.002;
-  }
+  /* Held-key state from keydown/keyup, the way a browser game does it: the
+   * platform has no "is this key down" query, so the game keeps the set. */
+  const held = new Map<string, boolean>();
+  window.addEventListener("keydown", (e: KeyboardEvent) => { held.set(e.code, true); });
+  window.addEventListener("keyup", (e: KeyboardEvent) => { held.set(e.code, false); });
 
-  draw(ctx: Context2D, alpha: number): void {
+  function down(code: string): boolean { return held.get(code) === true; }
+
+  function frame(time: number): void {
+    // The first rAF has no previous timestamp -- true in a browser too --
+    // so seed it rather than computing a delta against zero.
+    let dt = last === 0 ? 16 : time - last;
+    last = time;
+    if (dt > 250) dt = 250;
+
+    if (down("ArrowLeft")) vx -= 0.002 * dt;
+    if (down("ArrowRight")) vx += 0.002 * dt;
+    if (down("ArrowUp")) vy -= 0.002 * dt;
+    if (down("ArrowDown")) vy += 0.002 * dt;
+
+    x += vx * dt;
+    y += vy * dt;
+    if (x < 0) { x = 0; vx = -vx; }
+    if (y < 0) { y = 0; vy = -vy; }
+    if (x > W - SIZE) { x = W - SIZE; vx = -vx; }
+    if (y > H - SIZE) { y = H - SIZE; vy = -vy; }
+    spin += dt * 0.002;
+
     ctx.clear("#101820");
 
-    // a static grid so motion is obvious in screenshots
+    // A static grid, so motion is obvious in a screenshot.
     ctx.strokeStyle = "#1d2b3a";
     ctx.lineWidth = 2;
     for (let gx = 0; gx <= W; gx += 64) {
@@ -42,12 +63,9 @@ class Bounce extends Game {
       ctx.stroke();
     }
 
-    const px = this.x + this.vx * alpha;
-    const py = this.y + this.vy * alpha;
-
     ctx.save();
-    ctx.translate(px + SIZE / 2, py + SIZE / 2);
-    ctx.rotate(this.spin);
+    ctx.translate(x + SIZE / 2, y + SIZE / 2);
+    ctx.rotate(spin);
     ctx.fillStyle = "#ffb703";
     ctx.fillRect(-SIZE / 2, -SIZE / 2, SIZE, SIZE);
     ctx.strokeStyle = "#fb8500";
@@ -57,30 +75,9 @@ class Bounce extends Game {
 
     ctx.fillStyle = "rgba(255,255,255,0.85)";
     ctx.fillRect(8, 8, 120, 6);
+
+    requestAnimationFrame(frame);
   }
-}
 
-function main(): void {
-  const game = new Bounce();
-  const opts = new GameOptions();
-  opts.width = W;
-  opts.height = H;
-  const framesEnv = process.env["SG_MAX_FRAMES"];
-  if (framesEnv !== undefined) opts.maxFrames = parseInt(framesEnv, 10);
-  const shotEnv = process.env["SG_SHOT"];
-  if (shotEnv !== undefined) opts.shotPath = shotEnv;
-  const shotFrameEnv = process.env["SG_SHOT_FRAME"];
-  if (shotFrameEnv !== undefined) opts.shotFrame = parseInt(shotFrameEnv, 10);
-  if (process.env["SG_NO_VSYNC"] !== undefined) opts.vsync = false;
-
-  const rc = game.run(opts);
-  const st = game.stats;
-  const avg = st.frames > 0 ? st.totalMs / st.frames : 0;
-  const fps = avg > 0 ? 1000 / avg : 0;
-  console.log(`frames=${st.frames} avg=${avg.toFixed(2)}ms (${fps.toFixed(1)} fps) min=${st.minMs.toFixed(2)} max=${st.maxMs.toFixed(2)} hitches=${st.hitches}`);
-  console.log(`display=${st.displayHz}Hz budget=${st.budgetMs.toFixed(2)}ms`);
-  console.log(`handles live: surface=${ffi.debugLive(0)} canvas=${ffi.debugLive(1)} paint=${ffi.debugLive(2)} path=${ffi.debugLive(3)}`);
-  process.exit(rc);
-}
-
-main();
+  requestAnimationFrame(frame);
+});

@@ -93,6 +93,9 @@ declare function sgAudioNextBufferId(unused: number): number;
  * ~90MB of float32. The file goes straight into the engine's buffer store and
  * TS gets back an id plus metadata through the three getters. */
 declare function sgAudioDecodeFile(graphId: number, bufferId: number, path: string): number;
+/* decodeAudioData's path: the web hands a decoder BYTES, not a filename, so
+ * the format is sniffed from the header. */
+declare function sgAudioDecodeBytes(graphId: number, bufferId: number, data: Buffer): number;
 declare function sgDecodeFrames(unused: number): number;
 declare function sgDecodeChannels(unused: number): number;
 declare function sgDecodeRate(unused: number): number;
@@ -241,6 +244,9 @@ export function audioGraphId(): number { return sgAudioGraphId(0); }
 export function audioNextBufferId(): number { return sgAudioNextBufferId(0); }
 export function audioDecodeFile(graphId: number, bufferId: number, path: string): number {
   return sgAudioDecodeFile(graphId, bufferId, path);
+}
+export function audioDecodeBytes(graphId: number, bufferId: number, data: Buffer): number {
+  return sgAudioDecodeBytes(graphId, bufferId, data);
 }
 export function decodeFrames(): number { return sgDecodeFrames(0); }
 export function decodeChannels(): number { return sgDecodeChannels(0); }

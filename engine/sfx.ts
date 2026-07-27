@@ -10,7 +10,7 @@
  * thread is already in the past for the mixer, and scheduling is what keeps
  * an envelope's shape intact.
  */
-import { AudioContext } from "./context.js";
+import { AudioContext } from "../web/globals.js";
 
 /** A short pitched blip: coins, pickups, UI clicks. */
 export function blip(ctx: AudioContext, freq: number, durationSec: number,

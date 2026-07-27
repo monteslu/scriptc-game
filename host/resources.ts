@@ -30,7 +30,7 @@ export function setGameDir(dir: string): void {
 export function getWebRoot(): string { return webRoot; }
 
 /** True for URLs that name something other than a file under the web root. */
-function isExternal(url: string): boolean {
+export function isExternalUrl(url: string): boolean {
   const u = url.toLowerCase();
   return u.startsWith("http://") || u.startsWith("https://") ||
          u.startsWith("data:") || u.startsWith("blob:") || u.startsWith("//");
@@ -47,17 +47,17 @@ function joinPath(a: string, b: string): string {
 
 /** Resolves a game-facing URL to a filesystem path. */
 export function resolveUrl(url: string): string {
-  if (isExternal(url)) return url;
+  if (isExternalUrl(url)) return url;
   return joinPath(webRoot, url);
 }
 
 /** Reads a file, or null when it is missing or unreadable. */
 export function readBinary(path: string): Buffer | null {
-  if (isExternal(path)) return null;   // no network stack in this build
+  if (isExternalUrl(path)) return null;   // no network stack in this build
   if (!existsSync(path)) return null;
   return readFileSync(path);
 }
 
 export function fileExists(path: string): boolean {
-  return !isExternal(path) && existsSync(path);
+  return !isExternalUrl(path) && existsSync(path);
 }

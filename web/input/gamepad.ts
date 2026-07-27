@@ -106,14 +106,30 @@ export class GamepadEffectParameters {
 }
 
 export class VibrationActuator {
-  /** The spec's `type`; only dual-rumble is supported by SDL's API. */
+  /* GamepadHapticEffectType values this actuator can play.
+   *
+   * The spec has no "does it rumble" boolean -- a page reads `effects` (or
+   * checks vibrationActuator itself) to discover support. Empty means the
+   * device has no motors, and playEffect then resolves without doing
+   * anything, which is what the spec asks for. */
+  effects: string[] = [];
+  /** Legacy alias kept for the spec's older `type` spelling. */
   type = "dual-rumble";
   private slot = 0;
 
   constructor(slot: number) { this.slot = slot; }
 
+  /** True when this actuator can play `effect`. */
+  canPlay(effect: string): boolean {
+    for (let i = 0; i < this.effects.length; i++) {
+      if (this.effects[i] === effect) return true;
+    }
+    return false;
+  }
+
   playEffect(type: string, params: GamepadEffectParameters): Promise<string> {
     if (type !== "dual-rumble") return Promise.resolve("invalid-effect-type");
+    if (!this.canPlay(type)) return Promise.resolve("complete");
     ffi.padRumble(this.slot, params.weakMagnitude, params.strongMagnitude, params.duration);
     return Promise.resolve("complete");
   }
@@ -138,8 +154,9 @@ export class Gamepad {
   mapping = "standard";
   axes: number[] = [];
   buttons: GamepadButton[] = [];
-  /** True when the pad has motors; playEffect is a no-op otherwise. */
-  hasRumble = false;
+  /* DOMHighResTimeStamp of the last axes/buttons update. Required by the
+   * spec and used by games to detect a pad that has stopped reporting. */
+  timestamp = 0;
 
   /** The web's `gamepad.vibrationActuator`. */
   vibrationActuator = new VibrationActuator(0);
@@ -181,7 +198,8 @@ export function pollGamepads(): void {
         // character running into a wall forever.
         pad.connected = false;
         pad.id = "";
-        pad.hasRumble = false;
+        pad.vibrationActuator.effects = [];
+        pad.timestamp = 0;
         for (let i = 0; i < AXIS_COUNT; i++) pad.axes[i] = 0;
         for (let i = 0; i < BUTTON_COUNT; i++) {
           pad.buttons[i].pressed = false;
@@ -196,9 +214,14 @@ export function pollGamepads(): void {
       pad.connected = true;
       ffi.padName(slot);
       pad.id = readMailbox();
-      pad.hasRumble = ffi.padHasRumble(slot) !== 0;
+      /* The spec discovers haptics through the actuator's effect list, so
+       * SDL's "has rumble" answer populates that rather than a bespoke
+       * boolean. */
+      pad.vibrationActuator.effects =
+        ffi.padHasRumble(slot) !== 0 ? ["dual-rumble"] : [];
     }
 
+    pad.timestamp = ffi.ticks();
     pad.axes[AXIS_LEFT_X] = ffi.padAxis(slot, SDL_AXIS_LEFTX);
     pad.axes[AXIS_LEFT_Y] = ffi.padAxis(slot, SDL_AXIS_LEFTY);
     pad.axes[AXIS_RIGHT_X] = ffi.padAxis(slot, SDL_AXIS_RIGHTX);

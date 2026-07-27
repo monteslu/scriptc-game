@@ -1216,6 +1216,16 @@
       "returns": "i32"
     },
     {
+      "name": "sgAudioDecodeBytes",
+      "symbol": "sg_audio_decode_bytes",
+      "params": [
+        "u32",
+        "u32",
+        "bytes"
+      ],
+      "returns": "i32"
+    },
+    {
       "name": "sgDecodeFrames",
       "symbol": "sg_decode_frames",
       "params": [

@@ -22,7 +22,7 @@ import { setGameDir } from "./resources.js";
 import { Input } from "../web/input/input.js";
 import {
   __initScreen, __runFrameCallbacks, __hasFrameCallbacks,
-  __drainTasks, __hasTasks, __dispatchKeyEvents, __fireLoad,
+  __drainTasks, __hasTasks, __dispatchKeyEvents, __dispatchMouseEvents, __fireLoad,
 } from "../web/globals.js";
 
 export class HostOptions {
@@ -127,12 +127,17 @@ export function run(opts: HostOptions): number {
   stats.budgetMs = opts.vsync && hz > 0 ? 1000 / hz : 1000 / 60;
 
   let last = ffi.ticks();
+  let lastMouseX = -1;
+  let lastMouseY = -1;
 
   for (;;) {
     input.pump();
     if (input.quitRequested) break;
 
     __dispatchKeyEvents(input);
+    __dispatchMouseEvents(input, lastMouseX, lastMouseY);
+    lastMouseX = input.mouseX;
+    lastMouseY = input.mouseY;
 
     // Asset callbacks and promise continuations land before the frame that
     // observes them, which is the ordering a browser gives.

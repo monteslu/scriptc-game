@@ -1,38 +1,25 @@
 /* Live input display: keyboard, mouse, and every connected gamepad.
  *
- * This is the interactive half of the Phase 3 gate. The automated half
- * (test/inputtest.ts) proves the plumbing with a synthetic pad; this one is
- * for putting hands on real hardware and seeing that the mapping is right,
+ * The interactive half of the input gate: the automated half
+ * (test/inputtest.ts) proves the plumbing with a synthetic pad, this one is
+ * for putting hands on real hardware and seeing the mapping is right,
  * hot-plug works, and rumble fires.
  *
- * Keys:  T toggles text input   R rumbles pad 0   ESC quits
+ * Browser code: keydown/keyup/mousemove listeners and navigator.getGamepads().
+ *
+ * Keys:  R rumbles pad 0   ESC quits
  */
-import { Game, GameOptions } from "../../engine/loop.js";
-import { Context2D } from "../../web/canvas/context.js";
-import * as ffi from "../../host/ffi.js";
 import {
-  BUTTON_COUNT, AXIS_COUNT, GamepadEffectParameters,
-} from "../../web/input/gamepad.js";
-import { MOUSE_LEFT, MOUSE_MIDDLE, MOUSE_RIGHT } from "../../host/input-events.js";
+  window, document, navigator, requestAnimationFrame,
+  KeyboardEvent, MouseEvent, FontFace, GamepadEffectParameters,
+} from "../../web/globals.js";
 
-const W = 900;
-const H = 620;
 const FONT = "DejaVu Sans";
 
-/* Number.toString(radix) needs the embedded dynamic engine (SC2012), which
- * static builds never include, so hex is done by hand. */
-const HEX_DIGITS = "0123456789abcdef";
-function hex(v: number): string {
-  if (v === 0) return "0x0";
-  let n = v < 0 ? -v : v;
-  let s = "";
-  while (n > 0) {
-    const d = n % 16;
-    s = HEX_DIGITS.charAt(d) + s;
-    n = (n - d) / 16;
-  }
-  return (v < 0 ? "-0x" : "0x") + s;
-}
+/* The Standard Gamepad has 17 buttons and 4 axes, by index -- the spec names
+ * no constants, so the counts live here with the labels they go with. */
+const BUTTON_COUNT = 17;
+const AXIS_COUNT = 4;
 
 const BUTTON_NAMES: string[] = [
   "A", "B", "X", "Y", "L1", "R1", "L2", "R2",
@@ -40,39 +27,70 @@ const BUTTON_NAMES: string[] = [
 ];
 const AXIS_NAMES: string[] = ["LX", "LY", "RX", "RY"];
 
-class InputDemo extends Game {
-  typed = "";
-  textOn = false;
+window.onLoad(() => {
+  const canvas = document.getElementById("game-canvas");
+  const ctx = canvas.getContext("2d")!;
+  const W = canvas.width;
+  const H = canvas.height;
 
-  update(_dtMs: number): void {
-    if (this.input.isDown("Escape")) { this.stop(); return; }
+  new FontFace(FONT, "url(DejaVuSans.ttf)").load().then((face) => {
+    document.fonts.add(face);
+  });
 
-    if (this.input.wasPressed("KeyT")) {
-      this.textOn = !this.textOn;
-      this.input.textInput(this.textOn);
-      if (!this.textOn) this.typed = "";
+  const held = new Map<string, boolean>();
+  const tapped = new Map<string, boolean>();
+  let typed = "";
+
+  window.addEventListener("keydown", (e: KeyboardEvent) => {
+    if (held.get(e.code) === undefined) heldOrder.push(e.code);
+    held.set(e.code, true);
+    tapped.set(e.code, true);
+    // A tiny text field, to show `code` names arriving in order.
+    if (e.code === "Backspace") {
+      if (typed.length > 0) typed = typed.substring(0, typed.length - 1);
+    } else if (e.code.startsWith("Key")) {
+      typed += e.code.substring(3);
+    } else if (e.code === "Space") {
+      typed += " ";
     }
-    if (this.input.wasPressed("KeyR")) {
-      const pad = this.input.gamepad(0);
-      if (pad !== null && pad.connected) {
+    if (typed.length > 40) typed = typed.substring(typed.length - 40);
+  });
+  window.addEventListener("keyup", (e: KeyboardEvent) => { held.set(e.code, false); });
+
+  let mouseX = 0;
+  let mouseY = 0;
+  const mouseButtons = new Map<number, boolean>();
+  window.onMouse("mousemove", (e: MouseEvent) => { mouseX = e.clientX; mouseY = e.clientY; });
+  window.onMouse("mousedown", (e: MouseEvent) => { mouseButtons.set(e.button, true); });
+  window.onMouse("mouseup", (e: MouseEvent) => { mouseButtons.set(e.button, false); });
+
+  /* Map iteration is fenced in the static tier (SC2004), so the set of
+   * currently-held keys is maintained as an array on the events themselves
+   * -- which is what a browser game does anyway, since the platform has no
+   * "list the held keys" query. */
+  const heldOrder: string[] = [];
+
+  function heldKeys(): string[] {
+    const out: string[] = [];
+    for (let i = 0; i < heldOrder.length; i++) {
+      if (held.get(heldOrder[i]) === true) out.push(heldOrder[i]);
+    }
+    return out;
+  }
+
+  function frame(time: number): void {
+    if (tapped.get("KeyR") === true) {
+      const pads = navigator.getGamepads();
+      const p = pads.length > 0 ? pads[0] : null;
+      if (p !== null && p.connected) {
         const fx = new GamepadEffectParameters();
         fx.duration = 300;
         fx.weakMagnitude = 0.6;
         fx.strongMagnitude = 0.9;
-        pad.vibrationActuator.playEffect("dual-rumble", fx);
+        p.vibrationActuator.playEffect("dual-rumble", fx);
       }
     }
 
-    // Text arrives as a per-frame queue, since it is a sequence not a state.
-    const events = this.input.textEvents();
-    for (let i = 0; i < events.length; i++) this.typed += events[i];
-    if (this.input.wasPressed("Backspace") && this.typed.length > 0) {
-      this.typed = this.typed.substring(0, this.typed.length - 1);
-    }
-    if (this.typed.length > 48) this.typed = this.typed.substring(this.typed.length - 48);
-  }
-
-  draw(ctx: Context2D, _alpha: number): void {
     ctx.clear("#12161c");
     ctx.textAlign = "left";
     ctx.textBaseline = "alphabetic";
@@ -82,53 +100,48 @@ class InputDemo extends Game {
     ctx.fillText("input: keyboard / mouse / gamepads", 16, 28);
     ctx.fillStyle = "#5b6672";
     ctx.font = `12px ${FONT}`;
-    ctx.fillText("T text input    R rumble pad 0    ESC quit", 16, 48);
+    ctx.fillText("R rumble pad 0    ESC quit", 16, 48);
 
-    this.drawKeyboard(ctx, 16, 84);
-    this.drawMouse(ctx, 16, 200);
-    this.drawPads(ctx, 16, 300);
+    drawKeyboard(16, 84);
+    drawMouse(16, 200);
+    drawPads(16, 300);
+
+    tapped.clear();
+    requestAnimationFrame(frame);
   }
 
-  private drawKeyboard(ctx: Context2D, x: number, y: number): void {
+  function drawKeyboard(x: number, y: number): void {
     ctx.fillStyle = "#e8eef4";
     ctx.font = `14px ${FONT}`;
     ctx.fillText("keyboard", x, y);
 
     ctx.font = `12px ${FONT}`;
     ctx.fillStyle = "#9fb3c8";
-    const held = this.input.heldKeys();
+    const keys = heldKeys();
     let line = "held: ";
-    for (let i = 0; i < held.length; i++) {
-      line += held[i];
-      if (i < held.length - 1) line += " ";
+    for (let i = 0; i < keys.length; i++) {
+      line += keys[i];
+      if (i < keys.length - 1) line += " ";
     }
-    if (held.length === 0) line += "(none)";
+    if (keys.length === 0) line += "(none)";
     ctx.fillText(line, x, y + 20);
-    ctx.fillText(`mods: ${hex(this.input.mods)}   focused: ${this.input.focused}`, x, y + 38);
-
-    ctx.fillStyle = this.textOn ? "#8ee27a" : "#5b6672";
-    ctx.fillText(`text input ${this.textOn ? "ON" : "off"}: ${this.typed}`, x, y + 60);
-    if (this.textOn) {
-      // A caret, so an empty buffer still looks alive.
-      const m = ctx.measureText(`text input ON: ${this.typed}`);
-      ctx.fillRect(x + m.width + 2, y + 50, 8, 2);
-    }
+    ctx.fillStyle = "#8ee27a";
+    ctx.fillText(`typed: ${typed}`, x, y + 40);
   }
 
-  private drawMouse(ctx: Context2D, x: number, y: number): void {
+  function drawMouse(x: number, y: number): void {
     ctx.fillStyle = "#e8eef4";
     ctx.font = `14px ${FONT}`;
     ctx.fillText("mouse", x, y);
 
     ctx.font = `12px ${FONT}`;
     ctx.fillStyle = "#9fb3c8";
-    ctx.fillText(`pos ${this.input.mouseX}, ${this.input.mouseY}`, x, y + 20);
-    ctx.fillText(`wheel ${this.input.wheelX}, ${this.input.wheelY}`, x + 140, y + 20);
+    ctx.fillText(`pos ${mouseX}, ${mouseY}`, x, y + 20);
 
+    // Web button numbering: 0 left, 1 middle, 2 right.
     const names: string[] = ["L", "M", "R"];
-    const codes: number[] = [MOUSE_LEFT, MOUSE_MIDDLE, MOUSE_RIGHT];
     for (let i = 0; i < 3; i++) {
-      const on = this.input.mouseIsDown(codes[i]);
+      const on = mouseButtons.get(i) === true;
       ctx.fillStyle = on ? "#8ee27a" : "#2a3441";
       ctx.fillRect(x + i * 34, y + 32, 28, 22);
       ctx.fillStyle = on ? "#12161c" : "#7c8b9a";
@@ -136,35 +149,44 @@ class InputDemo extends Game {
     }
   }
 
-  private drawPads(ctx: Context2D, x: number, y: number): void {
+  function drawPads(x: number, y: number): void {
     ctx.fillStyle = "#e8eef4";
     ctx.font = `14px ${FONT}`;
-    const pads = this.input.connectedGamepads();
-    ctx.fillText(`gamepads (${pads.length} connected)`, x, y);
 
-    if (pads.length === 0) {
+    const pads = navigator.getGamepads();
+    let count = 0;
+    for (let i = 0; i < pads.length; i++) {
+      if (pads[i] !== null) count += 1;
+    }
+    ctx.fillText(`gamepads (${count} connected)`, x, y);
+
+    if (count === 0) {
       ctx.fillStyle = "#5b6672";
       ctx.font = `12px ${FONT}`;
       ctx.fillText("plug one in; hot-plug is picked up on the next frame", x, y + 22);
       return;
     }
 
-    for (let p = 0; p < pads.length && p < 2; p++) {
-      this.drawPad(ctx, x + p * 440, y + 20, p);
+    let shown = 0;
+    for (let slot = 0; slot < pads.length && shown < 2; slot++) {
+      const p = pads[slot];
+      if (p === null) continue;
+      drawPad(x + shown * 440, y + 20, slot);
+      shown += 1;
     }
   }
 
-  private drawPad(ctx: Context2D, x: number, y: number, listIndex: number): void {
-    const pads = this.input.connectedGamepads();
-    const pad = pads[listIndex];
+  function drawPad(x: number, y: number, slot: number): void {
+    const pads = navigator.getGamepads();
+    const pad = pads[slot];
+    if (pad === null) return;
 
     ctx.font = `12px ${FONT}`;
     ctx.fillStyle = "#7fd1ff";
     ctx.fillText(`slot ${pad.index}: ${pad.id}`, x, y + 14);
     ctx.fillStyle = "#5b6672";
-    ctx.fillText(pad.hasRumble ? "rumble: yes" : "rumble: no", x, y + 30);
+    ctx.fillText(pad.vibrationActuator.canPlay("dual-rumble") ? "rumble: yes" : "rumble: no", x, y + 30);
 
-    // Buttons as a lit grid; value drives brightness so analog triggers read.
     for (let b = 0; b < BUTTON_COUNT; b++) {
       const col = b % 6;
       const row = (b - col) / 6;
@@ -174,7 +196,7 @@ class InputDemo extends Game {
 
       ctx.fillStyle = btn.pressed ? "#8ee27a" : "#2a3441";
       ctx.fillRect(bx, by, 60, 22);
-      // Analog fill: a partly-pulled trigger shows a partial bar.
+      // A partly-pulled trigger shows a partial bar.
       if (!btn.pressed && btn.value > 0) {
         ctx.fillStyle = "#4a7a3f";
         ctx.fillRect(bx, by, 60 * btn.value, 22);
@@ -183,22 +205,20 @@ class InputDemo extends Game {
       ctx.fillText(BUTTON_NAMES[b], bx + 6, by + 15);
     }
 
-    // Axes as centred bars.
     for (let a = 0; a < AXIS_COUNT; a++) {
-      const ax = x;
       const ay = y + 176 + a * 26;
       ctx.fillStyle = "#7c8b9a";
-      ctx.fillText(AXIS_NAMES[a], ax, ay + 12);
+      ctx.fillText(AXIS_NAMES[a], x, ay + 12);
 
-      const trackX = ax + 28;
+      const trackX = x + 28;
       const trackW = 200;
       ctx.fillStyle = "#2a3441";
       ctx.fillRect(trackX, ay, trackW, 14);
 
       const v = pad.axes[a];
       const mid = trackX + trackW / 2;
-      ctx.fillStyle = "#7fd1ff";
       const half = (trackW / 2) * (v < 0 ? -v : v);
+      ctx.fillStyle = "#7fd1ff";
       if (v < 0) ctx.fillRect(mid - half, ay, half, 14);
       else ctx.fillRect(mid, ay, half, 14);
 
@@ -208,25 +228,6 @@ class InputDemo extends Game {
       ctx.fillText(v.toFixed(3), trackX + trackW + 8, ay + 12);
     }
   }
-}
 
-function main(): void {
-  // Text scenes need a real face; the demo shares the test asset.
-  ffi.fontRegister("test/assets/DejaVuSans.ttf");
-
-  const game = new InputDemo();
-  const opts = new GameOptions();
-  opts.width = W;
-  opts.height = H;
-  const framesEnv = process.env["SG_MAX_FRAMES"];
-  if (framesEnv !== undefined) opts.maxFrames = parseInt(framesEnv, 10);
-  const shotEnv = process.env["SG_SHOT"];
-  if (shotEnv !== undefined) opts.shotPath = shotEnv;
-  const shotFrameEnv = process.env["SG_SHOT_FRAME"];
-  if (shotFrameEnv !== undefined) opts.shotFrame = parseInt(shotFrameEnv, 10);
-
-  const rc = game.run(opts);
-  process.exit(rc);
-}
-
-main();
+  requestAnimationFrame(frame);
+});

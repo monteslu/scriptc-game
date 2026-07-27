@@ -38,32 +38,16 @@ import { Context2D } from "./canvas/context.js";
 import { GameImage, decodeImage } from "./canvas/image.js";
 import { Input } from "./input/input.js";
 import { Gamepad, gamepads as sparseGamepads } from "./input/gamepad.js";
-import { resolveUrl, readBinary, fileExists } from "../host/resources.js";
+import { SgMath } from "./math.js";
+import { resolveUrl, readBinary, fileExists, isExternalUrl } from "../host/resources.js";
+import { queueTask } from "../host/tasks.js";
 
 /* ---- the task queue ----
  *
- * One queue serves rAF, `setTimeout(fn, 0)`-style deferral, and every async
- * shim, so "later turn" means the same thing everywhere and the host drains
- * it in one place.
- */
-type Task = () => void;
-let tasks: Task[] = [];
-
-/** Runs `fn` on a later turn. The single primitive the async rule rests on. */
-export function queueTask(fn: Task): void {
-  tasks.push(fn);
-}
-
-/** Drains queued tasks. Host-only; a game never calls this. */
-export function __drainTasks(): void {
-  // Swap-then-run so a task queueing another task does not spin forever
-  // inside one drain: the new work lands on the next drain, like a browser.
-  const batch = tasks;
-  tasks = [];
-  for (let i = 0; i < batch.length; i++) batch[i]();
-}
-
-export function __hasTasks(): boolean { return tasks.length > 0; }
+ * Defined in host/tasks.ts so web modules that need to defer (audio decode,
+ * image load) can import it without importing this file -- globals imports
+ * THEM, and a cycle is a hard compiler error (SC1016). */
+export { queueTask, drainTasks as __drainTasks, hasTasks as __hasTasks } from "../host/tasks.js";
 
 /* ---- requestAnimationFrame ----
  *
@@ -255,6 +239,70 @@ export function __dispatchKeyEvents(input: Input): void {
   }
 }
 
+/* ---- mouse events ----
+ *
+ * `button` follows the WEB numbering (0 left, 1 middle, 2 right), not SDL's
+ * 1-based scheme, so handlers written for a page compare correctly.
+ */
+export class MouseEvent {
+  type = "";
+  clientX = 0;
+  clientY = 0;
+  offsetX = 0;
+  offsetY = 0;
+  button = 0;
+  buttons = 0;
+  preventDefault(): void {}
+  stopPropagation(): void {}
+}
+
+let mouseMoveListeners: ((e: MouseEvent) => void)[] = [];
+let mouseDownListeners: ((e: MouseEvent) => void)[] = [];
+let mouseUpListeners: ((e: MouseEvent) => void)[] = [];
+
+export function addMouseListener(type: string, listener: (e: MouseEvent) => void): void {
+  if (type === "mousemove") mouseMoveListeners.push(listener);
+  else if (type === "mousedown") mouseDownListeners.push(listener);
+  else if (type === "mouseup") mouseUpListeners.push(listener);
+}
+
+/** Host-only: turns this frame's mouse state into listener callbacks. */
+export function __dispatchMouseEvents(input: Input, lastX: number, lastY: number): void {
+  if (input.mouseX !== lastX || input.mouseY !== lastY) {
+    for (let i = 0; i < mouseMoveListeners.length; i++) {
+      const e = new MouseEvent();
+      e.type = "mousemove";
+      e.clientX = input.mouseX; e.offsetX = input.mouseX;
+      e.clientY = input.mouseY; e.offsetY = input.mouseY;
+      mouseMoveListeners[i](e);
+    }
+  }
+  /* SDL numbers buttons from 1; the web numbers from 0. Translate here so a
+   * handler comparing `e.button === 0` for "left" is correct. */
+  for (let sdlBtn = 1; sdlBtn <= 3; sdlBtn++) {
+    if (input.mouseWasPressed(sdlBtn)) {
+      for (let i = 0; i < mouseDownListeners.length; i++) {
+        const e = new MouseEvent();
+        e.type = "mousedown";
+        e.button = sdlBtn === 1 ? 0 : (sdlBtn === 2 ? 1 : 2);
+        e.clientX = input.mouseX; e.offsetX = input.mouseX;
+        e.clientY = input.mouseY; e.offsetY = input.mouseY;
+        mouseDownListeners[i](e);
+      }
+    }
+    if (input.mouseWasReleased(sdlBtn)) {
+      for (let i = 0; i < mouseUpListeners.length; i++) {
+        const e = new MouseEvent();
+        e.type = "mouseup";
+        e.button = sdlBtn === 1 ? 0 : (sdlBtn === 2 ? 1 : 2);
+        e.clientX = input.mouseX; e.offsetX = input.mouseX;
+        e.clientY = input.mouseY; e.offsetY = input.mouseY;
+        mouseUpListeners[i](e);
+      }
+    }
+  }
+}
+
 /* ---- navigator ---- */
 
 export class SgNavigator {
@@ -291,16 +339,12 @@ export class Image {
     // a browser: the assignment returns before any handler runs.
     const bytes = readBinary(path);
     if (bytes === null) {
-      queueTask(() => {
-        if (this.onerror !== null) this.onerror();
-      });
+      queueTask(() => { this.fireError(); });
       return;
     }
     const img = decodeImage(bytes);
     if (!img.valid) {
-      queueTask(() => {
-        if (this.onerror !== null) this.onerror();
-      });
+      queueTask(() => { this.fireError(); });
       return;
     }
     this.bitmap = img;
@@ -308,8 +352,20 @@ export class Image {
     this.height = img.height;
     queueTask(() => {
       this.complete = true;
-      if (this.onload !== null) this.onload();
+      this.fireLoad();
     });
+  }
+
+  /* A field holding a function cannot be called as `this.onload()` (SC1090
+   * reads it as a method call), so it is copied to a local first. */
+  private fireLoad(): void {
+    const fn = this.onload;
+    if (fn !== null) fn();
+  }
+
+  private fireError(): void {
+    const fn = this.onerror;
+    if (fn !== null) fn();
   }
 
   /** The modern promise form. Settles on a later turn, as the spec requires. */
@@ -347,6 +403,14 @@ export class Response {
     }
   }
 
+  /** An external URL this build cannot reach: not a 404, a network failure. */
+  static networkError(url: string): Response {
+    const r = new Response(url, null);
+    r.status = 0;
+    r.statusText = "network requests are not supported in this build";
+    return r;
+  }
+
   arrayBuffer(): Promise<Buffer> {
     return new Promise<Buffer>((resolve, reject) => {
       queueTask(() => {
@@ -368,14 +432,113 @@ export class Response {
   }
 }
 
+/* fetch(url): local paths read from the web root, real URLs are real fetches.
+ *
+ * jsgamelauncher draws the same line (fetch.js): anything starting with a
+ * scheme -- http://, https://, //, data:, blob: -- is NOT a file under the
+ * game directory, and everything else is. That is what lets one codebase
+ * load "images/player.png" from disk natively and over HTTP in a page
+ * without changing a line.
+ *
+ * This build has no network stack, so an external URL resolves to a Response
+ * with ok=false and a status that says so, rather than silently reading a
+ * nonexistent file named "https:/example.com/...". When a network stack
+ * lands, only this branch changes. */
 export function fetch(url: string): Promise<Response> {
   return new Promise<Response>((resolve) => {
-    const path = resolveUrl(url);
-    const bytes = readBinary(path);
+    if (isExternalUrl(url)) {
+      queueTask(() => { resolve(Response.networkError(url)); });
+      return;
+    }
+    const bytes = readBinary(resolveUrl(url));
     // Resolves on a later turn even though the read already happened.
     queueTask(() => { resolve(new Response(url, bytes)); });
   });
 }
+
+/* ---- audio ----
+ *
+ * `new AudioContext()` as the spec spells it. The underlying device is a
+ * process-wide singleton (one SDL device, one graph), so a second
+ * construction returns the same context rather than failing -- which is also
+ * what a browser effectively gives a game that only ever makes one.
+ */
+import {
+  AudioContext as SgAudioContext, AudioBuffer, createAudioContext,
+} from "./audio/context.js";
+
+let audioInstance: SgAudioContext | null = null;
+
+/* The Web Audio interfaces are ALL window globals -- verified against
+ * lib.dom.d.ts, which is generated from the IDL: AudioContext,
+ * OfflineAudioContext, AudioNode, AudioParam, AudioBuffer and every node
+ * type have a `declare var`. Node types are also constructible in the modern
+ * spec (`new GainNode(ctx, options)`) alongside the older ctx.createGain()
+ * factories, so both spellings must work here. */
+export {
+  AudioContext, AudioNode, AudioParam, AudioBuffer,
+  AudioScheduledSourceNode, AudioBufferSourceNode,
+  GainNode, OscillatorNode, BiquadFilterNode, DelayNode,
+  StereoPannerNode, PannerNode, DynamicsCompressorNode, WaveShaperNode,
+  AnalyserNode, ConvolverNode, ChannelMergerNode, ChannelSplitterNode,
+  ConstantSourceNode, IIRFilterNode,
+} from "./audio/context.js";
+
+/** The Web Audio entry point. Returns null only if no device could open. */
+export function AudioContextOrNull(): SgAudioContext | null {
+  if (audioInstance === null) {
+    // 1024 frames is ~21ms at 48kHz: low enough to feel immediate, high
+    // enough that a frame spike cannot starve the mixer.
+    audioInstance = createAudioContext(48000, 1024);
+  }
+  return audioInstance;
+}
+
+/* ---- fonts ----
+ *
+ * The CSS Font Loading API: `new FontFace(family, "url(path.ttf)")`, then
+ * `.load()`, then `document.fonts.add(face)`. Skia needs the file registered
+ * before any text draws, which load() does; `add` is then a no-op that keeps
+ * browser code valid.
+ */
+export class FontFace {
+  family = "";
+  private url = "";
+  status = "unloaded";
+
+  constructor(family: string, source: string) {
+    this.family = family;
+    // Accept both the CSS `url(...)` form and a bare path.
+    const m = source.indexOf("url(");
+    if (m >= 0) {
+      const close = source.indexOf(")", m);
+      let inner = source.substring(m + 4, close).trim();
+      if (inner.startsWith("\"") || inner.startsWith("'")) {
+        inner = inner.substring(1, inner.length - 1);
+      }
+      this.url = inner;
+    } else {
+      this.url = source;
+    }
+  }
+
+  load(): Promise<FontFace> {
+    return new Promise<FontFace>((resolve, reject) => {
+      const rc = ffi.fontRegister(resolveUrl(this.url));
+      queueTask(() => {
+        if (rc === 0) { this.status = "loaded"; resolve(this); }
+        else { this.status = "error"; reject(new Error(`could not load font ${this.url}`)); }
+      });
+    });
+  }
+}
+
+export class FontFaceSet {
+  /** Registration already happened in load(); this keeps browser code valid. */
+  add(face: FontFace): FontFaceSet { return this; }
+}
+
+export const fonts = new FontFaceSet();
 
 /* ---- offscreen canvas ---- */
 
@@ -443,6 +606,7 @@ class DocumentProxy {
   }
   get body(): DocumentBody { return doc().body; }
   get readyState(): string { return "complete"; }
+  get fonts(): FontFaceSet { return fonts; }
 }
 
 export const document = new DocumentProxy();
@@ -462,11 +626,41 @@ export class SgWindow {
   }
   /** The `load` / `DOMContentLoaded` shape, whose handler takes no event. */
   onLoad(listener: () => void): void { addLoadListener(listener); }
+  /** mousemove / mousedown / mouseup. */
+  onMouse(type: string, listener: (e: MouseEvent) => void): void {
+    addMouseListener(type, listener);
+  }
   requestAnimationFrame(cb: FrameCallback): number { return requestAnimationFrame(cb); }
   cancelAnimationFrame(id: number): void { cancelAnimationFrame(id); }
 }
 
 export const window = new SgWindow();
+
+/* ---- Math ----
+ *
+ * Re-exported so a game gets the WHOLE standard surface from one import,
+ * without needing to know that the static tier fences sqrt/sin/cos/pow/PI
+ * and that those cross to libm. Import it under the standard name:
+ *
+ *     import { Math } from ".../web/globals.js";
+ */
+export { SgMath as Math };
+
+/* ---- the Gamepad API types ----
+ *
+ * These ARE web globals: a browser exposes `Gamepad`, `GamepadButton` and
+ * `GamepadHapticActuator` on the global object, and `navigator.getGamepads()`
+ * returns them.
+ *
+ * Deliberately NOT exported: our BTN_A / AXIS_LEFT_X style constants. The
+ * web has no such globals -- the Standard Gamepad layout is defined by
+ * INDEX, and browser code writes `pad.buttons[0].pressed` and `pad.axes[0]`.
+ * A game that wants names defines them itself (simple-jsgame-starter does
+ * exactly that in its own utils.js), which keeps the names a game-side
+ * choice rather than something a "browser global" has to provide. */
+export {
+  Gamepad, GamepadButton, GamepadEffectParameters, VibrationActuator,
+} from "./input/gamepad.js";
 
 /* ---- the load event ----
  *

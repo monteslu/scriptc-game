@@ -32,7 +32,7 @@ function main(): void {
   const args = process.argv;
   const outDir = args.length > 2 ? args[2] : "test/out";
 
-  const strip = decodeImage(readFileSync("examples/dodge/assets/coin.png"));
+  const strip = decodeImage(readFileSync("examples/dodge/public/coin.png"));
   if (!strip.valid) { console.log("FATAL: coin.png did not decode"); process.exit(2); }
   check(strip.width === CELL * FRAMES, `strip is ${strip.width}px, want ${CELL * FRAMES}`);
   check(strip.height === CELL, `strip is ${strip.height}px tall, want ${CELL}`);
