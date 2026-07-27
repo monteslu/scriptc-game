@@ -15,11 +15,11 @@
  *     the thing under test
  *   - one feature family per scene, so a diff points somewhere specific
  */
-import { Context2D } from "../runtime/canvas/context.js";
-import { createLinearGradient, createRadialGradient, createConicGradient } from "../runtime/canvas/gradient.js";
-import { createPattern } from "../runtime/canvas/pattern.js";
-import { GameImage } from "../runtime/canvas/image.js";
-import { createCanvas } from "../runtime/canvas/offscreen.js";
+import { Context2D } from "../web/canvas/context.js";
+import { createLinearGradient, createRadialGradient, createConicGradient } from "../web/canvas/gradient.js";
+import { createPattern } from "../web/canvas/pattern.js";
+import { GameImage } from "../web/canvas/image.js";
+import { createCanvas } from "../web/canvas/offscreen.js";
 
 export const SCENE_W = 200;
 export const SCENE_H = 150;

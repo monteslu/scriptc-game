@@ -10,8 +10,8 @@
  * plus a per-pixel scalar getter, and is documented as debug-tier: real
  * screenshots go through saveImage(), which never crosses the boundary.
  */
-import * as ffi from "../ffi.js";
-import * as sk from "./skia-ffi.js";
+import * as ffi from "../../host/ffi.js";
+import * as sk from "../../host/skia-ffi.js";
 import { Context2D } from "./context.js";
 
 /** An offscreen drawing surface. Dispose it when done. */

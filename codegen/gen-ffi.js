@@ -1,4 +1,4 @@
-/* Generate ffi/core.ffi.json from runtime/ffi.ts.
+/* Generate ffi/core.ffi.json from host/ffi.ts.
  *
  * The manifest is all-or-nothing (every entry needs a declaration and vice
  * versa), so deriving it from the declarations removes the whole class of
@@ -93,7 +93,7 @@ for (let m; (m = sigRe.exec(shimSrc)); ) {
 const entry = process.argv[3];
 const declFiles = entry
   ? reachableFiles(resolve(entry))
-  : ["runtime/ffi.ts", "runtime/canvas/skia-ffi.ts"].map((f) => join(root, f));
+  : ["host/ffi.ts", "host/skia-ffi.ts"].map((f) => join(root, f));
 
 /** Every .ts file reachable from `start` through relative imports. */
 function reachableFiles(start) {

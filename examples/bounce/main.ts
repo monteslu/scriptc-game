@@ -1,6 +1,6 @@
-import { Game, GameOptions } from "../../runtime/loop/run.js";
-import { Context2D } from "../../runtime/canvas/context.js";
-import * as ffi from "../../runtime/ffi.js";
+import { Game, GameOptions } from "../../engine/loop.js";
+import { Context2D } from "../../web/canvas/context.js";
+import * as ffi from "../../host/ffi.js";
 
 const W = 640;
 const H = 360;

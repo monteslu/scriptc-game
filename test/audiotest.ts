@@ -8,11 +8,11 @@
  *
  * Usage: audiotest <outDir>
  */
-import * as ffi from "../runtime/ffi.js";
+import * as ffi from "../host/ffi.js";
 import { readFileSync } from "node:fs";
 import {
   createOfflineAudioContext, closeAudio, AudioContext,
-} from "../runtime/audio/context.js";
+} from "../web/audio/context.js";
 
 let failures = 0;
 let checks = 0;

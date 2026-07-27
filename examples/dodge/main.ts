@@ -8,20 +8,20 @@
  * fixed-timestep simulation with interpolated drawing, an analog deadzone,
  * per-frame edge detection for the dash, and haptics on impact.
  */
-import { Game, GameOptions } from "../../runtime/loop/run.js";
-import { Context2D } from "../../runtime/canvas/context.js";
-import * as ffi from "../../runtime/ffi.js";
-import { sqrt, atan2, PI, TAU } from "../../runtime/math.js";
+import { Game, GameOptions } from "../../engine/loop.js";
+import { Context2D } from "../../web/canvas/context.js";
+import * as ffi from "../../host/ffi.js";
+import { sqrt, atan2, PI, TAU } from "../../host/math.js";
 import {
   AudioContext, createAudioContext, closeAudio, GainNode, AudioBufferSourceNode,
-} from "../../runtime/audio/context.js";
-import { pickup, hit, dash as dashSfx, gameOver } from "../../runtime/audio/sfx.js";
-import { GameImage, decodeImage } from "../../runtime/canvas/image.js";
+} from "../../web/audio/context.js";
+import { pickup, hit, dash as dashSfx, gameOver } from "../../engine/sfx.js";
+import { GameImage, decodeImage } from "../../web/canvas/image.js";
 import { readFileSync } from "node:fs";
 import {
   BTN_A, BTN_START, BTN_DPAD_LEFT, BTN_DPAD_RIGHT, BTN_DPAD_UP, BTN_DPAD_DOWN,
   AXIS_LEFT_X, AXIS_LEFT_Y, GamepadEffectParameters, Gamepad,
-} from "../../runtime/input/gamepad.js";
+} from "../../web/input/gamepad.js";
 
 const W = 800;
 const H = 600;

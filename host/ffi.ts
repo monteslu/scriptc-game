@@ -2,7 +2,7 @@
  * error mailbox, and the marshalling helpers in sg_skia_extra.cpp.
  *
  * The generated skiac wrappers (canvas/paint/path/matrix/shader/...) live in
- * runtime/canvas/skia-ffi.ts. Both files are scanned by codegen/gen-ffi.js,
+ * host/skia-ffi.ts. Both files are scanned by codegen/gen-ffi.js,
  * which derives the manifest from them.
  *
  * Two rules govern this file, both learned the hard way (docs/SPIKE-RESULTS.md):

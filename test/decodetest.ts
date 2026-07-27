@@ -12,10 +12,10 @@
  *
  * Usage: decodetest <fixtureDir>
  */
-import * as ffi from "../runtime/ffi.js";
+import * as ffi from "../host/ffi.js";
 import {
   createOfflineAudioContext, closeAudio, AudioContext, AudioBuffer,
-} from "../runtime/audio/context.js";
+} from "../web/audio/context.js";
 
 let failures = 0;
 let checks = 0;

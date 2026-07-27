@@ -9,7 +9,7 @@
  * `gain.gain.setValueAtTime(...)`, `osc.start()`. Where the dialect cannot
  * express a web idiom the difference is called out in a comment.
  */
-import * as ffi from "../ffi.js";
+import * as ffi from "../../host/ffi.js";
 import {
   P_FREQUENCY, P_DETUNE, P_GAIN, P_Q, P_DELAY_TIME, P_PAN, P_OFFSET, P_TYPE,
   P_LOOP, P_THRESHOLD, P_KNEE, P_RATIO, P_ATTACK, P_RELEASE,

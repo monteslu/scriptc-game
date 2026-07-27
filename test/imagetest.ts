@@ -12,12 +12,12 @@
  *
  * Usage: imagetest <fixtureDir> [outDir]
  */
-import * as ffi from "../runtime/ffi.js";
-import * as sk from "../runtime/canvas/skia-ffi.js";
+import * as ffi from "../host/ffi.js";
+import * as sk from "../host/skia-ffi.js";
 import { readFileSync } from "node:fs";
-import { Context2D } from "../runtime/canvas/context.js";
-import { decodeImage } from "../runtime/canvas/image.js";
-import { createCanvas, getImageData } from "../runtime/canvas/offscreen.js";
+import { Context2D } from "../web/canvas/context.js";
+import { decodeImage } from "../web/canvas/image.js";
+import { createCanvas, getImageData } from "../web/canvas/offscreen.js";
 
 let failures = 0;
 let checks = 0;

@@ -12,7 +12,7 @@
  *
  * Also here: PI and friends, since `Math.PI` is fenced too.
  */
-import * as ffi from "./ffi.js";
+import * as ffi from "../host/ffi.js";
 
 export const PI = 3.141592653589793;
 export const TAU = 6.283185307179586;

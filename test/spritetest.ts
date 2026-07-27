@@ -11,10 +11,10 @@
  *
  * Usage: spritetest [outDir]
  */
-import * as ffi from "../runtime/ffi.js";
+import * as ffi from "../host/ffi.js";
 import { readFileSync } from "node:fs";
-import { decodeImage } from "../runtime/canvas/image.js";
-import { createCanvas, getImageData } from "../runtime/canvas/offscreen.js";
+import { decodeImage } from "../web/canvas/image.js";
+import { createCanvas, getImageData } from "../web/canvas/offscreen.js";
 
 let failures = 0;
 let checks = 0;

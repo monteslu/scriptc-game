@@ -1,4 +1,4 @@
-/* Generate runtime/input/keycodes.ts from SDL_scancode.h.
+/* Generate web/input/keycodes.ts from SDL_scancode.h.
  *
  * SDL scancodes are USB HID usage IDs, which is the same physical-key basis
  * W3C `KeyboardEvent.code` uses, so the two map 1:1 for every key a game
@@ -141,5 +141,5 @@ lines.push("  return v === undefined ? -1 : v;");
 lines.push("}");
 lines.push("");
 
-writeFileSync(join(root, "runtime/input/keycodes.ts"), lines.join("\n"));
-console.log(`gen-keycodes: ${entries.length} keys -> runtime/input/keycodes.ts`);
+writeFileSync(join(root, "web/input/keycodes.ts"), lines.join("\n"));
+console.log(`gen-keycodes: ${entries.length} keys -> web/input/keycodes.ts`);

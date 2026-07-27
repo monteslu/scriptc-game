@@ -13,21 +13,37 @@
  *     is what makes save()/restore() of style (a canvas concept Skia's own
  *     save/restore does NOT cover) possible.
  */
-import * as ffi from "../ffi.js";
-import * as sk from "./skia-ffi.js";
+import * as ffi from "../../host/ffi.js";
+import * as sk from "../../host/skia-ffi.js";
 import { parseColor, Rgba } from "./color.js";
 import { Style, cloneStyle } from "./style.js";
 import {
-  STYLE_FILL, STYLE_STROKE,
-  CAP_BUTT, CAP_ROUND, CAP_SQUARE,
-  JOIN_MITER, JOIN_ROUND, JOIN_BEVEL,
-  FILL_WINDING, FILL_EVEN_ODD,
-  TILE_CLAMP, TILE_REPEAT, TILE_MIRROR,
-  BASELINE_ALPHABETIC, BASELINE_TOP, BASELINE_MIDDLE, BASELINE_BOTTOM,
-  BASELINE_HANGING, BASELINE_IDEOGRAPHIC,
-  ALIGN_LEFT, ALIGN_RIGHT, ALIGN_CENTER, ALIGN_START, ALIGN_END,
-  blendMode,
-} from "./enums.js";
+  STYLE_FILL,
+  STYLE_STROKE,
+  CAP_BUTT,
+  CAP_ROUND,
+  CAP_SQUARE,
+  JOIN_MITER,
+  JOIN_ROUND,
+  JOIN_BEVEL,
+  FILL_WINDING,
+  FILL_EVEN_ODD,
+  TILE_CLAMP,
+  TILE_REPEAT,
+  TILE_MIRROR,
+  BASELINE_ALPHABETIC,
+  BASELINE_TOP,
+  BASELINE_MIDDLE,
+  BASELINE_BOTTOM,
+  BASELINE_HANGING,
+  BASELINE_IDEOGRAPHIC,
+  ALIGN_LEFT,
+  ALIGN_RIGHT,
+  ALIGN_CENTER,
+  ALIGN_START,
+  ALIGN_END,
+} from "../../host/skia-enums.js";
+import { blendMode } from "./enums.js";
 import { Gradient } from "./gradient.js";
 import { Pattern } from "./pattern.js";
 import { GameImage } from "./image.js";

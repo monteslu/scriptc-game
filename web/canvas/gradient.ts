@@ -6,10 +6,10 @@
  * fillStyle. Materializing lazily (and re-materializing when stops change)
  * is what makes that ordering work.
  */
-import * as ffi from "../ffi.js";
-import * as sk from "./skia-ffi.js";
+import * as ffi from "../../host/ffi.js";
+import * as sk from "../../host/skia-ffi.js";
 import { parseColor } from "./color.js";
-import { TILE_CLAMP } from "./enums.js";
+import { TILE_CLAMP } from "../../host/skia-enums.js";
 
 const KIND_LINEAR = 0;
 const KIND_RADIAL = 1;

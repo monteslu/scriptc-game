@@ -16,15 +16,15 @@
  *
  * Exit code 0 only if every assertion passes.
  */
-import * as ffi from "../runtime/ffi.js";
-import { Input } from "../runtime/input/input.js";
+import * as ffi from "../host/ffi.js";
+import { Input } from "../web/input/input.js";
 import {
   BUTTON_COUNT, AXIS_COUNT,
   BTN_A, BTN_B, BTN_X, BTN_Y, BTN_L1, BTN_R1, BTN_L2, BTN_R2,
   BTN_SELECT, BTN_START, BTN_L3, BTN_R3,
   BTN_DPAD_UP, BTN_DPAD_DOWN, BTN_DPAD_LEFT, BTN_DPAD_RIGHT, BTN_GUIDE,
   AXIS_LEFT_X, AXIS_LEFT_Y, AXIS_RIGHT_X, AXIS_RIGHT_Y,
-} from "../runtime/input/gamepad.js";
+} from "../web/input/gamepad.js";
 
 let failures = 0;
 let checks = 0;

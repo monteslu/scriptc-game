@@ -10,7 +10,7 @@
  * Line-height (`16px/1.4 serif`) is accepted and the height dropped, since
  * single-line canvas text has nowhere to use it.
  */
-import { SLANT_UPRIGHT, SLANT_ITALIC, SLANT_OBLIQUE } from "./enums.js";
+import { SLANT_UPRIGHT, SLANT_ITALIC, SLANT_OBLIQUE } from "../../host/skia-enums.js";
 
 export class FontSpec {
   family = "sans-serif";

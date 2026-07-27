@@ -7,13 +7,13 @@
  *
  * Keys:  T toggles text input   R rumbles pad 0   ESC quits
  */
-import { Game, GameOptions } from "../../runtime/loop/run.js";
-import { Context2D } from "../../runtime/canvas/context.js";
-import * as ffi from "../../runtime/ffi.js";
+import { Game, GameOptions } from "../../engine/loop.js";
+import { Context2D } from "../../web/canvas/context.js";
+import * as ffi from "../../host/ffi.js";
 import {
   BUTTON_COUNT, AXIS_COUNT, GamepadEffectParameters,
-} from "../../runtime/input/gamepad.js";
-import { MOUSE_LEFT, MOUSE_MIDDLE, MOUSE_RIGHT } from "../../runtime/input/events.js";
+} from "../../web/input/gamepad.js";
+import { MOUSE_LEFT, MOUSE_MIDDLE, MOUSE_RIGHT } from "../../host/input-events.js";
 
 const W = 900;
 const H = 620;

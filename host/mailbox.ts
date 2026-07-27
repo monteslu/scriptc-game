@@ -6,7 +6,7 @@
  * overwritten by the next producing call, so it must be drained IMMEDIATELY
  * after the call that filled it, never held across one.
  */
-import * as ffi from "./ffi.js";
+import * as ffi from "../host/ffi.js";
 
 /** Drains the mailbox as a string. Call right after the producing call. */
 export function readMailbox(): string {

@@ -8,8 +8,8 @@
  * Text input is the exception that proves the rule: it is inherently a
  * SEQUENCE, so it drains as a queue rather than collapsing into state.
  */
-import * as ffi from "../ffi.js";
-import { readTextEvent } from "../mailbox.js";
+import * as ffi from "../../host/ffi.js";
+import { readTextEvent } from "../../host/mailbox.js";
 import { scancodeOf, SCANCODE_TO_CODE } from "./keycodes.js";
 import { pollGamepads, gamepads, connectedGamepads, gamepad, Gamepad } from "./gamepad.js";
 import {
@@ -19,7 +19,7 @@ import {
   F_WHEEL_X, F_WHEEL_Y,
   WIN_FOCUS_GAINED, WIN_FOCUS_LOST, WIN_CLOSE, WIN_RESIZED, WIN_SIZE_CHANGED,
   MOUSE_LEFT,
-} from "./events.js";
+} from "../../host/input-events.js";
 
 const MAX_SCANCODE = 512;
 const MAX_MOUSE_BUTTON = 8;

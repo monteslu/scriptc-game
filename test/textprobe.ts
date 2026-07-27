@@ -3,9 +3,9 @@
  * conformance scenes, so a failure here points at the plumbing rather than
  * at a font-resolution difference.
  */
-import * as ffi from "../runtime/ffi.js";
-import * as sk from "../runtime/canvas/skia-ffi.js";
-import { Context2D } from "../runtime/canvas/context.js";
+import * as ffi from "../host/ffi.js";
+import * as sk from "../host/skia-ffi.js";
+import { Context2D } from "../web/canvas/context.js";
 
 function main(): void {
   const args = process.argv;

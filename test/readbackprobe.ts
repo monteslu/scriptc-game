@@ -6,7 +6,7 @@
  * cannot: a golden comparison only sees what was DRAWN, not what was read
  * back. Draws known flat colours, reads them, and asserts.
  */
-import { createCanvas, getImageData } from "../runtime/canvas/offscreen.js";
+import { createCanvas, getImageData } from "../web/canvas/offscreen.js";
 
 function main(): void {
   const ctx = createCanvas(32, 32);

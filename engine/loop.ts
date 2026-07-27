@@ -4,9 +4,9 @@
  * emulate and no callback ever crosses the FFI. Fixed-timestep update with
  * an accumulator, interpolated draw, vsync present as the pacer.
  */
-import * as ffi from "../ffi.js";
-import { Context2D } from "../canvas/context.js";
-import { Input } from "../input/input.js";
+import * as ffi from "../host/ffi.js";
+import { Context2D } from "../web/canvas/context.js";
+import { Input } from "../web/input/input.js";
 
 export class Stats {
   frames = 0;

@@ -7,11 +7,11 @@
  *
  * Usage: padvisual <out.png>
  */
-import * as ffi from "../runtime/ffi.js";
-import * as sk from "../runtime/canvas/skia-ffi.js";
-import { Context2D } from "../runtime/canvas/context.js";
-import { Input } from "../runtime/input/input.js";
-import { BUTTON_COUNT, AXIS_COUNT } from "../runtime/input/gamepad.js";
+import * as ffi from "../host/ffi.js";
+import * as sk from "../host/skia-ffi.js";
+import { Context2D } from "../web/canvas/context.js";
+import { Input } from "../web/input/input.js";
+import { BUTTON_COUNT, AXIS_COUNT } from "../web/input/gamepad.js";
 
 const W = 460;
 const H = 300;

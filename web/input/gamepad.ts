@@ -18,8 +18,8 @@
  * web API reports them as buttons with a `value`, so they are read from the
  * trigger axes and exposed as pressed-when-past-half.
  */
-import * as ffi from "../ffi.js";
-import { readMailbox } from "../mailbox.js";
+import * as ffi from "../../host/ffi.js";
+import { readMailbox } from "../../host/mailbox.js";
 
 /** SDL_GameControllerButton indices. */
 const SDL_BTN_A = 0;

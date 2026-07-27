@@ -5,9 +5,9 @@
  * Not part of scripts/test.sh: it needs a sound card and makes noise.
  * Run it by hand when audio hardware changes.
  */
-import * as ffi from "../runtime/ffi.js";
-import { createAudioContext, closeAudio } from "../runtime/audio/context.js";
-import { blip, pickup, hit, dash, gameOver } from "../runtime/audio/sfx.js";
+import * as ffi from "../host/ffi.js";
+import { createAudioContext, closeAudio } from "../web/audio/context.js";
+import { blip, pickup, hit, dash, gameOver } from "../engine/sfx.js";
 
 function main(): void {
   const ctx = createAudioContext(48000, 1024);

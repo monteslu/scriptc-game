@@ -4,9 +4,9 @@
  * "repeat-y", "no-repeat". Skia expresses this as a per-axis tile mode, so
  * the four CSS names decompose into two independent modes.
  */
-import * as ffi from "../ffi.js";
-import * as sk from "./skia-ffi.js";
-import { TILE_CLAMP, TILE_REPEAT, TILE_DECAL } from "./enums.js";
+import * as ffi from "../../host/ffi.js";
+import * as sk from "../../host/skia-ffi.js";
+import { TILE_CLAMP, TILE_REPEAT, TILE_DECAL } from "../../host/skia-enums.js";
 import { GameImage } from "./image.js";
 
 export class Pattern {

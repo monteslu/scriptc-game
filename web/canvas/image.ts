@@ -4,8 +4,8 @@
  * webp, gif first frame). There is no Image element and no onload: assets
  * load during a load screen or at startup, which is what games do anyway.
  */
-import * as ffi from "../ffi.js";
-import * as sk from "./skia-ffi.js";
+import * as ffi from "../../host/ffi.js";
+import * as sk from "../../host/skia-ffi.js";
 
 export class GameImage {
   handle = 0;
