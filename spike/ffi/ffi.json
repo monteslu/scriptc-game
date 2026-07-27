@@ -1,0 +1,16 @@
+{
+  "ffi_format": 1,
+  "functions": [
+    { "name": "sgF64", "symbol": "sg_f64", "params": ["f64"], "returns": "f64" },
+    { "name": "sgBool", "symbol": "sg_bool", "params": ["bool"], "returns": "bool" },
+    { "name": "sgU8", "symbol": "sg_u8", "params": ["u8"], "returns": "u8" },
+    { "name": "sgU32", "symbol": "sg_u32", "params": ["u32"], "returns": "u32" },
+    { "name": "sgI32", "symbol": "sg_i32", "params": ["i32"], "returns": "i32" },
+    { "name": "sgVoid", "symbol": "sg_void", "params": ["f64"], "returns": "void" },
+    { "name": "sgStrSum", "symbol": "sg_str_sum", "params": ["string"], "returns": "u32" },
+    { "name": "sgBytesSum", "symbol": "sg_bytes_sum", "params": ["bytes"], "returns": "u32" },
+    { "name": "sgBytesAsF32", "symbol": "sg_bytes_as_f32", "params": ["bytes", "u32"], "returns": "f64" }
+  ],
+  "libraries": ["./libnative.a"],
+  "system_libraries": []
+}

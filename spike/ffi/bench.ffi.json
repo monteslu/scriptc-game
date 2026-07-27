@@ -1,0 +1,8 @@
+{
+  "ffi_format": 1,
+  "functions": [
+    { "name": "sgF64", "symbol": "sg_f64", "params": ["f64"], "returns": "f64" }
+  ],
+  "libraries": ["./libnative.a"],
+  "system_libraries": []
+}

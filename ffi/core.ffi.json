@@ -1,0 +1,342 @@
+{
+  "ffi_format": 1,
+  "functions": [
+    {
+      "name": "sgInit",
+      "symbol": "sg_init",
+      "params": [
+        "u32",
+        "u32",
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgQuit",
+      "symbol": "sg_quit",
+      "params": [
+        "i32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "sgScreenCanvas",
+      "symbol": "sg_screen_canvas",
+      "params": [
+        "i32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "sgScreenWidth",
+      "symbol": "sg_screen_width",
+      "params": [
+        "i32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "sgScreenHeight",
+      "symbol": "sg_screen_height",
+      "params": [
+        "i32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "sgDisplayHz",
+      "symbol": "sg_display_hz",
+      "params": [
+        "i32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "sgPresent",
+      "symbol": "sg_present",
+      "params": [
+        "i32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgSurfaceSavePng",
+      "symbol": "sg_surface_save_png",
+      "params": [
+        "string"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgTicks",
+      "symbol": "sg_ticks",
+      "params": [
+        "i32"
+      ],
+      "returns": "f64"
+    },
+    {
+      "name": "sgDelay",
+      "symbol": "sg_delay",
+      "params": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "sgPollEvent",
+      "symbol": "sg_poll_event",
+      "params": [
+        "i32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "sgEvtI32",
+      "symbol": "sg_evt_i32",
+      "params": [
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgStrLen",
+      "symbol": "sg_str_len",
+      "params": [
+        "i32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "sgStrByte",
+      "symbol": "sg_str_byte",
+      "params": [
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "sgCanvasRelease",
+      "symbol": "sg_canvas_release",
+      "params": [
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgCanvasClear",
+      "symbol": "sg_canvas_clear",
+      "params": [
+        "u32",
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgCanvasSave",
+      "symbol": "sg_canvas_save",
+      "params": [
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgCanvasRestore",
+      "symbol": "sg_canvas_restore",
+      "params": [
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgCanvasTranslate",
+      "symbol": "sg_canvas_translate",
+      "params": [
+        "u32",
+        "f64",
+        "f64"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgCanvasRotate",
+      "symbol": "sg_canvas_rotate",
+      "params": [
+        "u32",
+        "f64"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgCanvasScale",
+      "symbol": "sg_canvas_scale",
+      "params": [
+        "u32",
+        "f64",
+        "f64"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgCanvasDrawRect",
+      "symbol": "sg_canvas_draw_rect",
+      "params": [
+        "u32",
+        "f64",
+        "f64",
+        "f64",
+        "f64",
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgCanvasDrawPath",
+      "symbol": "sg_canvas_draw_path",
+      "params": [
+        "u32",
+        "u32",
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgPaintCreate",
+      "symbol": "sg_paint_create",
+      "params": [
+        "i32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "sgPaintDestroy",
+      "symbol": "sg_paint_destroy",
+      "params": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "sgPaintSetColor",
+      "symbol": "sg_paint_set_color",
+      "params": [
+        "u32",
+        "u32",
+        "u32",
+        "u32",
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgPaintSetStyle",
+      "symbol": "sg_paint_set_style",
+      "params": [
+        "u32",
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgPaintSetStrokeWidth",
+      "symbol": "sg_paint_set_stroke_width",
+      "params": [
+        "u32",
+        "f64"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgPaintSetAlpha",
+      "symbol": "sg_paint_set_alpha",
+      "params": [
+        "u32",
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgPaintSetAntiAlias",
+      "symbol": "sg_paint_set_anti_alias",
+      "params": [
+        "u32",
+        "u8"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgPathCreate",
+      "symbol": "sg_path_create",
+      "params": [
+        "i32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "sgPathDestroy",
+      "symbol": "sg_path_destroy",
+      "params": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "sgPathMoveTo",
+      "symbol": "sg_path_move_to",
+      "params": [
+        "u32",
+        "f64",
+        "f64"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgPathLineTo",
+      "symbol": "sg_path_line_to",
+      "params": [
+        "u32",
+        "f64",
+        "f64"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgPathClose",
+      "symbol": "sg_path_close",
+      "params": [
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgDebugLive",
+      "symbol": "sg_debug_live",
+      "params": [
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "sgDebugHighWater",
+      "symbol": "sg_debug_high_water",
+      "params": [
+        "u32"
+      ],
+      "returns": "u32"
+    }
+  ],
+  "libraries": [
+    "../vendor/linux-x86_64/libsggfx.a"
+  ],
+  "system_libraries": [
+    "SDL2",
+    "m",
+    "pthread",
+    "dl",
+    "c++",
+    "c++abi",
+    "GL",
+    "fontconfig",
+    "freetype"
+  ]
+}

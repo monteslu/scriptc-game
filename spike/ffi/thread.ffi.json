@@ -1,0 +1,7 @@
+{ "ffi_format": 1,
+  "functions": [
+    { "name": "sgThreadStart", "symbol": "sg_thread_start", "params": [], "returns": "i32" },
+    { "name": "sgThreadCount", "symbol": "sg_thread_count", "params": [], "returns": "u32" },
+    { "name": "sgThreadStop", "symbol": "sg_thread_stop", "params": [], "returns": "void" }
+  ],
+  "libraries": ["./libthread.a"], "system_libraries": ["pthread"] }

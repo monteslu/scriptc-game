@@ -1,0 +1,1 @@
+{ "ffi_format": 1, "functions": [ { "name": "sgBytesSum", "symbol": "sg_bytes_sum", "params": ["bytes"], "returns": "u32" } ], "libraries": ["./libnative.a"], "system_libraries": [] }
