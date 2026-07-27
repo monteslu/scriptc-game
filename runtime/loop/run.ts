@@ -69,7 +69,8 @@ export class Game {
       return -1;
     }
 
-    this.ctx = new Context2D(canvasHandle);
+    // Surface handle 0: the screen context does not own its surface.
+    this.ctx = new Context2D(canvasHandle, 0);
     this.running = true;
 
     /* The frame budget is the DISPLAY's, not the simulation's. With vsync
@@ -123,7 +124,7 @@ export class Game {
       // the frame the window is about to show, so a headless run and a
       // windowed run save identical pixels.
       if (opts.shotPath !== "" && this.stats.frames + 1 === opts.shotFrame) {
-        const src = ffi.surfaceSavePng(opts.shotPath);
+        const src = ffi.surfaceSavePng(0, opts.shotPath);
         if (src !== 0) console.log(`screenshot failed (${src}): ${lastError()}`);
         else console.log(`screenshot: ${opts.shotPath}`);
       }

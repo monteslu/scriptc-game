@@ -23,16 +23,21 @@ INC="-I$DEST/include -I$ROOT/shim"
 # libc++, so every std:: symbol in the vendored archives is std::__1::.
 # Compiling the shim against libstdc++ would mismatch the ABI at the
 # skia_c.hpp boundary; the final link takes -lc++ -lc++abi (see gen-ffi.js).
-clang   -O2 -std=c11   -c "$ROOT/shim/sg_tables.c" -o "$OBJ/sg_tables.o" $INC
-clang++ -O2 -std=c++17 -stdlib=libc++ -fno-exceptions -c "$ROOT/shim/sg_core.cpp" \
-        -o "$OBJ/sg_core.o" $INC $SDL_CFLAGS
+clang -O2 -std=c11 -c "$ROOT/shim/sg_tables.c" -o "$OBJ/sg_tables.o" $INC
+
+SHIM_OBJS="$OBJ/sg_tables.o"
+for cpp in sg_core sg_skia_gen sg_skia_extra; do
+  clang++ -O2 -std=c++17 -stdlib=libc++ -fno-exceptions \
+          -c "$ROOT/shim/$cpp.cpp" -o "$OBJ/$cpp.o" $INC $SDL_CFLAGS
+  SHIM_OBJS="$SHIM_OBJS $OBJ/$cpp.o"
+done
 
 # Skip the expensive merge when every input is older than the output.
 NEED_MERGE=0
 if [ ! -f "$DEST/libsggfx.a" ]; then
   NEED_MERGE=1
 else
-  for f in "$OBJ/sg_tables.o" "$OBJ/sg_core.o" "$DEST/libskiac.a"; do
+  for f in $SHIM_OBJS "$DEST/libskiac.a"; do
     [ "$f" -nt "$DEST/libsggfx.a" ] && NEED_MERGE=1
   done
 fi
@@ -53,13 +58,13 @@ if [ "$NEED_MERGE" = "1" ]; then
   rm -f "$DEST/libsggfx.a"
   # A single ar command line would overflow with thousands of members, so
   # append in batches and build the index once at the end.
-  ar qS "$DEST/libsggfx.a" "$OBJ/sg_tables.o" "$OBJ/sg_core.o"
+  ar qS "$DEST/libsggfx.a" $SHIM_OBJS
   find "$MERGE" -name '*.o' -print0 | xargs -0 -n 300 ar qS "$DEST/libsggfx.a"
   ranlib "$DEST/libsggfx.a"
   rm -rf "$MERGE"
 else
-  # Shim objects changed but Skia did not: replace just those two members.
-  ar r "$DEST/libsggfx.a" "$OBJ/sg_tables.o" "$OBJ/sg_core.o"
+  # Shim objects changed but Skia did not: replace just those members.
+  ar r "$DEST/libsggfx.a" $SHIM_OBJS
   ranlib "$DEST/libsggfx.a"
 fi
 

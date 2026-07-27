@@ -217,3 +217,128 @@ uninterpretable across machines.
   ever disagrees.
 - The napi-rs/canvas golden comparison (2.5) is still unwritten; PNG output
   now exists on both sides, so it is unblocked.
+
+---
+
+# Phase 2 Results: Canvas 2D, text, images, conformance
+
+Run 2026-07-27, same host. **All 53 conformance scenes are byte-identical**
+to @napi-rs/canvas goldens rendered at the same pinned CANVAS_VERSION (1.0.0)
+and therefore the same Skia build.
+
+`./scripts/conformance.sh` runs the whole loop: build harness, render scenes
+headless, render goldens under Node, compare pixels.
+
+## Why "byte-identical" is a fair bar here
+
+build-libcanvas builds our Skia archives from the same commit @napi-rs/canvas
+ships, and `render-goldens.mjs` refuses to run if the installed canvas version
+does not match `vendor/<target>/CANVAS_VERSION`. Same Skia, same version, same
+scene: any difference is OUR bug. No tolerance is configured anywhere, and
+none should be added.
+
+The comparison decodes both PNGs and compares RGBA buffers rather than file
+bytes, because two encoders can emit different chunk layouts for identical
+pictures. The claim under test is about the picture.
+
+**The harness is verified to fail.** Perturbing a single pixel by 1 in a
+single channel is reported (`1/30000 px differ, max channel delta 1`). An
+all-green run from a broken comparator would look exactly like a real pass,
+so this control is re-run whenever the suite changes shape.
+
+## Coverage
+
+53 scenes across: rects, alpha, all path verbs (lines, bezier, quadratic,
+arc, arcTo, ellipse, rect, roundRect), both fill rules, line width/cap/join/
+miter/dash/dashOffset, transforms (translate/rotate/scale/transform/
+setTransform) and save/restore, clipping (rect and path), clearRect, linear/
+radial/conic gradients and multi-stop ramps, four composite operations, CSS
+colour formats, text (fill, stroke, align, baseline, weight/style, sizes),
+images (natural, scaled, sub-rect, alpha, smoothing on/off), and patterns
+(repeat, no-repeat).
+
+## The header lies; the implementation is authoritative
+
+Four of the bugs below came from trusting `skia_c.hpp`. Its declarations are
+accurate about TYPES and unreliable about MEANING: parameter names and struct
+layouts drift from the bodies in `skia_c.cpp`. **Read the implementation
+before wrapping anything**, especially anything taking a rect or filling an
+out-param.
+
+| What the header says | What the code does |
+| --- | --- |
+| `skiac_path_add_rect(l, t, r, b)` | `SkRect::MakeXYWH(x, y, w, h)` |
+| `skiac_line_metrics` (assumed skparagraph's) | eight floats, nothing else |
+| `skiac_bitmap_info` (assumed a pixel span) | `{bitmap*, int, int, bool}` |
+| `skiac_matrix_new(a..f)` pass-through | row-major `MakeAll`; canvas is column-major |
+
+## Bugs found, in the order conformance surfaced them
+
+1. **rect() ran to the canvas edge.** `skiac_path_add_rect` is XYWH, not
+   LTRB (see above). Affected rect, clip-rect, both fill-rule scenes.
+2. **Sheared shapes landed at the wrong origin.** Canvas `transform(a,b,c,
+   d,e,f)` is column-major `[a c e / b d f]`; `skiac_matrix_new` feeds
+   `SkMatrix::MakeAll`, which is row-major. The tuple needs reordering to
+   `(a,c,e,b,d,f)`.
+3. **Every full circle and ellipse silently vanished** while half circles
+   were byte-perfect: a 360-degree sweep through Skia's `arcTo` draws nothing
+   because the start and end points coincide. Full sweeps are now split into
+   two 180-degree arcs.
+4. **1321 leaked path handles in 120 frames.** Generated `*_destroy` wrappers
+   used `sg_table_get`, which leaves the table slot occupied. They now use
+   `sg_table_take` and are idempotent on a stale handle.
+5. **Segfault on the first stroke.** `skiac_paint_set_shader` and
+   `set_path_effect` call `->ref()` on their argument with no null check, and
+   handle 0 (clear the shader / solid line) is the COMMON case. skiac exposes
+   no "clear" entry point (napi-rs/canvas never needs one: it builds a fresh
+   SkPaint per draw). Clearing now swaps a pristine SkPaint in behind the same
+   handle via `sg_table_replace`.
+6. **All text laid out right-to-left.** `TextDirection` is `{kRtl = 0,
+   kLtr = 1}`; passing 0 for "LTR" laid text out from `MAX_LAYOUT_WIDTH` and
+   compensated, pushing strings off the left edge.
+7. **measureText returned zeros**: `skiac_line_metrics` is eight floats, not
+   skparagraph's much larger `LineMetrics`. With the right layout, width
+   matches the reference exactly (114.2699966430664 for a 24px sample).
+8. **measureText segfaulted before that**: the text entry point does
+   `text_style.setForegroundColor(*PAINT_CAST)` unconditionally, so the paint
+   is NOT optional even when only measuring. Measuring borrows a shim-owned
+   scratch paint.
+9. **Bold text differed.** Registering only the regular face made both sides
+   SYNTHESIZE bold and italic, and they synthesize differently. All three
+   faces are now registered; text scenes name the family explicitly so
+   neither side resolves through a system font manager (250-odd fonts, so a
+   diff would mean "different machine" not "different renderer").
+10. **Image decode always failed**: `skiac_bitmap_make_from_buffer` returns a
+    READY bitmap in its info struct; the shim was trying to re-wrap a pixel
+    span that does not exist there.
+11. **Off-by-one alpha, twice, in opposite directions.** The reference uses
+    TWO different rules and conformance rejects either one applied
+    everywhere: colour fills TRUNCATE globalAlpha to a byte (`... as u8`, so
+    0.25 -> 63) while drawImage ROUNDS (`(alpha*255).round()`, so 0.25 -> 64).
+    Colours additionally round twice, storing globalAlpha as a byte first and
+    then computing `(a/255 * ga/255 * 255).round()`. Unifying the rule made
+    one scene pass and another fail, alternating, until they were separated.
+
+## Codegen
+
+`codegen/gen-shim.js` parses `skia_c.hpp` and emits both the C wrappers and
+the matching TS declares from one allowlist, so the two cannot drift. 83
+functions generate; 17 are hand-written in `sg_skia_extra.cpp`, each with a
+reason recorded in `skia-allowlist.json` (array params, struct-by-value,
+struct out-params, and the two null-crashing setters).
+
+The generator REFUSES to emit anything it cannot classify rather than
+guessing, which is what caught `draw_picture` needing a handle domain that
+does not exist yet. That refusal is the feature; keep it.
+
+## Notes for later phases
+
+- `skiac` has no path reset, so `beginPath()` destroys and recreates. Fine at
+  measured FFI prices.
+- The paint-reset trick (swap a pristine SkPaint behind the same handle) is
+  only needed because skiac cannot clear a shader. If upstream ever adds a
+  clear, `sg_paint_reset` and `sg_table_replace` can go.
+- Text state is a shim-owned block set by scalar calls and committed by one
+  draw/measure call, rather than 26 arguments per call. The same shape will
+  suit the audio graph's command ring in Phase 4.
+- `Math.round`/`Math.floor` compile in the static tier; `Math.PI` does not.

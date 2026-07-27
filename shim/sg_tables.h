@@ -26,11 +26,21 @@
 extern "C" {
 #endif
 
+/* Handle domains. Keep in sync with codegen/skia-allowlist.json's `domains`
+ * map (the generator emits SG_T_* names straight into the wrappers) and with
+ * DOMAIN_NAMES in runtime/canvas/handles.ts. */
 typedef enum {
   SG_T_SURFACE = 0,
   SG_T_CANVAS,
   SG_T_PAINT,
   SG_T_PATH,
+  SG_T_SHADER,
+  SG_T_MATRIX,
+  SG_T_IMAGE,
+  SG_T_BITMAP,
+  SG_T_PATH_EFFECT,
+  SG_T_IMAGE_FILTER,
+  SG_T_FONT_COLLECTION,
   SG_T_COUNT
 } sg_domain;
 
@@ -58,6 +68,11 @@ void* sg_table_get(sg_domain d, uint32_t handle);
 /* Resolves AND frees in one step (bumping the generation), so a destroy
  * path cannot double-free. Returns NULL if the handle was already stale. */
 void* sg_table_take(sg_domain d, uint32_t handle);
+
+/* Repoints a live handle at a new object, keeping the generation (so
+ * outstanding handles stay valid). Returns 0 if the handle is stale. The
+ * caller is responsible for destroying the object it replaced. */
+int sg_table_replace(sg_domain d, uint32_t handle, void* ptr);
 
 uint32_t sg_table_live(sg_domain d);
 uint32_t sg_table_high_water(sg_domain d);
