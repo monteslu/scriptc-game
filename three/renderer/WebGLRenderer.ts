@@ -650,6 +650,13 @@ export class WebGLRenderer {
       if (material.blending === AdditiveBlending) gl.blendFunc(SRC_ALPHA, ONE);
       else gl.blendFunc(SRC_ALPHA, ONE_MINUS_SRC_ALPHA);
     }
+
+    /* material.depthTest was declared but NEVER READ, so a HUD quad that
+     * asked to ignore depth was still occluded by whatever it happened to
+     * be inside -- in examples/station, the ceiling slab, which made the
+     * whole HUD vanish. three honours this per material; so does this now. */
+    if (material.depthTest) gl.enable(DEPTH_TEST);
+    else gl.disable(DEPTH_TEST);
   }
 
   /* ---- instanced ----

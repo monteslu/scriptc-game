@@ -68,7 +68,10 @@ const TILE = 1 * SCALE;
 const WALL_H = 1 * SCALE;
 const HALL_LEN = 26;      // tiles down the corridor
 /* Two wall courses tall, so the ceiling sits on top of the second one. */
-const CEIL_Y = 2 * SCALE;
+/* A level is TWO wall courses tall, so a tunnel is roomy enough to fly
+ * through rather than scrape along. */
+const LEVEL_H = 2 * SCALE;
+const CEIL_Y = LEVEL_H;
 const HALL_W = 7;         // tiles across
 /* Eye height is measured from the FLOOR SURFACE, not from the origin: the
  * floor model is 0.3 tall in kit units, so its top sits at 0.3*SCALE and a
@@ -80,6 +83,8 @@ const EYE = FLOOR_TOP + 1.65;
 const BTN_START = 9;
 const BTN_A = 0;
 const BTN_L1 = 4;
+const BTN_L2 = 6;
+const BTN_R2 = 7;
 const BTN_R1 = 5;
 const BTN_DPAD_UP = 12;
 const BTN_DPAD_DOWN = 13;
@@ -91,6 +96,8 @@ const DEADZONE = 0.2;
 class Piece {
   mesh: InstancedMesh | null = null;
   count = 0;
+  /** Pool size; place() silently drops anything beyond it. */
+  capacity = 0;
   /* Column-major transforms, filled before the geometry arrives and
    * flushed into the mesh once it does. */
   pending: Matrix4[] = [];
@@ -173,7 +180,7 @@ window.addEventListener("load", () => {
    * A station interior wants to feel enclosed and artificial: a low
    * ambient so nothing is pure black, one cool overhead fill, and warm
    * point lights that actually travel the corridor. */
-  scene.add(new AmbientLight(0x18202f, 1));
+  scene.add(new AmbientLight(0x1e2740, 1));
   const fill = new DirectionalLight(0x7f9fd8, 0.32);
   fill.position.set(0.3, 1, 0.25);
   scene.add(fill);
@@ -186,7 +193,7 @@ window.addEventListener("load", () => {
   scene.add(roofFill);
 
   const lamps: PointLight[] = [];
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < 3; i++) {
     /* decay 1, not the physically-correct 2: at station scale
      * inverse-square needs an intensity in the hundreds and then blows out
      * anything nearby. See WEBGL-AND-3D.md. */
@@ -198,6 +205,14 @@ window.addEventListener("load", () => {
     lamps.push(lamp);
     scene.add(lamp);
   }
+
+  /* A light that flies WITH the ship.
+   *
+   * A branching three-level map cannot be lit by a handful of travelling
+   * lamps: wherever the player actually is would be dark. This is the
+   * headlight, and it is what makes a tunnel readable while flying it. */
+  const headlight = new PointLight(0xbfd8ff, 2.2, 30, 1);
+  scene.add(headlight);
 
   /* ---- the station ----
    *
@@ -213,6 +228,7 @@ window.addEventListener("load", () => {
     const m = new InstancedMesh(new BoxGeometry(0.001, 0.001, 0.001),
                                stationMat, capacity);
     m.count = 0;
+    p.capacity = capacity;
     p.mesh = m;
     scene.add(m);
     pieces.push(p);
@@ -244,7 +260,7 @@ window.addEventListener("load", () => {
    * correctly rather than being lit from behind. */
   function placeRolled(p: Piece, x: number, y: number, z: number,
                        yaw: number, s: number, roll: number): void {
-    if (p.count >= 400) return;
+    if (p.count >= p.capacity) return;
     _pos.set(x, y, z);
     _rot.setFromEuler(roll, yaw, 0);
     _scl.set(s * SCALE, s * SCALE, s * SCALE);
@@ -257,20 +273,20 @@ window.addEventListener("load", () => {
     }
   }
 
-  const floor = piece("floor", 260);
-  const ceiling = piece("floor", 260);
-  const floorDetail = piece("floor-detail", 80);
-  const wall = piece("wall", 260);
-  const wallWindow = piece("wall-window", 120);
-  const wallPillar = piece("wall-pillar", 120);
-  const wallBanner = piece("wall-banner", 30);
-  const container = piece("container", 40);
-  const containerTall = piece("container-tall", 30);
-  const computerWide = piece("computer-wide", 20);
-  const tableDisplay = piece("table-display-planet", 12);
-  const chair = piece("chair", 24);
-  const railPiece = piece("rail", 60);
-  const pipeRing = piece("pipe-ring-colored", 40);
+  const floor = piece("floor", 900);
+  const ceiling = piece("floor", 900);
+  const floorDetail = piece("floor-detail", 260);
+  const wall = piece("wall", 2200);
+  const wallWindow = piece("wall-window", 600);
+  const wallPillar = piece("wall-pillar", 700);
+  const wallBanner = piece("wall-banner", 200);
+  const container = piece("container", 60);
+  const containerTall = piece("container-tall", 40);
+  const computerWide = piece("computer-wide", 30);
+  const tableDisplay = piece("table-display-planet", 20);
+  const chair = piece("chair", 30);
+  const railPiece = piece("rail", 80);
+  const pipeRing = piece("pipe-ring-colored", 80);
 
   /* Deterministic layout: the same station every run, so a screenshot is
    * reproducible and a visual change is a real change. */
@@ -280,79 +296,156 @@ window.addEventListener("load", () => {
     return seed / 0x7fffffff;
   }
 
-  const halfW = (HALL_W - 1) / 2;
-  for (let z = 0; z < HALL_LEN; z++) {
-    const wz = -z * TILE;
-    for (let x = -halfW; x <= halfW; x++) {
-      const wx = x * TILE;
-      // A scattering of detail tiles breaks up a flat repeating floor.
-      if (rand() < 0.14) place(floorDetail, wx, 0, wz, 0, 1);
-      else place(floor, wx, 0, wz, 0, 1);
+  /* ---- the layout ----
+   *
+   * A GRID of open cells rather than one hardcoded corridor. `open[]` says
+   * which (x, y, z) cells are flyable; the geometry pass then walls off
+   * every face where an open cell meets a closed one, so branches, side
+   * rooms and vertical shafts all fall out of the same loop instead of
+   * needing their own code.
+   *
+   * It is also what makes flight COLLIDE correctly: the same array the
+   * walls were built from is the array the ship tests against, so the two
+   * can never disagree.
+   */
+  const GX = 9;             // cells across
+  const GY = 3;             // LEVELS: this is what makes it Descent-like
+  const GZ = 40;            // cells deep
+  const open: boolean[] = [];
+  for (let i = 0; i < GX * GY * GZ; i++) open.push(false);
 
-      /* Ceiling: the same tile, flipped. Its 0.3-tall lip then hangs DOWN
-       * from the ceiling plane, which is what a structural rib looks like
-       * from underneath. */
-      placeRolled(ceiling, wx, CEIL_Y, wz, 0, 1, Math.PI);
-    }
-
-    /* Walls down both sides. Windows every few tiles turn a corridor into
-     * somewhere with an outside. */
-    const left = -(halfW + 0.5) * TILE;
-    const right = (halfW + 0.5) * TILE;
-    const kind = z % 6;
-    for (let s = 0; s < 2; s++) {
-      const wx = s === 0 ? left : right;
-      const yaw = s === 0 ? Math.PI / 2 : -Math.PI / 2;
-      /* TWO courses, stacked.
-       *
-       * A wall model is 1 kit-unit tall, which is 3m at this scale --
-       * shorter than it looks from outside, and from eye level you see
-       * straight over it into space. Stacking a second course at the top
-       * of the first gives a 6m corridor that actually encloses the
-       * walker, and the pieces line up exactly because the kit is built
-       * on the grid. */
-      const upper = WALL_H;
-      if (kind === 0) {
-        place(wallPillar, wx, 0, wz, yaw, 1);
-        place(wallPillar, wx, upper, wz, yaw, 1);
-      } else if (kind === 2 || kind === 4) {
-        place(wallWindow, wx, 0, wz, yaw, 1);
-        place(wallWindow, wx, upper, wz, yaw, 1);
-      } else if (kind === 3) {
-        place(wallBanner, wx, 0, wz, yaw, 1);
-        place(wall, wx, upper, wz, yaw, 1);
-      } else {
-        place(wall, wx, 0, wz, yaw, 1);
-        place(wall, wx, upper, wz, yaw, 1);
+  function idx(x: number, y: number, z: number): number {
+    return (y * GZ + z) * GX + x;
+  }
+  function isOpen(x: number, y: number, z: number): boolean {
+    if (x < 0 || x >= GX || y < 0 || y >= GY || z < 0 || z >= GZ) return false;
+    return open[idx(x, y, z)];
+  }
+  function carve(x: number, y: number, z: number): void {
+    if (x < 0 || x >= GX || y < 0 || y >= GY || z < 0 || z >= GZ) return;
+    open[idx(x, y, z)] = true;
+  }
+  /** An axis-aligned run of cells. */
+  function carveRun(x0: number, y0: number, z0: number,
+                    x1: number, y1: number, z1: number): void {
+    const sx = x1 >= x0 ? 1 : -1;
+    const sy = y1 >= y0 ? 1 : -1;
+    const sz = z1 >= z0 ? 1 : -1;
+    for (let x = x0; x !== x1 + sx; x += sx) {
+      for (let y = y0; y !== y1 + sy; y += sy) {
+        for (let z = z0; z !== z1 + sz; z += sz) carve(x, y, z);
       }
     }
-
-    // Ceiling pipes: overhead detail is what makes an interior feel built.
-    if (z % 3 === 0) {
-      place(pipeRing, 0, WALL_H * 2 - 0.5, wz, 0, 1);
-    }
   }
 
-  /* Furnishings: clustered rather than scattered, so the corridor reads as
-   * rooms with purpose instead of props dropped at random. */
-  for (let i = 0; i < 7; i++) {
-    const z = -3 - i * 3.5;
-    const side = i % 2 === 0 ? -1 : 1;
-    const x = side * (halfW - 0.6);
-    if (i % 3 === 0) {
-      place(computerWide, x, 0, z, side > 0 ? -Math.PI / 2 : Math.PI / 2, 1);
-      place(chair, x - side * 0.9, 0, z, side > 0 ? -Math.PI / 2 : Math.PI / 2, 1);
-    } else if (i % 3 === 1) {
-      place(container, x, 0, z, rand() * Math.PI, 1);
-      place(containerTall, x - side * 0.1, 0, z - 1.1, rand() * Math.PI, 1);
+  const MID = (GX - 1) / 2;   // 4
+
+  /* The spine: a wide main tunnel on the middle level, running the length
+   * of the map. */
+  carveRun(MID - 1, 1, 0, MID + 1, 1, GZ - 1);
+
+  /* Side branches, alternating left and right, each ending in a room.
+   * Cells live down these, so the run is a series of detours rather than
+   * a straight sprint. */
+  for (let b = 0; b < 5; b++) {
+    const bz = 5 + b * 7;
+    const left = b % 2 === 0;
+    const x0 = left ? 0 : MID + 2;
+    const x1 = left ? MID - 2 : GX - 1;
+    carveRun(x0, 1, bz, x1, 1, bz);
+    // A room at the end, two cells deep so it reads as a place.
+    if (left) carveRun(0, 1, bz - 1, 2, 1, bz + 1);
+    else carveRun(GX - 3, 1, bz - 1, GX - 1, 1, bz + 1);
+  }
+
+  /* VERTICAL SHAFTS. Three of them, connecting all three levels: this is
+   * what turns a flat maze into a 3D one, and what makes up/down thrust
+   * mean something. */
+  const shafts = [8, 20, 32];
+  for (let s = 0; s < shafts.length; s++) {
+    const sz = shafts[s];
+    const sx = s % 2 === 0 ? MID : MID;
+    carveRun(sx, 0, sz, sx, GY - 1, sz);
+    // Upper and lower galleries running off each shaft.
+    carveRun(sx - 2, 2, sz, sx + 2, 2, sz);
+    carveRun(sx - 2, 0, sz, sx + 2, 0, sz);
+  }
+
+  /* Upper and lower spines, shorter than the main one, so the alternate
+   * levels are routes rather than dead ends. */
+  carveRun(MID, 2, 8, MID, 2, 32);
+  carveRun(MID, 0, 8, MID, 0, 32);
+
+  /* One wall face. `outer` means nothing lies beyond it, so it gets a
+   * window: the inside of a maze should read as solid, and the hull
+   * should look out at space. Two courses, since a level is 2 walls tall. */
+  function placeWall(wx: number, wy: number, wz: number, yaw: number,
+                     outer: boolean, variant: number): void {
+    const kind = variant % 6;
+    if (outer && (kind === 2 || kind === 4)) {
+      place(wallWindow, wx, wy, wz, yaw, 1);
+      place(wallWindow, wx, wy + SCALE, wz, yaw, 1);
+    } else if (kind === 0) {
+      place(wallPillar, wx, wy, wz, yaw, 1);
+      place(wallPillar, wx, wy + SCALE, wz, yaw, 1);
+    } else if (outer && kind === 3) {
+      place(wallBanner, wx, wy, wz, yaw, 1);
+      place(wall, wx, wy + SCALE, wz, yaw, 1);
     } else {
-      place(tableDisplay, x, 0, z, side > 0 ? -Math.PI / 2 : Math.PI / 2, 1);
+      place(wall, wx, wy, wz, yaw, 1);
+      place(wall, wx, wy + SCALE, wz, yaw, 1);
     }
   }
 
-  // A rail along the far end, so the corridor terminates in something.
-  for (let x = -halfW; x <= halfW; x++) {
-    place(railPiece, x * TILE, 0, -(HALL_LEN - 0.5) * TILE, 0, 1);
+  /* ---- geometry from the grid ----
+   *
+   * One pass: for every open cell, floor below, ceiling above, and a wall
+   * on each of the four sides that faces a closed cell. A cell with an
+   * open neighbour gets nothing there, which is what leaves the branches
+   * connected. */
+  const CELL = TILE;
+  function cellX(x: number): number { return (x - MID) * CELL; }
+  function cellY(y: number): number { return y * LEVEL_H; }
+  function cellZ(z: number): number { return -z * CELL; }
+
+  for (let y = 0; y < GY; y++) {
+    for (let z = 0; z < GZ; z++) {
+      for (let x = 0; x < GX; x++) {
+        if (!isOpen(x, y, z)) continue;
+        const wx = cellX(x);
+        const wy = cellY(y);
+        const wz = cellZ(z);
+
+        // Floor, unless the cell below is also open (then it is a shaft).
+        if (!isOpen(x, y - 1, z)) {
+          if (rand() < 0.14) place(floorDetail, wx, wy, wz, 0, 1);
+          else place(floor, wx, wy, wz, 0, 1);
+        }
+        // Ceiling, unless the cell above is open.
+        if (!isOpen(x, y + 1, z)) {
+          placeRolled(ceiling, wx, wy + LEVEL_H, wz, 0, 1, Math.PI);
+        }
+
+        /* Side walls. Windows on the OUTER hull only (a wall with nothing
+         * beyond it), so the inside of the maze stays solid and the edges
+         * look out at space. */
+        const half = CELL * 0.5;
+        if (!isOpen(x - 1, y, z)) {
+          const outer = x === 0;
+          placeWall(wx - half, wy, wz, Math.PI / 2, outer, z);
+        }
+        if (!isOpen(x + 1, y, z)) {
+          const outer = x === GX - 1;
+          placeWall(wx + half, wy, wz, -Math.PI / 2, outer, z);
+        }
+        if (!isOpen(x, y, z - 1)) {
+          placeWall(wx, wy, wz + half, 0, z === 0, x);
+        }
+        if (!isOpen(x, y, z + 1)) {
+          placeWall(wx, wy, wz - half, Math.PI, z === GZ - 1, x);
+        }
+      }
+    }
   }
 
   /* ---- power cells ----
@@ -372,28 +465,45 @@ window.addEventListener("load", () => {
   cellHaloMat.depthWrite = false;
   if (glowTex !== null) cellHaloMat.map = glowTex;
 
-  const cellX: number[] = [];
-  const cellZ: number[] = [];
+  const cellPX: number[] = [];
+  const cellPY: number[] = [];
+  const cellPZ: number[] = [];
   const cellAlive: boolean[] = [];
   const cellMesh: Mesh[] = [];
   const cellHalo: Sprite[] = [];
 
+  /* Cells sit at the END of each branch and on the alternate LEVELS, so
+   * collecting them all means actually flying the maze: down every side
+   * passage and up and down every shaft. A line of pickups along the
+   * spine would just be "hold forward". */
+  const spots: number[] = [
+    // x, y, z in GRID coordinates
+    1, 1, 5,          GX - 2, 1, 12,
+    1, 1, 19,         GX - 2, 1, 26,
+    1, 1, 33,
+    MID, 2, 8,        MID, 2, 20,     MID, 2, 32,
+    MID, 0, 20,
+  ];
   for (let i = 0; i < CELL_COUNT; i++) {
-    const frac = (i + 1) / (CELL_COUNT + 1);
-    const cz = -frac * (HALL_LEN - 3) * TILE;
-    const cx = ((i % 2 === 0) ? -1 : 1) * (halfW - 1.1) * TILE;
-    cellX.push(cx);
-    cellZ.push(cz);
+    const gx = spots[i * 3];
+    const gy = spots[i * 3 + 1];
+    const gz = spots[i * 3 + 2];
+    const cx = cellX(gx);
+    const cy = cellY(gy) + FLOOR_TOP + 1.4;
+    const cz = cellZ(gz);
+    cellPX.push(cx);
+    cellPY.push(cy);
+    cellPZ.push(cz);
     cellAlive.push(true);
 
-    const m = new Mesh(new BoxGeometry(0.55, 0.55, 0.55), cellMat);
-    m.position.set(cx, FLOOR_TOP + 0.75, cz);
+    const m = new Mesh(new BoxGeometry(0.7, 0.7, 0.7), cellMat);
+    m.position.set(cx, cy, cz);
     scene.add(m);
     cellMesh.push(m);
 
     const halo = new Sprite(cellHaloMat);
-    halo.scale.set(2.4, 2.4, 1);
-    halo.position.set(cx, FLOOR_TOP + 0.75, cz);
+    halo.scale.set(3.2, 3.2, 1);
+    halo.position.set(cx, cy, cz);
     scene.add(halo);
     cellHalo.push(halo);
   }
@@ -402,18 +512,21 @@ window.addEventListener("load", () => {
    *
    * At the FAR end, so the whole run is a commitment: every cell you take
    * is distance you still have to cover coming back to nothing. */
-  const podZ = -(HALL_LEN - 1.2) * TILE;
+  /* The pod sits at the FAR end of the spine, on the middle level. */
+  const podX = cellX(MID);
+  const podY = cellY(1);
+  const podZ = cellZ(GZ - 2);
   const podMat = new MeshBasicMaterial(0xffd25a);
   podMat.transparent = true;
   podMat.opacity = 0.75;
   podMat.blending = AdditiveBlending;
   podMat.depthWrite = false;
   const pod = new Mesh(new BoxGeometry(2.6 * SCALE, 0.08, 2.6 * SCALE), podMat);
-  pod.position.set(0, FLOOR_TOP + 0.05, podZ);
+  pod.position.set(podX, podY + FLOOR_TOP + 0.05, podZ);
   scene.add(pod);
 
   const podLight = new PointLight(0xffd25a, 3.2, 18, 1);
-  podLight.position.set(0, FLOOR_TOP + 1.6, podZ);
+  podLight.position.set(podX, podY + FLOOR_TOP + 2.5, podZ);
   scene.add(podLight);
 
   /* ---- YOUR SHIP, docked at the pod ----
@@ -428,14 +541,14 @@ window.addEventListener("load", () => {
   const shipMat = new MeshLambertMaterial(0xffffff);
   shipMat.vertexColors = true;
   const playerShip = new Mesh(new BoxGeometry(0.001, 0.001, 0.001), shipMat);
-  playerShip.scale.set(6.5, 6.5, 6.5);
-  playerShip.position.set(0, FLOOR_TOP + 2.2, podZ);
+  playerShip.scale.set(1.15, 1.15, 1.15);
+  playerShip.position.set(0, 0, 0);
   scene.add(playerShip);
 
   /* Its own light: the far end of the corridor is the darkest part of the
    * level, and an unlit ship there is a silhouette rather than a goal. */
   const shipLight = new PointLight(0x9fd0ff, 4.5, 26, 1);
-  shipLight.position.set(0, FLOOR_TOP + 4.5, podZ + 4);
+  shipLight.position.set(podX, podY + FLOOR_TOP + 5, podZ + 5);
   scene.add(shipLight);
 
   loader.load("craft_racer.sgm")
@@ -459,17 +572,54 @@ window.addEventListener("load", () => {
   let lost = false;
   let endTime = 0;
 
-  /* ---- movement ---- */
-  let px = 0;
-  let pz = -2 * SCALE;      // just inside the entrance, facing down the hall
-  let yaw = Math.PI;         // facing down the corridor
-  let bobPhase = 0;
+  /* ---- ship state ----
+   *
+   * Position and VELOCITY: a flying ship carries momentum, so input
+   * accelerates rather than teleports. */
+  let shipX = 0;
+  let shipY = cellY(1) + LEVEL_H * 0.5;
+  let shipZ = -3 * CELL;
+  let velX = 0;
+  let velY = 0;
+  let velZ = 0;
+  let shipYaw = Math.PI;      // facing down the map
+  let shipPitch = 0;
+  let bank = 0;
+
+  /* The chase camera lags the ship on a spring; these are its own
+   * position so the lag survives across frames. */
+  let camX = shipX;
+  let camY = shipY + 2.4;
+  let camZ = shipZ + 7.5;
+
   let touring = true;
-  /* Whether the restart button was already down: without this, holding
-   * START through the end of a run restarts instantly and the result
-   * screen never appears. */
   let restartHeld = false;
+  /** Seconds since the run began; drives every animation phase. */
   let elapsed = 0;
+
+  /* Is a sphere around this point clear of walls?
+   *
+   * Tested against the SAME `open` grid the geometry was built from, so
+   * collision can never disagree with what is drawn. The radius keeps the
+   * hull off the wall rather than letting it clip halfway in. */
+  const SHIP_R = 1.5;
+  function flyable(x: number, y: number, z: number): boolean {
+    // Grid coordinates of the extremes of the ship's bounding sphere.
+    const gx0 = Math.floor((x - SHIP_R) / CELL + MID + 0.5);
+    const gx1 = Math.floor((x + SHIP_R) / CELL + MID + 0.5);
+    const gy0 = Math.floor((y - SHIP_R) / LEVEL_H);
+    const gy1 = Math.floor((y + SHIP_R) / LEVEL_H);
+    const gz0 = Math.floor((-z - SHIP_R) / CELL + 0.5);
+    const gz1 = Math.floor((-z + SHIP_R) / CELL + 0.5);
+    for (let gy = gy0; gy <= gy1; gy++) {
+      for (let gz = gz0; gz <= gz1; gz++) {
+        for (let gx = gx0; gx <= gx1; gx++) {
+          if (!isOpen(gx, gy, gz)) return false;
+        }
+      }
+    }
+    return true;
+  }
 
   const keys: string[] = [];
   function down(k: string): boolean { return keys.indexOf(k) >= 0; }
@@ -479,9 +629,14 @@ window.addEventListener("load", () => {
     collected = 0;
     won = false;
     lost = false;
-    px = 0;
-    pz = -2 * SCALE;
-    yaw = Math.PI;
+    shipX = 0;
+    shipY = cellY(1) + LEVEL_H * 0.5;
+    shipZ = -3 * CELL;
+    velX = 0; velY = 0; velZ = 0;
+    shipYaw = Math.PI;
+    shipPitch = 0;
+    bank = 0;
+    camX = shipX; camY = shipY + 2.4; camZ = shipZ + 7.5;
     for (let i = 0; i < CELL_COUNT; i++) {
       cellAlive[i] = true;
       cellMesh[i].visible = true;
@@ -510,6 +665,11 @@ window.addEventListener("load", () => {
     let fwd = 0;
     let strafe = 0;
     let turn = 0;
+    /** Nose up/down. */
+    let pitch = 0;
+    /** Thrust straight up/down, independent of where the nose points:
+     * this is what makes a vertical shaft flyable. */
+    let lift = 0;
     const run = down("Shift") ? 2.1 : 1;
 
     if (down("w") || down("W") || down("ArrowUp")) fwd += 1;
@@ -518,6 +678,11 @@ window.addEventListener("load", () => {
     if (down("d") || down("D") || down("ArrowRight")) turn -= 1;
     if (down("q") || down("Q")) strafe -= 1;
     if (down("e") || down("E")) strafe += 1;
+    // Up and down: the axis a walking game did not have.
+    if (down(" ") || down("r") || down("R")) lift += 1;
+    if (down("Control") || down("f") || down("F")) lift -= 1;
+    if (down("i") || down("I")) pitch += 1;
+    if (down("k") || down("K")) pitch -= 1;
 
     const pads = navigator.getGamepads();
     for (let i = 0; i < pads.length; i++) {
@@ -532,6 +697,20 @@ window.addEventListener("load", () => {
       if (ly > DEADZONE || ly < -DEADZONE) { fwd -= ly; touring = false; }
       if (lx > DEADZONE || lx < -DEADZONE) { strafe += lx; touring = false; }
       if (rx > DEADZONE || rx < -DEADZONE) { turn -= rx; touring = false; }
+      /* Right stick Y pitches the nose. Positive is DOWN on a gamepad, and
+       * pitching the nose UP when the stick goes up is the inverted
+       * convention flight games use. */
+      const ry = pad.axes.length > 3 ? pad.axes[3] : 0;
+      if (ry > DEADZONE || ry < -DEADZONE) { pitch -= ry; touring = false; }
+
+      /* Triggers climb and dive. A vertical shaft needs an axis that does
+       * not depend on where the nose is pointing. */
+      if (pad.buttons.length > BTN_R2) {
+        const lt = pad.buttons[BTN_L2].value;
+        const rt = pad.buttons[BTN_R2].value;
+        if (rt > 0.1) { lift += rt; touring = false; }
+        if (lt > 0.1) { lift -= lt; touring = false; }
+      }
 
       /* START (or A) restarts once the run is over. A gamepad player
        * should never have to reach for the keyboard to play again.
@@ -581,45 +760,114 @@ window.addEventListener("load", () => {
     }
 
     if (touring) {
-      /* The auto-tour: a slow walk down the corridor and back, so the
-       * demo shows itself off unattended. */
-      /* Walks from just inside the entrance to near the far rail and
-       * back. Starting at +4 tiles put the camera 12m BEHIND the corridor,
-       * looking in at the outside of the walls. */
-      const span = (HALL_LEN - 8) * SCALE;
-      const t = (elapsed * 0.09) % 2;
-      pz = -2 * SCALE - (t < 1 ? t : 2 - t) * span;
-      px = Math.sin(elapsed * 0.35) * 2.6;
-      yaw = Math.PI + Math.sin(elapsed * 0.22) * 0.35;
-      bobPhase += dt * 6;
+      /* Attract mode: fly the spine so the demo shows itself off. */
+      const span = (GZ - 6) * CELL;
+      const tt = (elapsed * 0.06) % 2;
+      shipZ = -3 * CELL - (tt < 1 ? tt : 2 - tt) * span;
+      shipX = Math.sin(elapsed * 0.4) * CELL * 0.8;
+      shipY = cellY(1) + LEVEL_H * 0.5 + Math.sin(elapsed * 0.3) * 1.2;
+      shipYaw = Math.PI + Math.sin(elapsed * 0.25) * 0.4;
+      shipPitch = Math.sin(elapsed * 0.19) * 0.12;
+      velX = 0; velY = 0; velZ = 0;
     } else {
-      yaw += turn * dt * 2.2;
-      const speed = 4.6 * run;
-      const sinY = Math.sin(yaw);
-      const cosY = Math.cos(yaw);
-      /* Forward is (sin yaw, cos yaw); RIGHT is that rotated -90 degrees,
-       * which is (-cos yaw, sin yaw). The first version used (cos, -sin) --
-       * the LEFT-hand vector -- so strafing went the wrong way on both the
-       * keyboard and the stick. Checked against yaw=PI (facing -Z), where
-       * right must be +X. */
-      px += (sinY * fwd - cosY * strafe) * speed * dt;
-      pz += (cosY * fwd + sinY * strafe) * speed * dt;
-      if (fwd !== 0 || strafe !== 0) bobPhase += dt * 9 * run;
+      /* ---- 6DOF FLIGHT ----
+       *
+       * Descent's model: you are a ship, not a walker. Thrust accelerates
+       * along the hull's own axes, momentum carries you, and drag is the
+       * only thing that stops you. Directly setting a position from input
+       * is what makes a flying game feel like a cursor.
+       */
+      shipYaw += turn * dt * 1.9;
+      shipPitch += pitch * dt * 1.5;
+      // Stop short of straight up/down: past vertical the roll flips.
+      const maxPitch = 1.25;
+      if (shipPitch > maxPitch) shipPitch = maxPitch;
+      if (shipPitch < -maxPitch) shipPitch = -maxPitch;
 
-      // Keep the walker inside the corridor.
-      const lim = (halfW - 0.35) * SCALE;
-      if (px < -lim) px = -lim;
-      if (px > lim) px = lim;
-      if (pz > 1 * SCALE) pz = 1 * SCALE;
-      if (pz < -(HALL_LEN - 1.5) * SCALE) pz = -(HALL_LEN - 1.5) * SCALE;
+      /* The hull's basis. Forward is yaw+pitch; right is the horizontal
+       * perpendicular (a ship banking should not change which way "right"
+       * thrust pushes); up is right x forward. */
+      const cp = Math.cos(shipPitch);
+      const fx = Math.sin(shipYaw) * cp;
+      const fy = Math.sin(shipPitch);
+      const fz = Math.cos(shipYaw) * cp;
+      const rx = -Math.cos(shipYaw);
+      const rz = Math.sin(shipYaw);
+
+      const thrust = 26 * run;
+      velX += (fx * fwd + rx * strafe) * thrust * dt;
+      velY += (fy * fwd + lift) * thrust * dt;
+      velZ += (fz * fwd + rz * strafe) * thrust * dt;
+
+      /* Exponential drag: v *= k^dt behaves the same at 30 and 144 fps,
+       * unlike v -= v*k*dt. Loose enough that momentum is real, tight
+       * enough that a corridor is flyable. */
+      const damp = Math.pow(0.06, dt);
+      velX *= damp;
+      velY *= damp;
+      velZ *= damp;
+
+      const sp = Math.sqrt(velX * velX + velY * velY + velZ * velZ);
+      const MAX_SPEED = 17 * run;
+      if (sp > MAX_SPEED) {
+        const k = MAX_SPEED / sp;
+        velX *= k; velY *= k; velZ *= k;
+      }
+
+      /* Move one axis at a time and cancel that axis on a hit: sliding
+       * along a wall instead of stopping dead is the difference between a
+       * tunnel that is fun to fly and one that snags on every corner. */
+      const nx = shipX + velX * dt;
+      if (flyable(nx, shipY, shipZ)) shipX = nx; else velX = -velX * 0.25;
+      const ny = shipY + velY * dt;
+      if (flyable(shipX, ny, shipZ)) shipY = ny; else velY = -velY * 0.25;
+      const nz = shipZ + velZ * dt;
+      if (flyable(shipX, shipY, nz)) shipZ = nz; else velZ = -velZ * 0.25;
+
+      // Bank into the turn: a ship that yaws without rolling reads as a cursor.
+      bank += (-turn * 0.5 - bank) * Math.min(1, dt * 6);
     }
 
-    /* Head bob: a small vertical sine while moving. It is the cheapest
-     * possible thing that makes a first-person camera feel like a body
-     * rather than a floating point. */
-    const bob = Math.sin(bobPhase) * 0.035;
-    camera.position.set(px, EYE + bob, pz);
-    _look.set(px + Math.sin(yaw), EYE + bob - 0.06, pz + Math.cos(yaw));
+    /* ---- the ship, and a chase camera ----
+     *
+     * Third person, because the whole point is seeing your ship. The
+     * camera trails on a spring rather than rigidly: a hard-mounted
+     * camera transmits every collision jolt straight to the player's eye
+     * and is unreadable in a tight tunnel. */
+    playerShip.position.set(shipX, shipY, shipZ);
+    playerShip.quaternion.setFromEuler(-shipPitch, shipYaw + Math.PI, 0);
+    _bankQ.setFromAxisAngle(_fwdAxis, bank);
+    playerShip.quaternion.multiply(_bankQ);
+
+    const cpz = Math.cos(shipPitch);
+    const camBackX = -Math.sin(shipYaw) * cpz;
+    const camBackY = -Math.sin(shipPitch);
+    const camBackZ = -Math.cos(shipYaw) * cpz;
+    /* A 6m-tall tunnel leaves very little room above the ship: at
+     * CAM_UP 2.4 the camera sat 0.4m under the ceiling and spent most of
+     * the flight INSIDE the roof slab, which is why the view was dark and
+     * full of wall. Just above the hull is enough to see over it. */
+    const CAM_DIST = 6.2;
+    const CAM_UP = 1.15;
+    const wantX = shipX + camBackX * CAM_DIST;
+    const wantY = shipY + camBackY * CAM_DIST + CAM_UP;
+    const wantZ = shipZ + camBackZ * CAM_DIST;
+    const follow = Math.min(1, dt * 7);
+    camX += (wantX - camX) * follow;
+    camY += (wantY - camY) * follow;
+    camZ += (wantZ - camZ) * follow;
+
+    /* The headlight leads the ship slightly, so the tunnel ahead is lit
+     * before you reach it rather than behind you after you pass. */
+    headlight.position.set(shipX - camBackX * 5, shipY - camBackY * 5 + 1,
+                           shipZ - camBackZ * 5);
+
+    camera.position.set(camX, camY, camZ);
+    /* Aim WELL ahead of the ship, so the hull sits low in the frame and
+     * the tunnel you are flying into fills it. Looking at the ship itself
+     * puts a model in the middle of the screen and hides the level. */
+    _look.set(shipX - camBackX * 13, shipY - camBackY * 13 + 1.0,
+              shipZ - camBackZ * 13);
     camera.lookAt(_look);
 
     /* Lamps travel the corridor at a constant spacing, so the walker is
@@ -645,22 +893,26 @@ window.addEventListener("load", () => {
       // first-person view reads as the pickup being broken.
       for (let i = 0; i < CELL_COUNT; i++) {
         if (!cellAlive[i]) continue;
-        const dx = cellX[i] - px;
-        const dz = cellZ[i] - pz;
-        if (dx * dx + dz * dz < 2.6 * 2.6) {
+        const dx = cellPX[i] - shipX;
+        const dy = cellPY[i] - shipY;
+        const dz = cellPZ[i] - shipZ;
+        // A sphere, not a circle: cells sit on three different levels.
+        if (dx * dx + dy * dy + dz * dz < 3.4 * 3.4) {
           cellAlive[i] = false;
           cellMesh[i].visible = false;
           cellHalo[i].visible = false;
           collected += 1;
           air += AIR_PER_CELL;
-          sparks.burst(cellX[i], FLOOR_TOP + 0.75, cellZ[i], 22, cellBurst);
+          sparks.burst(cellPX[i], cellPY[i], cellPZ[i], 26, cellBurst);
           if (hasAudio) pickup(audio, 0.4);
         }
       }
 
       // The pod only counts once every cell is aboard.
-      const dpz = pz - podZ;
-      if (collected >= CELL_COUNT && dpz * dpz < 3.2 * 3.2) {
+      const dpx = shipX - podX;
+      const dpz = shipZ - podZ;
+      if (collected >= CELL_COUNT &&
+          dpx * dpx + dpz * dpz < 5 * 5) {
         won = true;
         endTime = elapsed;
         if (hasAudio) pickup(audio, 0.7);
@@ -677,26 +929,12 @@ window.addEventListener("load", () => {
     /* Cells bob and spin: a static pickup reads as scenery. */
     for (let i = 0; i < CELL_COUNT; i++) {
       if (!cellAlive[i]) continue;
-      const y = FLOOR_TOP + 0.75 + Math.sin(elapsed * 2.2 + i) * 0.16;
-      cellMesh[i].position.set(cellX[i], y, cellZ[i]);
+      const y = cellPY[i] + Math.sin(elapsed * 2.2 + i) * 0.2;
+      cellMesh[i].position.set(cellPX[i], y, cellPZ[i]);
       cellMesh[i].quaternion.setFromEuler(0, elapsed * 1.3 + i, 0.4);
-      cellHalo[i].position.set(cellX[i], y, cellZ[i]);
+      cellHalo[i].position.set(cellPX[i], y, cellPZ[i]);
       const pulse = 2.4 * (1 + Math.sin(elapsed * 4 + i) * 0.13);
       cellHalo[i].scale.set(pulse, pulse, 1);
-    }
-
-    /* The ship hovers and rocks on its pad; on a win it lifts off, which
-     * is the payoff for the whole run. */
-    if (won) {
-      const since = elapsed - endTime;
-      playerShip.position.set(0, FLOOR_TOP + 2.2 + since * since * 2.6,
-                              podZ - since * 1.8);
-      playerShip.quaternion.setFromEuler(-since * 0.25, Math.PI, 0);
-    } else {
-      playerShip.position.set(0, FLOOR_TOP + 2.2 + Math.sin(elapsed * 1.6) * 0.18,
-                              podZ);
-      playerShip.quaternion.setFromEuler(0, Math.PI + Math.sin(elapsed * 0.5) * 0.15,
-                                         Math.sin(elapsed * 0.9) * 0.05);
     }
 
     /* The pod pulses only once it can actually be used, so it reads as
@@ -807,8 +1045,11 @@ function placeHUD(hud: Mesh, camera: PerspectiveCamera): void {
   _fwd.set(0, 0, -1).applyQuaternion(camera.quaternion);
   _up.set(0, 1, 0).applyQuaternion(camera.quaternion);
   hud.position.copy(camera.position);
-  hud.position.addScaledVector(_fwd, 2.2);
-  hud.position.addScaledVector(_up, 0.72);
+  /* Pinned along the camera's ACTUAL view axis. The chase camera now aims
+   * far ahead of the ship, so a HUD placed on the old axis ended up
+   * outside the frustum and vanished. */
+  hud.position.addScaledVector(_fwd, 2.4);
+  hud.position.addScaledVector(_up, 0.86);
   hud.quaternion.copy(camera.quaternion);
 }
 
@@ -880,6 +1121,9 @@ function drawHUD(ctx: Context2D, air: number, maxAir: number,
   }
 }
 
+const _bankQ = new Quaternion();
+/* Bank is a roll about the ship's OWN forward axis. */
+const _fwdAxis = new Vector3(0, 0, 1);
 const _fwd = new Vector3();
 const _up = new Vector3();
 const _pos = new Vector3();
