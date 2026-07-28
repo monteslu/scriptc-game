@@ -241,12 +241,53 @@ the dialect and are listed here rather than left to be discovered.
 
 | three | here | why |
 | --- | --- | --- |
-| `scene.add(anything)` | `addMesh` / `addInstancedMesh` / `addSprite` / `addLine` / `addPoints` / `addLight` | the renderer needs a concrete type per drawable kind; the dialect will not narrow `Object3D` back down (SC1090). `add()` still works for transform parenting. |
+| `new Material({ color: 0xff0000 })` | `new Material(0xff0000)` | an object literal cannot cross into a class-typed parameter (SC2003). Every other option is a field assignment, as it may be in three. |
+| `mesh.rotation.x += 0.01` | `mesh.rotateX(0.01)` | `rotation` is a read-only Euler VIEW of the authoritative quaternion; the dialect has no property setters to sync a write back |
+| `raycaster.setFromCamera(vec2, cam)` | `setFromCamera(x, y, cam)` | two numbers is what every call site actually has |
 | `geometry.attributes.position` | `geometry.position` | no dynamic property access; `setAttribute("position", ...)` still works |
 | `attribute.needsUpdate = true` | `geometry.updatePosition()` | the attribute is a named field, so the flag lives on the geometry |
 | `texture.offset.set(x, y)` | `texture.setOffset(x, y)` | same for `repeat`; no Vector2 property objects with setters |
-| `material.rotation` on a Sprite | same | screen-space spin, as in three |
-| `mesh.instanceMatrix.needsUpdate` | same | works exactly as three's |
+
+Everything else in the canonical three example is **verbatim**:
+
+```ts
+const scene = new Scene();
+const camera = new PerspectiveCamera(75, w / h, 0.1, 1000);
+const cube = new Mesh(new BoxGeometry(1, 1, 1), new MeshLambertMaterial(0x00ff00));
+scene.add(cube);                       // dispatches by instanceof
+camera.position.z = 5;
+cube.position.set(1, 2, 3);
+cube.scale.setScalar(2);
+const light = new PointLight(0xffffff, 1, 100);
+light.position.set(5, 5, 5);
+scene.add(light);
+const hits = new Raycaster().intersectObjects(scene.children);
+```
+
+`test/idiom/` compiles exactly that and checks the values against three's:
+same positions, same colour, same hit count.
+
+**`scene.add()` dispatches by `instanceof`** to the right typed registry
+(most-derived first, so an InstancedMesh is not filed as a Mesh). The typed
+`addMesh`/`addLight`/`addSprite`/... methods remain and are what the
+library's own code uses: they skip the type tests and, more usefully, they
+fail at COMPILE time on the wrong kind where `add()` can only ignore it at
+runtime.
+
+`intersectObjects` takes `Object3D[]` and skips non-Meshes, so
+`scene.children` works. Sprites, Lines and Points have no world-space
+geometry to hit (a Sprite is built in the vertex shader); give them a
+collider Mesh and see `raycastable` below.
+
+### Coverage, honestly
+
+About 37% of three's total member count, but that number is misleading in
+both directions. What is missing is overwhelmingly renderer surface this
+tier does not implement -- shadow maps, stencil, tone mapping, blending
+modes, morph targets, envMaps, `Layers` -- plus a long tail of math
+conveniences (`Vector3.projectOnPlane`, `Color.setHSL`, `Matrix4.decompose`).
+What is present is the part a game touches every frame. Judge it by the
+example above rather than by the percentage.
 
 ### InstancedMesh
 

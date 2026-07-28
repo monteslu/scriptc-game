@@ -16,10 +16,19 @@
  */
 import { Raycaster, Ray, Intersection } from "../three/core/Raycaster.js";
 import { SGMLoader } from "../three/loaders/SGMLoader.js";
-import { Mesh } from "../three/objects/Mesh.js";
+import { Mesh, Group } from "../three/objects/Mesh.js";
+import { Scene } from "../three/core/Scene.js";
+import { InstancedMesh } from "../three/objects/InstancedMesh.js";
+import { Sprite, Line, LineSegments, Points } from "../three/objects/Sprite.js";
+import {
+  SpriteMaterial, LineBasicMaterial, PointsMaterial,
+} from "../three/materials/Material.js";
+import { AmbientLight } from "../three/lights/Light.js";
 import { PerspectiveCamera } from "../three/core/PerspectiveCamera.js";
 import { PlaneGeometry } from "../three/geometries/PlaneGeometry.js";
 import { BoxGeometry } from "../three/geometries/BoxGeometry.js";
+import { BufferGeometry } from "../three/core/BufferGeometry.js";
+import { BufferAttribute } from "../three/core/BufferAttribute.js";
 import {
   MeshBasicMaterial, FrontSide, DoubleSide,
 } from "../three/materials/Material.js";
@@ -226,6 +235,65 @@ async function main(): Promise<void> {
   } else {
     console.log("  FAIL: the harness cannot detect a wrong value");
     failed += 1;
+  }
+
+  /* ---- scene.add() dispatch ----
+   *
+   * three's canonical call is `scene.add(anything)`. It dispatches by
+   * instanceof to the right typed registry, so game code written against
+   * three works verbatim.
+   *
+   * This also guards a REGRESSION that fails silently: add() calls
+   * addMesh(), and addMesh() used to call this.add() -- mutual recursion
+   * that overflowed the stack and segfaulted with no diagnostic at all.
+   * The typed adders must parent through super.add. */
+  console.log("");
+  console.log("==> scene.add() dispatch");
+
+  const sc = new Scene();
+  const basicMat = new MeshBasicMaterial();
+  const boxGeo = new BoxGeometry(1, 1, 1);
+
+  sc.add(new Mesh(boxGeo, basicMat));
+  checkNum(sc.meshes.length, 1, "add(Mesh) lands in meshes");
+
+  sc.add(new AmbientLight(0xffffff, 1));
+  checkNum(sc.lights.length, 1, "add(Light) lands in lights");
+
+  sc.add(new InstancedMesh(boxGeo, basicMat, 4));
+  checkNum(sc.instanced.length, 1, "add(InstancedMesh) lands in instanced");
+  // An InstancedMesh IS a Mesh: the dispatch order must not file it twice.
+  checkNum(sc.meshes.length, 1, "add(InstancedMesh) does NOT also land in meshes");
+
+  sc.add(new Sprite(new SpriteMaterial()));
+  checkNum(sc.sprites.length, 1, "add(Sprite) lands in sprites");
+
+  const lineGeo = new BufferGeometry();
+  lineGeo.setAttribute("position", new BufferAttribute([0, 0, 0, 1, 1, 1], 3, false));
+  sc.add(new LineSegments(lineGeo, new LineBasicMaterial()));
+  checkNum(sc.lines.length, 1, "add(LineSegments) lands in lines");
+
+  sc.add(new Points(lineGeo, new PointsMaterial()));
+  checkNum(sc.points.length, 1, "add(Points) lands in points");
+
+  // A Group is a transform parent, not a drawable: parented, registered nowhere.
+  const grp = new Group();
+  sc.add(grp);
+  checkNum(sc.meshes.length, 1, "add(Group) registers no drawable");
+  check(grp.parent === sc, "add(Group) still parents it");
+
+  /* intersectObjects takes Object3D[], so scene.children works verbatim.
+   * Verify it FINDS the mesh rather than filtering everything away. */
+  const rayScene = new Scene();
+  const target = new Mesh(planeGeo, frontMat);
+  rayScene.add(target);
+  rayScene.add(new AmbientLight(0xffffff, 1));      // not raycastable
+  rayScene.add(new Sprite(new SpriteMaterial()));   // not raycastable
+  rayScene.updateMatrixWorld(true);
+  const viaChildren = rcCenter.intersectObjects(rayScene.children);
+  checkNum(viaChildren.length, 2, "intersectObjects(scene.children) finds the mesh");
+  if (viaChildren.length > 0) {
+    check(viaChildren[0].object === target, "and names the right mesh");
   }
 
   /* ---- SGMLoader ----

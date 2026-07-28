@@ -59,9 +59,25 @@ export class Material {
   }
 }
 
-/** Unlit: the colour (and map) exactly as given. three's MeshBasicMaterial. */
+/* Unlit: the colour (and map) exactly as given. three's MeshBasicMaterial.
+ *
+ * three takes an options OBJECT (`new MeshBasicMaterial({ color: 0xff0000 })`).
+ * The dialect refuses an object literal where a class is expected (SC2003:
+ * "not representable in the target union"), so the colour is a positional
+ * argument instead -- which covers the overwhelmingly common case in one
+ * line rather than two:
+ *
+ *     new MeshBasicMaterial(0xff0000)        // here
+ *     new MeshBasicMaterial({color:0xff0000})  // three
+ *
+ * Everything else is a field assignment, exactly as it may be in three. */
 export class MeshBasicMaterial extends Material {
   readonly isMeshBasicMaterial = true;
+
+  constructor(color: number = 0xffffff) {
+    super();
+    this.color.setHex(color);
+  }
 }
 
 /* Diffuse (Lambert) shading: one dot product per light.
@@ -70,6 +86,11 @@ export class MeshBasicMaterial extends Material {
  * model is not visible at game distances with game textures. */
 export class MeshLambertMaterial extends Material {
   readonly isMeshLambertMaterial = true;
+
+  constructor(color: number = 0xffffff) {
+    super();
+    this.color.setHex(color);
+  }
 
   override featureBits(): number {
     let bits = super.featureBits() | FEAT_LAMBERT;
@@ -86,6 +107,11 @@ export class MeshLambertMaterial extends Material {
 export class LineBasicMaterial extends Material {
   readonly isLineBasicMaterial = true;
   linewidth = 1;
+
+  constructor(color: number = 0xffffff) {
+    super();
+    this.color.setHex(color);
+  }
 }
 
 /* Point material. `size` is in PIXELS and `sizeAttenuation` decides whether
@@ -94,6 +120,11 @@ export class PointsMaterial extends Material {
   readonly isPointsMaterial = true;
   size = 1;
   sizeAttenuation = true;
+
+  constructor(color: number = 0xffffff) {
+    super();
+    this.color.setHex(color);
+  }
 
   override featureBits(): number {
     return super.featureBits() | FEAT_POINTS;
@@ -107,6 +138,11 @@ export class PointsMaterial extends Material {
 export class SpriteMaterial extends Material {
   readonly isSpriteMaterial = true;
   rotation = 0;
+
+  constructor(color: number = 0xffffff) {
+    super();
+    this.color.setHex(color);
+  }
 
   override featureBits(): number {
     return super.featureBits() | FEAT_SPRITE;

@@ -27,6 +27,7 @@ import { Vector3 } from "../math/Vector3.js";
 import { Vector2 } from "../math/Vector2.js";
 import { Matrix4 } from "../math/Matrix4.js";
 import { Mesh } from "../objects/Mesh.js";
+import { Object3D } from "./Object3D.js";
 import { PerspectiveCamera } from "./PerspectiveCamera.js";
 import { DoubleSide, BackSide, FrontSide } from "../materials/Material.js";
 import { Math as M } from "../../web/globals.js";
@@ -223,11 +224,19 @@ export class Raycaster {
     return out;
   }
 
-  /** All hits across several meshes, nearest first. */
-  intersectObjects(meshes: Mesh[]): Intersection[] {
+  /* All hits across several objects, nearest first.
+   *
+   * Takes Object3D[] so `raycaster.intersectObjects(scene.children)` -- the
+   * canonical three call -- works verbatim. Anything that is not a Mesh is
+   * skipped: Sprites are built in the vertex shader and Lines/Points are
+   * infinitely thin, so none of them has world-space geometry a ray can
+   * hit. Pass a collider Mesh for those (see mesh.raycastable). */
+  intersectObjects(objects: Object3D[]): Intersection[] {
     const out: Intersection[] = [];
-    for (let i = 0; i < meshes.length; i++) {
-      this.intersectMesh(meshes[i], out);
+    for (let i = 0; i < objects.length; i++) {
+      const o = objects[i];
+      if (!(o instanceof Mesh)) continue;
+      this.intersectMesh(o, out);
       if (this.firstHitOnly && out.length > 0) return out;
     }
     sortByDistance(out);
