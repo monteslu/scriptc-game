@@ -70,8 +70,14 @@ fi
 # placeholders.
 if [ -d "$INPUT/public" ] && ls "$INPUT"/*.ts >/dev/null 2>&1 &&
    grep -qs '\.sgm' "$INPUT"/*.ts; then
-  "$ROOT/scripts/bake-models.sh" "$INPUT/public" >/dev/null || {
+  # A game states its model set with a `models` file naming the shared
+  # directory to bake from; without one it gets the default kit.
+  SRC="examples/shared/models"
+  [ -f "$INPUT/models" ] && SRC="examples/shared/$(cat "$INPUT/models")"
+  "$ROOT/scripts/bake-models.sh" "$INPUT/public" "$SRC" >/dev/null || {
     echo "bake-models.sh failed" >&2; exit 1; }
+  # Any atlas the kit ships beside its models.
+  cp -f "$ROOT/$SRC"/*.png "$INPUT/public/" 2>/dev/null || true
 fi
 
 OUT="$ROOT/build/$BASE"

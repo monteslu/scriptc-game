@@ -12,7 +12,9 @@ cd "$ROOT"
 DEST="${1:-examples/orbits/public}"
 mkdir -p "$DEST"
 
-for glb in examples/shared/models/*.glb; do
+SRC="${2:-examples/shared/models}"
+
+for glb in "$SRC"/*.glb; do
   [ -f "$glb" ] || continue
   name="$(basename "$glb" .glb)"
   node codegen/bake-mesh.js "$glb" "$DEST/$name.sgm" | tail -1

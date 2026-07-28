@@ -290,6 +290,25 @@ function parseOBJ(text, materials) {
 }
 
 /* ---- glTF -> one merged mesh ---- */
+/* The base-colour texture a mesh's materials reference, if any.
+ *
+ * Reported rather than embedded: the .sgm format carries geometry only,
+ * and a kit shares ONE atlas across every model in it. Baking the image
+ * into each mesh would duplicate a 512x512 png ninety-odd times; the game
+ * loads the atlas once and hands it to every material. */
+function textureOf(gltf) {
+  for (const m of gltf.materials || []) {
+    const bct = m.pbrMetallicRoughness && m.pbrMetallicRoughness.baseColorTexture;
+    if (!bct) continue;
+    const tex = (gltf.textures || [])[bct.index];
+    if (!tex || tex.source === undefined) continue;
+    const img = (gltf.images || [])[tex.source];
+    if (img && img.uri) return img.uri;
+    if (img && img.bufferView !== undefined) return "<embedded>";
+  }
+  return null;
+}
+
 function meshFromGLTF(gltf, buffers) {
   const positions = [];
   const normals = [];
@@ -384,7 +403,14 @@ function meshFromGLTF(gltf, buffers) {
         for (let i = 0; i < count; i++) {
           colors.push(c[i * stride], c[i * stride + 1], c[i * stride + 2]);
         }
-      } else if (prim.material !== undefined && gltf.materials) {
+      } else if (prim.material !== undefined && gltf.materials &&
+                 !(gltf.materials[prim.material] &&
+                   gltf.materials[prim.material].pbrMetallicRoughness &&
+                   gltf.materials[prim.material].pbrMetallicRoughness
+                     .baseColorTexture)) {
+        /* Skipped when the material is TEXTURED: the shader computes
+         * map * vertexColor, so baking a baseColorFactor as well would
+         * tint the atlas with it. A textured model keeps white vertices. */
         /* No per-vertex colours, but the PRIMITIVE names a material.
          *
          * This is how a flat-shaded kit is actually authored: one
@@ -415,6 +441,7 @@ function meshFromGLTF(gltf, buffers) {
   }
 
   return {
+    texture: textureOf(gltf),
     positions,
     normals: sawNormal ? normals : null,
     uvs: sawUV ? uvs : null,
@@ -578,6 +605,11 @@ function main(argv) {
     console.log(`bake-mesh: dropped ${trimmed.dropped} unreferenced vertices`);
   }
   const info = writeSGM(trimmed, outPath, scale);
+  if (mesh.texture) {
+    console.log(`bake-mesh: material texture -> ${mesh.texture} ` +
+                `(load it yourself and set material.map; the atlas is ` +
+                `shared across the kit, so it is not baked in)`);
+  }
   const parts = [];
   if (info.flags & F_NORMAL) parts.push("normals");
   if (info.flags & F_UV) parts.push("uvs");
