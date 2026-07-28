@@ -3,8 +3,12 @@
     "version": "0.0.17",
     "source": "fork",
     "fork": "https://github.com/monteslu/scriptc",
-    "branch": "fix/ffi-const-binding",
-    "note": "local fork carries the FFI const-binding fix; retest against upstream on each bump"
+    "branch": "game-integration",
+    "note": "integration branch: merges the topic branches below, which are kept SEPARATE and each self-contained so any one can be sent upstream as its own PR without dragging the others along",
+    "topic_branches": {
+      "fix/ffi-const-binding": "a manifest-bound FFI call is dropped when its result initializes a never-reassigned local (upstream issue vercel-labs/scriptc#21)",
+      "fix/msvc-ssize-t": "scr_runtime.h declares ssize_t function pointers; MSVC has no ssize_t, so any Windows build through that header fails to parse"
+    }
   },
   "canvas": {
     "CANVAS_VERSION": "1.0.0",
