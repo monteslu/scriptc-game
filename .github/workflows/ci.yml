@@ -123,6 +123,14 @@ jobs:
 
       - name: macOS deps
         if: startsWith(matrix.target, 'macos')
+        env:
+          # The runner image preinstalls aws/tap, which recent Homebrew
+          # refuses to read without an explicit trust grant, so every brew
+          # command prints a nine-line warning about a tap this project
+          # never uses. Nothing here installs from a third-party tap.
+          HOMEBREW_NO_REQUIRE_TAP_TRUST: 1
+          HOMEBREW_NO_AUTO_UPDATE: 1
+          HOMEBREW_NO_INSTALL_CLEANUP: 1
         run: |
           # webp: Homebrew's ffmpeg 8 has no webp encoder, so the image
           # fixtures use cwebp for that one format (make-decode-fixtures.sh).
@@ -200,7 +208,7 @@ jobs:
           done
 
       - name: Upload binaries
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: scriptc-game-${{ matrix.target }}
           path: build/*
