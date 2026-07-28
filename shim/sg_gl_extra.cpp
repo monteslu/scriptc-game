@@ -26,6 +26,8 @@
  * Strings (shader source, info logs) go through the existing string mailbox
  * rather than inventing a second protocol.
  */
+#include <EGL/egl.h>
+#include <EGL/eglext.h>
 #include <GLES3/gl3.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -34,6 +36,88 @@
 #include "sg_skia.h"   /* sg_mail_set, SG_OK and friends */
 
 extern "C" {
+
+/* ---- headless context (the conformance lane) --------------------------
+ *
+ * SDL_VIDEODRIVER=dummy cannot create a GL context ("Invalid window"), so
+ * the 2D headless trick does not carry over. EGL's DEVICE platform needs no
+ * display server at all: enumerate devices, take a pbuffer, done. Same
+ * shape as native-gles's egl_context.cpp.
+ *
+ * A windowed context comes from SDL instead (see sg_core.cpp); this exists
+ * so the readback-parity gate can run in CI with no X server.
+ */
+static EGLDisplay g_egl_display = EGL_NO_DISPLAY;
+static EGLContext g_egl_context = EGL_NO_CONTEXT;
+static EGLSurface g_egl_surface = EGL_NO_SURFACE;
+
+int32_t sg_gl_init_headless(int32_t width, int32_t height) {
+  if (g_egl_context != EGL_NO_CONTEXT) return SG_OK;   // idempotent
+
+  auto queryDevices = (PFNEGLQUERYDEVICESEXTPROC)
+      eglGetProcAddress("eglQueryDevicesEXT");
+  auto getPlatformDisplay = (PFNEGLGETPLATFORMDISPLAYEXTPROC)
+      eglGetProcAddress("eglGetPlatformDisplayEXT");
+  if (!queryDevices || !getPlatformDisplay) {
+    sg_mail_set("EGL device extensions unavailable (no headless GL)");
+    return SG_ESDL;
+  }
+
+  EGLDeviceEXT devices[8];
+  EGLint deviceCount = 0;
+  if (!queryDevices(8, devices, &deviceCount) || deviceCount < 1) {
+    sg_mail_set("no EGL devices");
+    return SG_ESDL;
+  }
+
+  g_egl_display = getPlatformDisplay(EGL_PLATFORM_DEVICE_EXT, devices[0], nullptr);
+  if (g_egl_display == EGL_NO_DISPLAY) { sg_mail_set("eglGetPlatformDisplay failed"); return SG_ESDL; }
+  if (!eglInitialize(g_egl_display, nullptr, nullptr)) {
+    sg_mail_set("eglInitialize failed");
+    return SG_ESDL;
+  }
+  eglBindAPI(EGL_OPENGL_ES_API);
+
+  const EGLint configAttribs[] = {
+    EGL_SURFACE_TYPE, EGL_PBUFFER_BIT,
+    EGL_RENDERABLE_TYPE, EGL_OPENGL_ES3_BIT,
+    EGL_RED_SIZE, 8, EGL_GREEN_SIZE, 8, EGL_BLUE_SIZE, 8, EGL_ALPHA_SIZE, 8,
+    EGL_DEPTH_SIZE, 24,
+    EGL_NONE,
+  };
+  EGLConfig config;
+  EGLint configCount = 0;
+  if (!eglChooseConfig(g_egl_display, configAttribs, &config, 1, &configCount) ||
+      configCount < 1) {
+    sg_mail_set("no ES3-capable EGL config");
+    return SG_ESDL;
+  }
+
+  const EGLint pbufferAttribs[] = {EGL_WIDTH, width, EGL_HEIGHT, height, EGL_NONE};
+  g_egl_surface = eglCreatePbufferSurface(g_egl_display, config, pbufferAttribs);
+  if (g_egl_surface == EGL_NO_SURFACE) { sg_mail_set("eglCreatePbufferSurface failed"); return SG_ESDL; }
+
+  const EGLint contextAttribs[] = {EGL_CONTEXT_CLIENT_VERSION, 3, EGL_NONE};
+  g_egl_context = eglCreateContext(g_egl_display, config, EGL_NO_CONTEXT, contextAttribs);
+  if (g_egl_context == EGL_NO_CONTEXT) { sg_mail_set("eglCreateContext failed"); return SG_ESDL; }
+
+  if (!eglMakeCurrent(g_egl_display, g_egl_surface, g_egl_surface, g_egl_context)) {
+    sg_mail_set("eglMakeCurrent failed");
+    return SG_ESDL;
+  }
+  return SG_OK;
+}
+
+void sg_gl_shutdown_headless(void) {
+  if (g_egl_display == EGL_NO_DISPLAY) return;
+  eglMakeCurrent(g_egl_display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+  if (g_egl_context != EGL_NO_CONTEXT) eglDestroyContext(g_egl_display, g_egl_context);
+  if (g_egl_surface != EGL_NO_SURFACE) eglDestroySurface(g_egl_display, g_egl_surface);
+  eglTerminate(g_egl_display);
+  g_egl_display = EGL_NO_DISPLAY;
+  g_egl_context = EGL_NO_CONTEXT;
+  g_egl_surface = EGL_NO_SURFACE;
+}
 
 /* ---- 1. single-object generators ------------------------------------- */
 
@@ -198,6 +282,15 @@ int32_t sg_gl_get_attrib_location(uint32_t program, const uint8_t* name,
   memcpy(buf, name, len);
   buf[len] = 0;
   return glGetAttribLocation(program, buf);
+}
+
+void sg_gl_bind_attrib_location(uint32_t program, uint32_t index,
+                                const uint8_t* name, size_t len) {
+  char buf[256];
+  if (len >= sizeof(buf)) return;
+  memcpy(buf, name, len);
+  buf[len] = 0;
+  glBindAttribLocation(program, index, buf);
 }
 
 /* ---- uniforms with array payloads ------------------------------------ */

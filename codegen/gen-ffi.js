@@ -16,12 +16,29 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 /** camelCase FFI name -> snake_case C symbol (sgCanvasDrawRect -> sg_canvas_draw_rect) */
 function symbolOf(name) {
+  /* Raw GL entry points ARE their own symbol: glClear is exported by
+   * libGLESv2 as glClear, not gl_clear. Only the sg* shim names follow the
+   * camelCase -> snake_case convention. */
+  if (/^gl[A-Z]/.test(name)) return name;
   return name.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase();
 }
 
+/* GL's typedefs, which the GL shim signatures use directly rather than
+ * spelling out uint32_t. Same widths, different names. */
+const GL_TYPES = {
+  GLenum: "uint32_t", GLuint: "uint32_t", GLbitfield: "uint32_t",
+  GLint: "int32_t", GLsizei: "int32_t", GLfixed: "int32_t",
+  GLboolean: "uint8_t", GLubyte: "uint8_t",
+  /* 64-bit GL types cross as f64: exact to 2^53, which covers every buffer
+   * size and offset a game will produce. */
+  GLintptr: "double", GLsizeiptr: "double",
+  GLint64: "double", GLuint64: "double",
+};
+
 /** Map a C type to its format-1 ABI class. */
 function abiClass(cType, isReturn) {
-  const t = cType.trim().replace(/\s+/g, " ");
+  let t = cType.trim().replace(/\s+/g, " ");
+  if (t in GL_TYPES) t = GL_TYPES[t];
   if (t === "void") return isReturn ? "void" : null;
   if (t === "double") return "f64";
   if (t === "uint32_t") return "u32";
@@ -61,12 +78,36 @@ const shimSrc = [
   "shim/sg_input.cpp",
   "shim/sg_audio.cpp",
   "shim/sg_audio_decode.cpp",
+  /* The GL tier. Generated and hand-written halves both export C symbols
+   * the WebGL layer declares. */
+  "shim/sg_gl_gen.cpp",
+  "shim/sg_gl_extra.cpp",
 ]
+  .filter((f) => existsSync(join(root, f)))
   .map((f) => readFileSync(join(root, f), "utf8"))
   .join("\n");
 
 const cSigs = new Map();
-const sigRe = /extern\s+"C"\s+([A-Za-z_][A-Za-z0-9_ ]*?)\s+(sg_[a-z0-9_]+)\s*\(([^)]*)\)/g;
+
+/* Raw GL entry points live in libGLESv2, not in shim/*.cpp, so their
+ * signatures cannot be parsed from our sources. gen-gl.js writes them to a
+ * sidecar when it parses the GLES3 header; without it, a program using the
+ * GL tier reports every one as "no C signature found". */
+const glSigPath = join(root, "codegen/gl-signatures.json");
+if (existsSync(glSigPath)) {
+  const glSigs = JSON.parse(readFileSync(glSigPath, "utf8"));
+  for (const [symbol, sig] of Object.entries(glSigs)) cSigs.set(symbol, sig);
+}
+/* Two spellings, both used in the tree: `extern "C" TYPE sg_foo(...)` per
+ * function (the Skia shims) and one `extern "C" { ... }` block wrapping many
+ * (the GL shim). Matching only the first silently dropped every symbol in a
+ * block, which surfaces much later as "sg_foo is not defined" at RUNTIME,
+ * so both are matched here.
+ *
+ * The block form is found by taking any top-level definition of an sg_
+ * symbol; a name is only reachable from TS if it is extern "C" anyway, and
+ * a static helper would not be declared on the TS side. */
+const sigRe = /(?:extern\s+"C"\s+|^)([A-Za-z_][A-Za-z0-9_ ]*?)\s+(sg_[a-z0-9_]+)\s*\(([^)]*)\)/gm;
 for (let m; (m = sigRe.exec(shimSrc)); ) {
   const [, ret, symbol, params] = m;
   const paramList = params
@@ -123,7 +164,11 @@ function reachableFiles(start) {
 }
 
 const tsSrc = declFiles.map((f) => readFileSync(f, "utf8")).join("\n");
-const declRe = /^declare function (sg[A-Za-z0-9]*)\s*\(([^)]*)\)\s*:\s*([A-Za-z]+);/gm;
+/* camelCase (sgCanvasClear) is the established spelling and maps to its C
+ * symbol through symbolOf(). The GL tier declares raw GL entry points too
+ * (glClear, glDrawArrays), whose symbol IS the declared name. Both are
+ * matched; symbolOf leaves an all-lowercase name alone. */
+const declRe = /^declare function ((?:sg|gl)[A-Za-z0-9_]*)\s*\(([^)]*)\)\s*:\s*([A-Za-z]+);/gm;
 
 const functions = [];
 const problems = [];
@@ -298,6 +343,10 @@ function windowsSdl2Lib() {
  * shim objects into ONE archive: within a single archive the linker
  * iterates to a fixpoint, so mutual dependencies resolve regardless of
  * member order. */
+/* Does this program reach the GL bindings? gen-ffi already walks the entry
+ * file's import graph, so the answer is just whether gl-ffi.ts is in it. */
+const usesGl = declFiles.some((f) => f.endsWith("gl-ffi.ts"));
+
 const manifest = {
   ffi_format: 1,
   functions,
@@ -306,13 +355,19 @@ const manifest = {
    * own archive means a webaudio bump does not force the 30-second Skia merge.
    * Order matters to the linker, and sggfx (which calls into the engine) must
    * come first. */
+  /* The GL tier's archive joins only when a program actually imports the
+   * WebGL layer: a 2D game should not link libGLESv2. Detected from the
+   * declaration set, which is already the reachable-from-entry union. */
   libraries: [
+    ...(usesGl ? [`${vendor}/libsggl.a`] : []),
     `${vendor}/libsggfx.a`,
     `${vendor}/libwebaudio.a`,
     ...(target.startsWith("macos") ? [sdl2DylibPath()] : []),
     ...(target.startsWith("windows") ? [windowsSdl2Lib()] : []),
   ],
-  system_libraries: systemLibraries(target),
+  system_libraries: usesGl
+    ? [...systemLibraries(target), "GLESv2", "EGL"]
+    : systemLibraries(target),
 };
 
 mkdirSync(join(root, "ffi"), { recursive: true });

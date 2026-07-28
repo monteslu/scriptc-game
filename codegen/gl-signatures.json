@@ -1,0 +1,734 @@
+{
+  "glActiveTexture": {
+    "ret": "void",
+    "params": [
+      "GLenum"
+    ]
+  },
+  "glAttachShader": {
+    "ret": "void",
+    "params": [
+      "GLuint",
+      "GLuint"
+    ]
+  },
+  "glBindBuffer": {
+    "ret": "void",
+    "params": [
+      "GLenum",
+      "GLuint"
+    ]
+  },
+  "glBindFramebuffer": {
+    "ret": "void",
+    "params": [
+      "GLenum",
+      "GLuint"
+    ]
+  },
+  "glBindRenderbuffer": {
+    "ret": "void",
+    "params": [
+      "GLenum",
+      "GLuint"
+    ]
+  },
+  "glBindTexture": {
+    "ret": "void",
+    "params": [
+      "GLenum",
+      "GLuint"
+    ]
+  },
+  "glBlendEquation": {
+    "ret": "void",
+    "params": [
+      "GLenum"
+    ]
+  },
+  "glBlendEquationSeparate": {
+    "ret": "void",
+    "params": [
+      "GLenum",
+      "GLenum"
+    ]
+  },
+  "glBlendFunc": {
+    "ret": "void",
+    "params": [
+      "GLenum",
+      "GLenum"
+    ]
+  },
+  "glBlendFuncSeparate": {
+    "ret": "void",
+    "params": [
+      "GLenum",
+      "GLenum",
+      "GLenum",
+      "GLenum"
+    ]
+  },
+  "glCheckFramebufferStatus": {
+    "ret": "GLenum",
+    "params": [
+      "GLenum"
+    ]
+  },
+  "glClear": {
+    "ret": "void",
+    "params": [
+      "GLbitfield"
+    ]
+  },
+  "glClearStencil": {
+    "ret": "void",
+    "params": [
+      "GLint"
+    ]
+  },
+  "glColorMask": {
+    "ret": "void",
+    "params": [
+      "GLboolean",
+      "GLboolean",
+      "GLboolean",
+      "GLboolean"
+    ]
+  },
+  "glCompileShader": {
+    "ret": "void",
+    "params": [
+      "GLuint"
+    ]
+  },
+  "glCopyTexImage2D": {
+    "ret": "void",
+    "params": [
+      "GLenum",
+      "GLint",
+      "GLenum",
+      "GLint",
+      "GLint",
+      "GLsizei",
+      "GLsizei",
+      "GLint"
+    ]
+  },
+  "glCopyTexSubImage2D": {
+    "ret": "void",
+    "params": [
+      "GLenum",
+      "GLint",
+      "GLint",
+      "GLint",
+      "GLint",
+      "GLint",
+      "GLsizei",
+      "GLsizei"
+    ]
+  },
+  "glCreateProgram": {
+    "ret": "GLuint",
+    "params": []
+  },
+  "glCreateShader": {
+    "ret": "GLuint",
+    "params": [
+      "GLenum"
+    ]
+  },
+  "glCullFace": {
+    "ret": "void",
+    "params": [
+      "GLenum"
+    ]
+  },
+  "glDeleteProgram": {
+    "ret": "void",
+    "params": [
+      "GLuint"
+    ]
+  },
+  "glDeleteShader": {
+    "ret": "void",
+    "params": [
+      "GLuint"
+    ]
+  },
+  "glDepthFunc": {
+    "ret": "void",
+    "params": [
+      "GLenum"
+    ]
+  },
+  "glDepthMask": {
+    "ret": "void",
+    "params": [
+      "GLboolean"
+    ]
+  },
+  "glDetachShader": {
+    "ret": "void",
+    "params": [
+      "GLuint",
+      "GLuint"
+    ]
+  },
+  "glDisable": {
+    "ret": "void",
+    "params": [
+      "GLenum"
+    ]
+  },
+  "glDisableVertexAttribArray": {
+    "ret": "void",
+    "params": [
+      "GLuint"
+    ]
+  },
+  "glDrawArrays": {
+    "ret": "void",
+    "params": [
+      "GLenum",
+      "GLint",
+      "GLsizei"
+    ]
+  },
+  "glEnable": {
+    "ret": "void",
+    "params": [
+      "GLenum"
+    ]
+  },
+  "glEnableVertexAttribArray": {
+    "ret": "void",
+    "params": [
+      "GLuint"
+    ]
+  },
+  "glFinish": {
+    "ret": "void",
+    "params": []
+  },
+  "glFlush": {
+    "ret": "void",
+    "params": []
+  },
+  "glFramebufferRenderbuffer": {
+    "ret": "void",
+    "params": [
+      "GLenum",
+      "GLenum",
+      "GLenum",
+      "GLuint"
+    ]
+  },
+  "glFramebufferTexture2D": {
+    "ret": "void",
+    "params": [
+      "GLenum",
+      "GLenum",
+      "GLenum",
+      "GLuint",
+      "GLint"
+    ]
+  },
+  "glFrontFace": {
+    "ret": "void",
+    "params": [
+      "GLenum"
+    ]
+  },
+  "glGenerateMipmap": {
+    "ret": "void",
+    "params": [
+      "GLenum"
+    ]
+  },
+  "glGetError": {
+    "ret": "GLenum",
+    "params": []
+  },
+  "glHint": {
+    "ret": "void",
+    "params": [
+      "GLenum",
+      "GLenum"
+    ]
+  },
+  "glIsBuffer": {
+    "ret": "GLboolean",
+    "params": [
+      "GLuint"
+    ]
+  },
+  "glIsEnabled": {
+    "ret": "GLboolean",
+    "params": [
+      "GLenum"
+    ]
+  },
+  "glIsFramebuffer": {
+    "ret": "GLboolean",
+    "params": [
+      "GLuint"
+    ]
+  },
+  "glIsProgram": {
+    "ret": "GLboolean",
+    "params": [
+      "GLuint"
+    ]
+  },
+  "glIsRenderbuffer": {
+    "ret": "GLboolean",
+    "params": [
+      "GLuint"
+    ]
+  },
+  "glIsShader": {
+    "ret": "GLboolean",
+    "params": [
+      "GLuint"
+    ]
+  },
+  "glIsTexture": {
+    "ret": "GLboolean",
+    "params": [
+      "GLuint"
+    ]
+  },
+  "glLinkProgram": {
+    "ret": "void",
+    "params": [
+      "GLuint"
+    ]
+  },
+  "glPixelStorei": {
+    "ret": "void",
+    "params": [
+      "GLenum",
+      "GLint"
+    ]
+  },
+  "glReleaseShaderCompiler": {
+    "ret": "void",
+    "params": []
+  },
+  "glRenderbufferStorage": {
+    "ret": "void",
+    "params": [
+      "GLenum",
+      "GLenum",
+      "GLsizei",
+      "GLsizei"
+    ]
+  },
+  "glScissor": {
+    "ret": "void",
+    "params": [
+      "GLint",
+      "GLint",
+      "GLsizei",
+      "GLsizei"
+    ]
+  },
+  "glStencilFunc": {
+    "ret": "void",
+    "params": [
+      "GLenum",
+      "GLint",
+      "GLuint"
+    ]
+  },
+  "glStencilFuncSeparate": {
+    "ret": "void",
+    "params": [
+      "GLenum",
+      "GLenum",
+      "GLint",
+      "GLuint"
+    ]
+  },
+  "glStencilMask": {
+    "ret": "void",
+    "params": [
+      "GLuint"
+    ]
+  },
+  "glStencilMaskSeparate": {
+    "ret": "void",
+    "params": [
+      "GLenum",
+      "GLuint"
+    ]
+  },
+  "glStencilOp": {
+    "ret": "void",
+    "params": [
+      "GLenum",
+      "GLenum",
+      "GLenum"
+    ]
+  },
+  "glStencilOpSeparate": {
+    "ret": "void",
+    "params": [
+      "GLenum",
+      "GLenum",
+      "GLenum",
+      "GLenum"
+    ]
+  },
+  "glTexParameteri": {
+    "ret": "void",
+    "params": [
+      "GLenum",
+      "GLenum",
+      "GLint"
+    ]
+  },
+  "glUniform1i": {
+    "ret": "void",
+    "params": [
+      "GLint",
+      "GLint"
+    ]
+  },
+  "glUniform2i": {
+    "ret": "void",
+    "params": [
+      "GLint",
+      "GLint",
+      "GLint"
+    ]
+  },
+  "glUniform3i": {
+    "ret": "void",
+    "params": [
+      "GLint",
+      "GLint",
+      "GLint",
+      "GLint"
+    ]
+  },
+  "glUniform4i": {
+    "ret": "void",
+    "params": [
+      "GLint",
+      "GLint",
+      "GLint",
+      "GLint",
+      "GLint"
+    ]
+  },
+  "glUseProgram": {
+    "ret": "void",
+    "params": [
+      "GLuint"
+    ]
+  },
+  "glValidateProgram": {
+    "ret": "void",
+    "params": [
+      "GLuint"
+    ]
+  },
+  "glViewport": {
+    "ret": "void",
+    "params": [
+      "GLint",
+      "GLint",
+      "GLsizei",
+      "GLsizei"
+    ]
+  },
+  "glReadBuffer": {
+    "ret": "void",
+    "params": [
+      "GLenum"
+    ]
+  },
+  "glCopyTexSubImage3D": {
+    "ret": "void",
+    "params": [
+      "GLenum",
+      "GLint",
+      "GLint",
+      "GLint",
+      "GLint",
+      "GLint",
+      "GLint",
+      "GLsizei",
+      "GLsizei"
+    ]
+  },
+  "glIsQuery": {
+    "ret": "GLboolean",
+    "params": [
+      "GLuint"
+    ]
+  },
+  "glBeginQuery": {
+    "ret": "void",
+    "params": [
+      "GLenum",
+      "GLuint"
+    ]
+  },
+  "glEndQuery": {
+    "ret": "void",
+    "params": [
+      "GLenum"
+    ]
+  },
+  "glUnmapBuffer": {
+    "ret": "GLboolean",
+    "params": [
+      "GLenum"
+    ]
+  },
+  "glBlitFramebuffer": {
+    "ret": "void",
+    "params": [
+      "GLint",
+      "GLint",
+      "GLint",
+      "GLint",
+      "GLint",
+      "GLint",
+      "GLint",
+      "GLint",
+      "GLbitfield",
+      "GLenum"
+    ]
+  },
+  "glRenderbufferStorageMultisample": {
+    "ret": "void",
+    "params": [
+      "GLenum",
+      "GLsizei",
+      "GLenum",
+      "GLsizei",
+      "GLsizei"
+    ]
+  },
+  "glFramebufferTextureLayer": {
+    "ret": "void",
+    "params": [
+      "GLenum",
+      "GLenum",
+      "GLuint",
+      "GLint",
+      "GLint"
+    ]
+  },
+  "glFlushMappedBufferRange": {
+    "ret": "void",
+    "params": [
+      "GLenum",
+      "GLintptr",
+      "GLsizeiptr"
+    ]
+  },
+  "glBindVertexArray": {
+    "ret": "void",
+    "params": [
+      "GLuint"
+    ]
+  },
+  "glIsVertexArray": {
+    "ret": "GLboolean",
+    "params": [
+      "GLuint"
+    ]
+  },
+  "glBeginTransformFeedback": {
+    "ret": "void",
+    "params": [
+      "GLenum"
+    ]
+  },
+  "glEndTransformFeedback": {
+    "ret": "void",
+    "params": []
+  },
+  "glBindBufferRange": {
+    "ret": "void",
+    "params": [
+      "GLenum",
+      "GLuint",
+      "GLuint",
+      "GLintptr",
+      "GLsizeiptr"
+    ]
+  },
+  "glBindBufferBase": {
+    "ret": "void",
+    "params": [
+      "GLenum",
+      "GLuint",
+      "GLuint"
+    ]
+  },
+  "glVertexAttribI4i": {
+    "ret": "void",
+    "params": [
+      "GLuint",
+      "GLint",
+      "GLint",
+      "GLint",
+      "GLint"
+    ]
+  },
+  "glVertexAttribI4ui": {
+    "ret": "void",
+    "params": [
+      "GLuint",
+      "GLuint",
+      "GLuint",
+      "GLuint",
+      "GLuint"
+    ]
+  },
+  "glUniform1ui": {
+    "ret": "void",
+    "params": [
+      "GLint",
+      "GLuint"
+    ]
+  },
+  "glUniform2ui": {
+    "ret": "void",
+    "params": [
+      "GLint",
+      "GLuint",
+      "GLuint"
+    ]
+  },
+  "glUniform3ui": {
+    "ret": "void",
+    "params": [
+      "GLint",
+      "GLuint",
+      "GLuint",
+      "GLuint"
+    ]
+  },
+  "glUniform4ui": {
+    "ret": "void",
+    "params": [
+      "GLint",
+      "GLuint",
+      "GLuint",
+      "GLuint",
+      "GLuint"
+    ]
+  },
+  "glCopyBufferSubData": {
+    "ret": "void",
+    "params": [
+      "GLenum",
+      "GLenum",
+      "GLintptr",
+      "GLintptr",
+      "GLsizeiptr"
+    ]
+  },
+  "glUniformBlockBinding": {
+    "ret": "void",
+    "params": [
+      "GLuint",
+      "GLuint",
+      "GLuint"
+    ]
+  },
+  "glDrawArraysInstanced": {
+    "ret": "void",
+    "params": [
+      "GLenum",
+      "GLint",
+      "GLsizei",
+      "GLsizei"
+    ]
+  },
+  "glIsSampler": {
+    "ret": "GLboolean",
+    "params": [
+      "GLuint"
+    ]
+  },
+  "glBindSampler": {
+    "ret": "void",
+    "params": [
+      "GLuint",
+      "GLuint"
+    ]
+  },
+  "glSamplerParameteri": {
+    "ret": "void",
+    "params": [
+      "GLuint",
+      "GLenum",
+      "GLint"
+    ]
+  },
+  "glVertexAttribDivisor": {
+    "ret": "void",
+    "params": [
+      "GLuint",
+      "GLuint"
+    ]
+  },
+  "glBindTransformFeedback": {
+    "ret": "void",
+    "params": [
+      "GLenum",
+      "GLuint"
+    ]
+  },
+  "glIsTransformFeedback": {
+    "ret": "GLboolean",
+    "params": [
+      "GLuint"
+    ]
+  },
+  "glPauseTransformFeedback": {
+    "ret": "void",
+    "params": []
+  },
+  "glResumeTransformFeedback": {
+    "ret": "void",
+    "params": []
+  },
+  "glProgramParameteri": {
+    "ret": "void",
+    "params": [
+      "GLuint",
+      "GLenum",
+      "GLint"
+    ]
+  },
+  "glTexStorage2D": {
+    "ret": "void",
+    "params": [
+      "GLenum",
+      "GLsizei",
+      "GLenum",
+      "GLsizei",
+      "GLsizei"
+    ]
+  },
+  "glTexStorage3D": {
+    "ret": "void",
+    "params": [
+      "GLenum",
+      "GLsizei",
+      "GLenum",
+      "GLsizei",
+      "GLsizei",
+      "GLsizei"
+    ]
+  }
+}

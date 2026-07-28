@@ -176,6 +176,81 @@ for (const fn of buckets.narrow) {
 
 cLines.push("}  // extern \"C\"");
 
+/* The hand-written shim's entry points need declarations too, and they must
+ * come from the SOURCE rather than a second list that can drift. Parsed out
+ * of sg_gl_extra.cpp the same way the header is parsed. */
+const extraPath = join(root, "shim/sg_gl_extra.cpp");
+if (existsSync(extraPath)) {
+  const extra = readFileSync(extraPath, "utf8");
+  const re = /^(uint32_t|int32_t|double|void)\s+(sg_gl_\w+)\(([^)]*)\)\s*\{/gm;
+  let em;
+  const seen = new Set();
+  tsLines.push("");
+  tsLines.push("/* Hand-written shim (shim/sg_gl_extra.cpp): pointers, out-params,");
+  tsLines.push(" * strings and bulk uploads -- everything FFI format 1 cannot express");
+  tsLines.push(" * as a straight passthrough. */");
+  while ((em = re.exec(extra)) !== null) {
+    const [, cret, name, args] = em;
+    if (seen.has(name)) continue;
+    seen.add(name);
+    const argList = args.trim() === "void" || args.trim() === "" ? [] : args.split(",");
+    // `const uint8_t* x, size_t len` is ONE `bytes`/`string` param in TS.
+    const ps = [];
+    for (let i = 0; i < argList.length; i++) {
+      const a = argList[i].trim();
+      if (a.includes("uint8_t*")) {
+        /* Both `string` and `bytes` arrive as (const uint8_t*, size_t), so
+         * the C signature alone cannot say which. The PARAMETER NAME does:
+         * anything called src/name is text (shader source, uniform names),
+         * everything else is binary. Mirrors how gen-shim.js reads
+         * skia_c.hpp. */
+        const isText = /\b(name|src|source|label)\b/.test(a);
+        ps.push(`a${ps.length}: ${isText ? "string" : "Buffer"}`);
+        i += 1;                       // skip the paired size_t
+      } else {
+        ps.push(`a${ps.length}: number`);
+      }
+    }
+    const ret = cret === "void" ? "void" : "number";
+    tsLines.push(`declare function ${name}(${ps.join(", ")}): ${ret};`);
+  }
+}
+
+/* A file of bare `declare function`s is not a module, so nothing can import
+ * it. Each declaration gets an exported wrapper that calls it DIRECTLY --
+ * the same shape host/skia-ffi.ts uses, and for the same two reasons: the
+ * result is never bound to a local (upstream issue #21 drops the call), and
+ * each declaration is called by exactly one wrapper. */
+const wrapperLines = ["", "/* Exported wrappers: the declares above are not a module on their own. */"];
+for (const line of tsLines) {
+  const m = /^declare function (\w+)\(([^)]*)\): (\w+);$/.exec(line);
+  if (!m) continue;
+  const [, name, params, ret] = m;
+  const argNames = params === "" ? [] : params.split(",").map((p) => p.trim().split(":")[0]);
+  /* The DECLARATION carries the C symbol name (gen-ffi.js derives the symbol
+   * from it), so the EXPORT needs a different one: snake_case -> camelCase,
+   * mirroring host/skia-ffi.ts. */
+  const exported = name.replace(/^(gl|sg_gl)_?/, "").replace(/_([a-z0-9])/g, (_, c) => c.toUpperCase());
+  const safe = exported === "" ? name : exported;
+  wrapperLines.push(
+    `export function ${safe}(${params}): ${ret} { ${ret === "void" ? "" : "return "}${name}(${argNames.join(", ")}); }`,
+  );
+}
+tsLines.push(...wrapperLines);
+
+/* The raw GL entry points are exported by libGLESv2, not by anything in
+ * shim/, so gen-ffi.js cannot parse their signatures out of our sources.
+ * Hand them over in the shape it expects. */
+const glSigs = {};
+for (const fn of buckets.passthrough) {
+  glSigs[fn.name] = {
+    ret: fn.ret,
+    params: fn.params.map((p) => p.type),
+  };
+}
+writeFileSync(join(root, "codegen/gl-signatures.json"),
+              JSON.stringify(glSigs, null, 2) + "\n");
+
 writeFileSync(join(root, "shim/sg_gl_gen.cpp"), cLines.join("\n") + "\n");
 writeFileSync(join(root, "host/gl-ffi.ts"), tsLines.join("\n") + "\n");
 

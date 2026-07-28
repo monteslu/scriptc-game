@@ -131,3 +131,213 @@ declare function sg_gl_vertex_attrib3f(a0: number, a1: number, a2: number, a3: n
 declare function sg_gl_vertex_attrib4f(a0: number, a1: number, a2: number, a3: number, a4: number): void;
 declare function sg_gl_clear_bufferfi(a0: number, a1: number, a2: number, a3: number): void;
 declare function sg_gl_sampler_parameterf(a0: number, a1: number, a2: number): void;
+
+/* Hand-written shim (shim/sg_gl_extra.cpp): pointers, out-params,
+ * strings and bulk uploads -- everything FFI format 1 cannot express
+ * as a straight passthrough. */
+declare function sg_gl_init_headless(a0: number, a1: number): number;
+declare function sg_gl_shutdown_headless(): void;
+declare function sg_gl_gen_buffer(): number;
+declare function sg_gl_gen_texture(): number;
+declare function sg_gl_gen_framebuffer(): number;
+declare function sg_gl_gen_renderbuffer(): number;
+declare function sg_gl_gen_vertex_array(): number;
+declare function sg_gl_gen_sampler(): number;
+declare function sg_gl_gen_query(): number;
+declare function sg_gl_gen_transform_feedback(): number;
+declare function sg_gl_delete_buffer(a0: number): void;
+declare function sg_gl_delete_texture(a0: number): void;
+declare function sg_gl_delete_framebuffer(a0: number): void;
+declare function sg_gl_delete_renderbuffer(a0: number): void;
+declare function sg_gl_delete_vertex_array(a0: number): void;
+declare function sg_gl_delete_sampler(a0: number): void;
+declare function sg_gl_delete_query(a0: number): void;
+declare function sg_gl_delete_transform_feedback(a0: number): void;
+declare function sg_gl_buffer_data(a0: number, a1: Buffer, a2: number): void;
+declare function sg_gl_buffer_data_size(a0: number, a1: number, a2: number): void;
+declare function sg_gl_buffer_sub_data(a0: number, a1: number, a2: Buffer): void;
+declare function sg_gl_tex_image_2d(a0: number, a1: number, a2: number, a3: number, a4: number, a5: number, a6: number, a7: number, a8: Buffer): void;
+declare function sg_gl_tex_sub_image_2d(a0: number, a1: number, a2: number, a3: number, a4: number, a5: number, a6: number, a7: number, a8: Buffer): void;
+declare function sg_gl_get_integer(a0: number): number;
+declare function sg_gl_get_integer_i(a0: number, a1: number): number;
+declare function sg_gl_get_float(a0: number): number;
+declare function sg_gl_get_boolean(a0: number): number;
+declare function sg_gl_shader_source(a0: number, a1: string): void;
+declare function sg_gl_get_shader_parameter(a0: number, a1: number): number;
+declare function sg_gl_get_program_parameter(a0: number, a1: number): number;
+declare function sg_gl_shader_info_log(a0: number): number;
+declare function sg_gl_program_info_log(a0: number): number;
+declare function sg_gl_get_uniform_location(a0: number, a1: string): number;
+declare function sg_gl_get_attrib_location(a0: number, a1: string): number;
+declare function sg_gl_bind_attrib_location(a0: number, a1: number, a2: string): void;
+declare function sg_gl_uniform_fv(a0: number, a1: number, a2: Buffer): void;
+declare function sg_gl_uniform_iv(a0: number, a1: number, a2: Buffer): void;
+declare function sg_gl_uniform_matrix_fv(a0: number, a1: number, a2: number, a3: Buffer): void;
+declare function sg_gl_vertex_attrib_pointer(a0: number, a1: number, a2: number, a3: number, a4: number, a5: number): void;
+declare function sg_gl_vertex_attrib_i_pointer(a0: number, a1: number, a2: number, a3: number, a4: number): void;
+declare function sg_gl_draw_elements(a0: number, a1: number, a2: number, a3: number): void;
+declare function sg_gl_draw_elements_instanced(a0: number, a1: number, a2: number, a3: number, a4: number): void;
+declare function sg_gl_hash_pixels(a0: number, a1: number, a2: number, a3: number): number;
+
+/* Exported wrappers: the declares above are not a module on their own. */
+export function ActiveTexture(a0: number): void { glActiveTexture(a0); }
+export function AttachShader(a0: number, a1: number): void { glAttachShader(a0, a1); }
+export function BindBuffer(a0: number, a1: number): void { glBindBuffer(a0, a1); }
+export function BindFramebuffer(a0: number, a1: number): void { glBindFramebuffer(a0, a1); }
+export function BindRenderbuffer(a0: number, a1: number): void { glBindRenderbuffer(a0, a1); }
+export function BindTexture(a0: number, a1: number): void { glBindTexture(a0, a1); }
+export function BlendEquation(a0: number): void { glBlendEquation(a0); }
+export function BlendEquationSeparate(a0: number, a1: number): void { glBlendEquationSeparate(a0, a1); }
+export function BlendFunc(a0: number, a1: number): void { glBlendFunc(a0, a1); }
+export function BlendFuncSeparate(a0: number, a1: number, a2: number, a3: number): void { glBlendFuncSeparate(a0, a1, a2, a3); }
+export function CheckFramebufferStatus(a0: number): number { return glCheckFramebufferStatus(a0); }
+export function Clear(a0: number): void { glClear(a0); }
+export function ClearStencil(a0: number): void { glClearStencil(a0); }
+export function ColorMask(a0: number, a1: number, a2: number, a3: number): void { glColorMask(a0, a1, a2, a3); }
+export function CompileShader(a0: number): void { glCompileShader(a0); }
+export function CopyTexImage2D(a0: number, a1: number, a2: number, a3: number, a4: number, a5: number, a6: number, a7: number): void { glCopyTexImage2D(a0, a1, a2, a3, a4, a5, a6, a7); }
+export function CopyTexSubImage2D(a0: number, a1: number, a2: number, a3: number, a4: number, a5: number, a6: number, a7: number): void { glCopyTexSubImage2D(a0, a1, a2, a3, a4, a5, a6, a7); }
+export function CreateProgram(): number { return glCreateProgram(); }
+export function CreateShader(a0: number): number { return glCreateShader(a0); }
+export function CullFace(a0: number): void { glCullFace(a0); }
+export function DeleteProgram(a0: number): void { glDeleteProgram(a0); }
+export function DeleteShader(a0: number): void { glDeleteShader(a0); }
+export function DepthFunc(a0: number): void { glDepthFunc(a0); }
+export function DepthMask(a0: number): void { glDepthMask(a0); }
+export function DetachShader(a0: number, a1: number): void { glDetachShader(a0, a1); }
+export function Disable(a0: number): void { glDisable(a0); }
+export function DisableVertexAttribArray(a0: number): void { glDisableVertexAttribArray(a0); }
+export function DrawArrays(a0: number, a1: number, a2: number): void { glDrawArrays(a0, a1, a2); }
+export function Enable(a0: number): void { glEnable(a0); }
+export function EnableVertexAttribArray(a0: number): void { glEnableVertexAttribArray(a0); }
+export function Finish(): void { glFinish(); }
+export function Flush(): void { glFlush(); }
+export function FramebufferRenderbuffer(a0: number, a1: number, a2: number, a3: number): void { glFramebufferRenderbuffer(a0, a1, a2, a3); }
+export function FramebufferTexture2D(a0: number, a1: number, a2: number, a3: number, a4: number): void { glFramebufferTexture2D(a0, a1, a2, a3, a4); }
+export function FrontFace(a0: number): void { glFrontFace(a0); }
+export function GenerateMipmap(a0: number): void { glGenerateMipmap(a0); }
+export function GetError(): number { return glGetError(); }
+export function Hint(a0: number, a1: number): void { glHint(a0, a1); }
+export function IsBuffer(a0: number): number { return glIsBuffer(a0); }
+export function IsEnabled(a0: number): number { return glIsEnabled(a0); }
+export function IsFramebuffer(a0: number): number { return glIsFramebuffer(a0); }
+export function IsProgram(a0: number): number { return glIsProgram(a0); }
+export function IsRenderbuffer(a0: number): number { return glIsRenderbuffer(a0); }
+export function IsShader(a0: number): number { return glIsShader(a0); }
+export function IsTexture(a0: number): number { return glIsTexture(a0); }
+export function LinkProgram(a0: number): void { glLinkProgram(a0); }
+export function PixelStorei(a0: number, a1: number): void { glPixelStorei(a0, a1); }
+export function ReleaseShaderCompiler(): void { glReleaseShaderCompiler(); }
+export function RenderbufferStorage(a0: number, a1: number, a2: number, a3: number): void { glRenderbufferStorage(a0, a1, a2, a3); }
+export function Scissor(a0: number, a1: number, a2: number, a3: number): void { glScissor(a0, a1, a2, a3); }
+export function StencilFunc(a0: number, a1: number, a2: number): void { glStencilFunc(a0, a1, a2); }
+export function StencilFuncSeparate(a0: number, a1: number, a2: number, a3: number): void { glStencilFuncSeparate(a0, a1, a2, a3); }
+export function StencilMask(a0: number): void { glStencilMask(a0); }
+export function StencilMaskSeparate(a0: number, a1: number): void { glStencilMaskSeparate(a0, a1); }
+export function StencilOp(a0: number, a1: number, a2: number): void { glStencilOp(a0, a1, a2); }
+export function StencilOpSeparate(a0: number, a1: number, a2: number, a3: number): void { glStencilOpSeparate(a0, a1, a2, a3); }
+export function TexParameteri(a0: number, a1: number, a2: number): void { glTexParameteri(a0, a1, a2); }
+export function Uniform1i(a0: number, a1: number): void { glUniform1i(a0, a1); }
+export function Uniform2i(a0: number, a1: number, a2: number): void { glUniform2i(a0, a1, a2); }
+export function Uniform3i(a0: number, a1: number, a2: number, a3: number): void { glUniform3i(a0, a1, a2, a3); }
+export function Uniform4i(a0: number, a1: number, a2: number, a3: number, a4: number): void { glUniform4i(a0, a1, a2, a3, a4); }
+export function UseProgram(a0: number): void { glUseProgram(a0); }
+export function ValidateProgram(a0: number): void { glValidateProgram(a0); }
+export function Viewport(a0: number, a1: number, a2: number, a3: number): void { glViewport(a0, a1, a2, a3); }
+export function ReadBuffer(a0: number): void { glReadBuffer(a0); }
+export function CopyTexSubImage3D(a0: number, a1: number, a2: number, a3: number, a4: number, a5: number, a6: number, a7: number, a8: number): void { glCopyTexSubImage3D(a0, a1, a2, a3, a4, a5, a6, a7, a8); }
+export function IsQuery(a0: number): number { return glIsQuery(a0); }
+export function BeginQuery(a0: number, a1: number): void { glBeginQuery(a0, a1); }
+export function EndQuery(a0: number): void { glEndQuery(a0); }
+export function UnmapBuffer(a0: number): number { return glUnmapBuffer(a0); }
+export function BlitFramebuffer(a0: number, a1: number, a2: number, a3: number, a4: number, a5: number, a6: number, a7: number, a8: number, a9: number): void { glBlitFramebuffer(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9); }
+export function RenderbufferStorageMultisample(a0: number, a1: number, a2: number, a3: number, a4: number): void { glRenderbufferStorageMultisample(a0, a1, a2, a3, a4); }
+export function FramebufferTextureLayer(a0: number, a1: number, a2: number, a3: number, a4: number): void { glFramebufferTextureLayer(a0, a1, a2, a3, a4); }
+export function FlushMappedBufferRange(a0: number, a1: number, a2: number): void { glFlushMappedBufferRange(a0, a1, a2); }
+export function BindVertexArray(a0: number): void { glBindVertexArray(a0); }
+export function IsVertexArray(a0: number): number { return glIsVertexArray(a0); }
+export function BeginTransformFeedback(a0: number): void { glBeginTransformFeedback(a0); }
+export function EndTransformFeedback(): void { glEndTransformFeedback(); }
+export function BindBufferRange(a0: number, a1: number, a2: number, a3: number, a4: number): void { glBindBufferRange(a0, a1, a2, a3, a4); }
+export function BindBufferBase(a0: number, a1: number, a2: number): void { glBindBufferBase(a0, a1, a2); }
+export function VertexAttribI4i(a0: number, a1: number, a2: number, a3: number, a4: number): void { glVertexAttribI4i(a0, a1, a2, a3, a4); }
+export function VertexAttribI4ui(a0: number, a1: number, a2: number, a3: number, a4: number): void { glVertexAttribI4ui(a0, a1, a2, a3, a4); }
+export function Uniform1ui(a0: number, a1: number): void { glUniform1ui(a0, a1); }
+export function Uniform2ui(a0: number, a1: number, a2: number): void { glUniform2ui(a0, a1, a2); }
+export function Uniform3ui(a0: number, a1: number, a2: number, a3: number): void { glUniform3ui(a0, a1, a2, a3); }
+export function Uniform4ui(a0: number, a1: number, a2: number, a3: number, a4: number): void { glUniform4ui(a0, a1, a2, a3, a4); }
+export function CopyBufferSubData(a0: number, a1: number, a2: number, a3: number, a4: number): void { glCopyBufferSubData(a0, a1, a2, a3, a4); }
+export function UniformBlockBinding(a0: number, a1: number, a2: number): void { glUniformBlockBinding(a0, a1, a2); }
+export function DrawArraysInstanced(a0: number, a1: number, a2: number, a3: number): void { glDrawArraysInstanced(a0, a1, a2, a3); }
+export function IsSampler(a0: number): number { return glIsSampler(a0); }
+export function BindSampler(a0: number, a1: number): void { glBindSampler(a0, a1); }
+export function SamplerParameteri(a0: number, a1: number, a2: number): void { glSamplerParameteri(a0, a1, a2); }
+export function VertexAttribDivisor(a0: number, a1: number): void { glVertexAttribDivisor(a0, a1); }
+export function BindTransformFeedback(a0: number, a1: number): void { glBindTransformFeedback(a0, a1); }
+export function IsTransformFeedback(a0: number): number { return glIsTransformFeedback(a0); }
+export function PauseTransformFeedback(): void { glPauseTransformFeedback(); }
+export function ResumeTransformFeedback(): void { glResumeTransformFeedback(); }
+export function ProgramParameteri(a0: number, a1: number, a2: number): void { glProgramParameteri(a0, a1, a2); }
+export function TexStorage2D(a0: number, a1: number, a2: number, a3: number, a4: number): void { glTexStorage2D(a0, a1, a2, a3, a4); }
+export function TexStorage3D(a0: number, a1: number, a2: number, a3: number, a4: number, a5: number): void { glTexStorage3D(a0, a1, a2, a3, a4, a5); }
+export function blendColor(a0: number, a1: number, a2: number, a3: number): void { sg_gl_blend_color(a0, a1, a2, a3); }
+export function clearColor(a0: number, a1: number, a2: number, a3: number): void { sg_gl_clear_color(a0, a1, a2, a3); }
+export function clearDepthf(a0: number): void { sg_gl_clear_depthf(a0); }
+export function depthRangef(a0: number, a1: number): void { sg_gl_depth_rangef(a0, a1); }
+export function lineWidth(a0: number): void { sg_gl_line_width(a0); }
+export function polygonOffset(a0: number, a1: number): void { sg_gl_polygon_offset(a0, a1); }
+export function sampleCoverage(a0: number, a1: number): void { sg_gl_sample_coverage(a0, a1); }
+export function texParameterf(a0: number, a1: number, a2: number): void { sg_gl_tex_parameterf(a0, a1, a2); }
+export function uniform1f(a0: number, a1: number): void { sg_gl_uniform1f(a0, a1); }
+export function uniform2f(a0: number, a1: number, a2: number): void { sg_gl_uniform2f(a0, a1, a2); }
+export function uniform3f(a0: number, a1: number, a2: number, a3: number): void { sg_gl_uniform3f(a0, a1, a2, a3); }
+export function uniform4f(a0: number, a1: number, a2: number, a3: number, a4: number): void { sg_gl_uniform4f(a0, a1, a2, a3, a4); }
+export function vertexAttrib1f(a0: number, a1: number): void { sg_gl_vertex_attrib1f(a0, a1); }
+export function vertexAttrib2f(a0: number, a1: number, a2: number): void { sg_gl_vertex_attrib2f(a0, a1, a2); }
+export function vertexAttrib3f(a0: number, a1: number, a2: number, a3: number): void { sg_gl_vertex_attrib3f(a0, a1, a2, a3); }
+export function vertexAttrib4f(a0: number, a1: number, a2: number, a3: number, a4: number): void { sg_gl_vertex_attrib4f(a0, a1, a2, a3, a4); }
+export function clearBufferfi(a0: number, a1: number, a2: number, a3: number): void { sg_gl_clear_bufferfi(a0, a1, a2, a3); }
+export function samplerParameterf(a0: number, a1: number, a2: number): void { sg_gl_sampler_parameterf(a0, a1, a2); }
+export function initHeadless(a0: number, a1: number): number { return sg_gl_init_headless(a0, a1); }
+export function shutdownHeadless(): void { sg_gl_shutdown_headless(); }
+export function genBuffer(): number { return sg_gl_gen_buffer(); }
+export function genTexture(): number { return sg_gl_gen_texture(); }
+export function genFramebuffer(): number { return sg_gl_gen_framebuffer(); }
+export function genRenderbuffer(): number { return sg_gl_gen_renderbuffer(); }
+export function genVertexArray(): number { return sg_gl_gen_vertex_array(); }
+export function genSampler(): number { return sg_gl_gen_sampler(); }
+export function genQuery(): number { return sg_gl_gen_query(); }
+export function genTransformFeedback(): number { return sg_gl_gen_transform_feedback(); }
+export function deleteBuffer(a0: number): void { sg_gl_delete_buffer(a0); }
+export function deleteTexture(a0: number): void { sg_gl_delete_texture(a0); }
+export function deleteFramebuffer(a0: number): void { sg_gl_delete_framebuffer(a0); }
+export function deleteRenderbuffer(a0: number): void { sg_gl_delete_renderbuffer(a0); }
+export function deleteVertexArray(a0: number): void { sg_gl_delete_vertex_array(a0); }
+export function deleteSampler(a0: number): void { sg_gl_delete_sampler(a0); }
+export function deleteQuery(a0: number): void { sg_gl_delete_query(a0); }
+export function deleteTransformFeedback(a0: number): void { sg_gl_delete_transform_feedback(a0); }
+export function bufferData(a0: number, a1: Buffer, a2: number): void { sg_gl_buffer_data(a0, a1, a2); }
+export function bufferDataSize(a0: number, a1: number, a2: number): void { sg_gl_buffer_data_size(a0, a1, a2); }
+export function bufferSubData(a0: number, a1: number, a2: Buffer): void { sg_gl_buffer_sub_data(a0, a1, a2); }
+export function texImage2d(a0: number, a1: number, a2: number, a3: number, a4: number, a5: number, a6: number, a7: number, a8: Buffer): void { sg_gl_tex_image_2d(a0, a1, a2, a3, a4, a5, a6, a7, a8); }
+export function texSubImage2d(a0: number, a1: number, a2: number, a3: number, a4: number, a5: number, a6: number, a7: number, a8: Buffer): void { sg_gl_tex_sub_image_2d(a0, a1, a2, a3, a4, a5, a6, a7, a8); }
+export function getInteger(a0: number): number { return sg_gl_get_integer(a0); }
+export function getIntegerI(a0: number, a1: number): number { return sg_gl_get_integer_i(a0, a1); }
+export function getFloat(a0: number): number { return sg_gl_get_float(a0); }
+export function getBoolean(a0: number): number { return sg_gl_get_boolean(a0); }
+export function shaderSource(a0: number, a1: string): void { sg_gl_shader_source(a0, a1); }
+export function getShaderParameter(a0: number, a1: number): number { return sg_gl_get_shader_parameter(a0, a1); }
+export function getProgramParameter(a0: number, a1: number): number { return sg_gl_get_program_parameter(a0, a1); }
+export function shaderInfoLog(a0: number): number { return sg_gl_shader_info_log(a0); }
+export function programInfoLog(a0: number): number { return sg_gl_program_info_log(a0); }
+export function getUniformLocation(a0: number, a1: string): number { return sg_gl_get_uniform_location(a0, a1); }
+export function getAttribLocation(a0: number, a1: string): number { return sg_gl_get_attrib_location(a0, a1); }
+export function bindAttribLocation(a0: number, a1: number, a2: string): void { sg_gl_bind_attrib_location(a0, a1, a2); }
+export function uniformFv(a0: number, a1: number, a2: Buffer): void { sg_gl_uniform_fv(a0, a1, a2); }
+export function uniformIv(a0: number, a1: number, a2: Buffer): void { sg_gl_uniform_iv(a0, a1, a2); }
+export function uniformMatrixFv(a0: number, a1: number, a2: number, a3: Buffer): void { sg_gl_uniform_matrix_fv(a0, a1, a2, a3); }
+export function vertexAttribPointer(a0: number, a1: number, a2: number, a3: number, a4: number, a5: number): void { sg_gl_vertex_attrib_pointer(a0, a1, a2, a3, a4, a5); }
+export function vertexAttribIPointer(a0: number, a1: number, a2: number, a3: number, a4: number): void { sg_gl_vertex_attrib_i_pointer(a0, a1, a2, a3, a4); }
+export function drawElements(a0: number, a1: number, a2: number, a3: number): void { sg_gl_draw_elements(a0, a1, a2, a3); }
+export function drawElementsInstanced(a0: number, a1: number, a2: number, a3: number, a4: number): void { sg_gl_draw_elements_instanced(a0, a1, a2, a3, a4); }
+export function hashPixels(a0: number, a1: number, a2: number, a3: number): number { return sg_gl_hash_pixels(a0, a1, a2, a3); }
