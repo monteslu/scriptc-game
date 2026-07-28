@@ -17,7 +17,15 @@ ffmpeg -v error -y -i "$SRC" -t 3 -vn -c:a pcm_s16le  "$OUT/fmt.wav"
 # -vn MATTERS: the source mp3 carries embedded album art, and without it
 # ffmpeg muxes that image in as a Theora VIDEO stream. stb_vorbis correctly
 # refuses a multiplexed file, which looks exactly like a decoder bug.
-ffmpeg -v error -y -i "$SRC" -t 3 -vn -c:a libvorbis  "$OUT/fmt.ogg"
+#
+# libvorbis when the build has it (Linux distro ffmpeg); Homebrew's ffmpeg 8
+# dropped it, leaving only the built-in encoder, which is gated behind
+# -strict experimental but emits a normal Vorbis stream stb_vorbis decodes.
+if ffmpeg -hide_banner -encoders 2>/dev/null | grep -q '\blibvorbis\b'; then
+  ffmpeg -v error -y -i "$SRC" -t 3 -vn -c:a libvorbis "$OUT/fmt.ogg"
+else
+  ffmpeg -v error -y -i "$SRC" -t 3 -vn -c:a vorbis -strict experimental "$OUT/fmt.ogg"
+fi
 ffmpeg -v error -y -i "$SRC" -t 3 -vn -c:a flac       "$OUT/fmt.flac"
 ffmpeg -v error -y -i "$SRC" -t 3 -vn -c:a libmp3lame "$OUT/fmt.mp3"
 echo "wrote fmt.{wav,ogg,flac,mp3} to $OUT"
@@ -28,7 +36,14 @@ IMG="$ROOT/test/fixtures/images"
 mkdir -p "$IMG"
 ffmpeg -v error -y -f lavfi -i "testsrc=size=96x64:duration=1:rate=1" \
        -frames:v 1 "$IMG/test.png"
-for f in jpg webp bmp gif; do
+for f in jpg bmp gif; do
   ffmpeg -v error -y -i "$IMG/test.png" -frames:v 1 "$IMG/test.$f"
 done
+# webp separately: Homebrew's ffmpeg 8 dropped libwebp, so on macOS the
+# encoder comes from the webp package (cwebp) instead; CI brews it.
+if ffmpeg -hide_banner -encoders 2>/dev/null | grep -q 'webp'; then
+  ffmpeg -v error -y -i "$IMG/test.png" -frames:v 1 "$IMG/test.webp"
+else
+  cwebp -quiet "$IMG/test.png" -o "$IMG/test.webp"
+fi
 echo "wrote test.{png,jpg,webp,bmp,gif} to $IMG"
