@@ -68,8 +68,8 @@
       "returns": "u32"
     },
     {
-      "name": "sgGlInitWindow",
-      "symbol": "sg_gl_init_window",
+      "name": "sgGlInitAuto",
+      "symbol": "sg_gl_init_auto",
       "params": [
         "i32"
       ],

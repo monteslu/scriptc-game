@@ -30,7 +30,7 @@ declare function sgScreenHeight(unused: number): number;
 declare function sgDisplayHz(unused: number): number;
 declare function sgSetFullscreen(on: number): number;
 declare function sgIsFullscreen(unused: number): number;
-declare function sgGlInitWindow(unused: number): number;
+declare function sgGlInitAuto(unused: number): number;
 declare function sgGlPresent(unused: number): number;
 declare function sgGlFitViewport(w: number, h: number): number;
 declare function sgGlSavePng(path: string): number;
@@ -198,7 +198,10 @@ export function setFullscreen(on: number): number { return sgSetFullscreen(on); 
 export function isFullscreen(): number { return sgIsFullscreen(0); }
 
 /* WebGL2 on the SAME window as the 2D path (see the 8.2 spike). */
-export function glInitWindow(): number { return sgGlInitWindow(0); }
+/* Creates the GL context: the window's normally, an offscreen EGL pbuffer
+ * when the host was booted headless. Named "window" on this side because
+ * that is what a game means by it. */
+export function glInitWindow(): number { return sgGlInitAuto(0); }
 export function glPresent(): number { return sgGlPresent(0); }
 /* Fit the GL viewport to the window, letterboxed to the logical aspect.
  * Cheap enough to call every frame; it only touches GL state. */
