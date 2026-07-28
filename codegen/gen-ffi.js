@@ -7,9 +7,10 @@
  * has only `number`, so the manifest is the ABI authority and the C source
  * is the only truth about widths.
  */
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { execFileSync } from "node:child_process";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -194,12 +195,20 @@ function systemLibraries(t) {
      * against /^[A-Za-z0-9_+.-]+$/ and every entry becomes -l<name>, so
      * "-framework CoreText" has no spelling in this manifest.
      *
-     * shim/sg_macos_frameworks.c carries them instead, as Mach-O
-     * LC_LINKER_OPTION load commands compiled into libsggfx.a. The linker
-     * reads them straight out of the archive, which is the same mechanism
-     * Rust's #[link(kind = "framework")] uses. */
+     * shim/sg_core.cpp carries them instead, as Mach-O LC_LINKER_OPTION
+     * load commands compiled into libsggfx.a. The linker reads them
+     * straight out of the archive, which is the same mechanism Rust's
+     * #[link(kind = "framework")] uses. Verified working on a real Mac:
+     * the linked binary carries CoreText/CoreGraphics/CoreFoundation with
+     * nothing on the command line.
+     *
+     * SDL2 is NOT here either: -l<name> only searches the toolchain's
+     * default paths, and the modern ld (Xcode 15+) searches neither
+     * /opt/homebrew/lib (arm64 Homebrew) nor /usr/local/lib (intel
+     * Homebrew), so `-lSDL2` fails with "ld: library 'SDL2' not found".
+     * The dylib joins `libraries` by full path instead (sdl2DylibPath). */
     return [
-      "SDL2", "m", "pthread",
+      "m", "pthread",
       // libc++ is the system default; c++abi lives inside it on Darwin.
       "c++",
     ];
@@ -236,6 +245,31 @@ function systemLibraries(t) {
   ];
 }
 
+/* macOS SDL2, linked by full path because -lSDL2 cannot find it (see the
+ * macos branch of systemLibraries above). The prefix is resolved through
+ * pkg-config at generation time rather than hardcoded: Homebrew installs
+ * under /opt/homebrew on arm64 and /usr/local on intel, and both CI lanes
+ * `brew install sdl2 pkg-config`. A dylib's position in the link line does
+ * not matter (unlike archives, it resolves symbols lazily), so it rides at
+ * the end of `libraries`. */
+function sdl2DylibPath() {
+  let libdir;
+  try {
+    libdir = execFileSync("pkg-config", ["--variable=libdir", "sdl2"], {
+      encoding: "utf8",
+    }).trim();
+  } catch (err) {
+    throw new Error(
+      `gen-ffi: pkg-config could not locate sdl2 (brew install sdl2 pkg-config): ${err.message}`,
+    );
+  }
+  const dylib = join(libdir, "libSDL2.dylib");
+  if (!existsSync(dylib)) {
+    throw new Error(`gen-ffi: no libSDL2.dylib in '${libdir}' (brew install sdl2)`);
+  }
+  return dylib;
+}
+
 /* Skia ships ~28 MUTUALLY dependent archives (libsvg needs SkColorMatrix
  * and SkParse from libskia; libskia pulls codec/image archives back), and
  * GNU ld resolves each static archive exactly once, left to right. The
@@ -253,7 +287,11 @@ const manifest = {
    * own archive means a webaudio bump does not force the 30-second Skia merge.
    * Order matters to the linker, and sggfx (which calls into the engine) must
    * come first. */
-  libraries: [`${vendor}/libsggfx.a`, `${vendor}/libwebaudio.a`],
+  libraries: [
+    `${vendor}/libsggfx.a`,
+    `${vendor}/libwebaudio.a`,
+    ...(target.startsWith("macos") ? [sdl2DylibPath()] : []),
+  ],
   system_libraries: systemLibraries(target),
 };
 

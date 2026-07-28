@@ -106,7 +106,9 @@ jobs:
       - name: macOS deps
         if: startsWith(matrix.target, 'macos')
         run: |
-          brew install sdl2 pkg-config ffmpeg
+          # webp: Homebrew's ffmpeg 8 has no webp encoder, so the image
+          # fixtures use cwebp for that one format (make-decode-fixtures.sh).
+          brew install sdl2 pkg-config ffmpeg webp
           brew install llvm || true
 
       - name: Windows deps
