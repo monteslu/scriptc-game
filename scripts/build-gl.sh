@@ -36,11 +36,22 @@ fi
 CXX_BIN="${SG_CXX:-clang++}"
 INC="-I$DEST/include -I$ROOT/shim"
 
-# GLES3 and EGL headers. The vendored include tree carries them where a
-# platform does not (macOS has no GLES3 at all; see BUILD-AND-CI.md).
+# GLES3, EGL and KHR headers.
+#
+# Linux runners get these from libgles2-mesa-dev/libegl1-mesa-dev, but
+# macOS has NO GLES3 at all -- Apple deprecated OpenGL and never shipped
+# ES3 headers -- so CI failed with "'GLES3/gl3.h' file not found" on both
+# macOS targets while Linux built fine.
+#
+# shim/include carries the Khronos headers (MIT, SPDX-License-Identifier
+# in each file) as a fallback. It goes LAST on the include path so a
+# platform with real system headers still uses its own; these only fill a
+# gap. They declare the API -- the actual GL symbols come from whatever
+# the target links against.
 if [ -n "${GLES_INCLUDE:-}" ]; then
   INC="$INC -I$GLES_INCLUDE"
 fi
+INC="$INC -I$ROOT/shim/include"
 
 # Same dependency-file staleness check as build-shim.sh: a .d records the
 # source AND every header, so touching gl3.h rebuilds what included it.
