@@ -68,9 +68,14 @@ const TILE = 1 * SCALE;
 const WALL_H = 1 * SCALE;
 const HALL_LEN = 26;      // tiles down the corridor
 /* Two wall courses tall, so the ceiling sits on top of the second one. */
-/* A level is TWO wall courses tall, so a tunnel is roomy enough to fly
- * through rather than scrape along. */
-const LEVEL_H = 2 * SCALE;
+/* THREE wall courses per level: 9m of headroom.
+ *
+ * Two courses (6m) was still tight for a ship that banks and pitches --
+ * the chase camera kept clipping the roof and it read as claustrophobic
+ * however wide the tunnels got. Height is what makes a tunnel feel flyable
+ * rather than crawled through. */
+const WALL_COURSES = 3;
+const LEVEL_H = WALL_COURSES * SCALE;
 /* Grid <-> world. Pure functions of the constants above, so they live at
  * module scope and anything in the game can use them. */
 const CELL = 1 * SCALE;
@@ -130,7 +135,13 @@ window.addEventListener("load", () => {
   renderer.setClearColor(0x05070d);
 
   const scene = new Scene();
-  const camera = new PerspectiveCamera(68, W / H, 0.05, 260);
+  /* Near plane 0.4, not 0.05.
+   *
+   * A 0.05/260 range spends almost all of the depth buffer's precision in
+   * the first centimetre, so distant walls z-fight and near ones clip
+   * open -- the view sliced through corridors and showed three tunnels at
+   * once. The camera never gets within 0.4m of anything it should see. */
+  const camera = new PerspectiveCamera(70, W / H, 0.4, 260);
 
   /* ---- the shared atlas ----
    *
@@ -250,7 +261,7 @@ window.addEventListener("load", () => {
    * accelerates rather than teleports. */
   let shipX = 0;
   let shipY = cellY(1) + LEVEL_H * 0.5;
-  let shipZ = -3 * CELL;
+  let shipZ = -3.5 * CELL;
   let velX = 0;
   let velY = 0;
   let velZ = 0;
@@ -461,6 +472,14 @@ window.addEventListener("load", () => {
    * of the map. */
   carveRun(MID - 1, 1, 0, MID + 1, 1, GZ - 1);
 
+  /* THE START HANGAR.
+   *
+   * The first thing anyone sees should not be a three-cell-wide tunnel
+   * mouth. This is a full-width, full-height bay across all three levels
+   * at the near end: you launch into a room, get your bearings, and
+   * choose a way in. */
+  carveRun(0, 0, 0, GX - 1, GY - 1, 4);
+
   /* Side branches, alternating left and right, each ending in a room.
    * Cells live down these, so the run is a series of detours rather than
    * a straight sprint. */
@@ -499,18 +518,20 @@ window.addEventListener("load", () => {
   function placeWall(wx: number, wy: number, wz: number, yaw: number,
                      outer: boolean, variant: number): void {
     const kind = variant % 6;
-    if (outer && (kind === 2 || kind === 4)) {
-      place(wallWindow, wx, wy, wz, yaw, 1);
-      place(wallWindow, wx, wy + SCALE, wz, yaw, 1);
-    } else if (kind === 0) {
-      place(wallPillar, wx, wy, wz, yaw, 1);
-      place(wallPillar, wx, wy + SCALE, wz, yaw, 1);
-    } else if (outer && kind === 3) {
-      place(wallBanner, wx, wy, wz, yaw, 1);
-      place(wall, wx, wy + SCALE, wz, yaw, 1);
-    } else {
-      place(wall, wx, wy, wz, yaw, 1);
-      place(wall, wx, wy + SCALE, wz, yaw, 1);
+    /* One course per SCALE of level height, so raising WALL_COURSES makes
+     * the tunnels taller without leaving a gap between the top course and
+     * the ceiling. */
+    for (let c = 0; c < WALL_COURSES; c++) {
+      const cy = wy + c * SCALE;
+      if (outer && (kind === 2 || kind === 4) && c < 2) {
+        place(wallWindow, wx, cy, wz, yaw, 1);
+      } else if (kind === 0) {
+        place(wallPillar, wx, cy, wz, yaw, 1);
+      } else if (outer && kind === 3 && c === 0) {
+        place(wallBanner, wx, cy, wz, yaw, 1);
+      } else {
+        place(wall, wx, cy, wz, yaw, 1);
+      }
     }
   }
 
@@ -654,7 +675,7 @@ window.addEventListener("load", () => {
   const shipMat = new MeshLambertMaterial(0xffffff);
   shipMat.vertexColors = true;
   const playerShip = new Mesh(new BoxGeometry(0.001, 0.001, 0.001), shipMat);
-  playerShip.scale.set(1.15, 1.15, 1.15);
+  playerShip.scale.set(0.95, 0.95, 0.95);
   playerShip.position.set(0, 0, 0);
   scene.add(playerShip);
 
@@ -677,8 +698,11 @@ window.addEventListener("load", () => {
    * take risks. Cells add air rather than points, so collecting one is
    * always worth something and the decision is only ever "can I reach it
    * and still get back". */
-  const START_AIR = 45;
-  const AIR_PER_CELL = 13;
+  /* The maze is now nine cells wide, three levels tall and forty deep,
+   * with five branches and three shafts. 45s was tuned for a straight
+   * corridor and is not survivable here. */
+  const START_AIR = 110;
+  const AIR_PER_CELL = 18;
   let air = START_AIR;
   let collected = 0;
   let won = false;
@@ -696,6 +720,16 @@ window.addEventListener("load", () => {
    * Tested against the SAME `open` grid the geometry was built from, so
    * collision can never disagree with what is drawn. The radius keeps the
    * hull off the wall rather than letting it clip halfway in. */
+  /* The camera needs LESS clearance than the hull: it is a point, and
+   * demanding ship-sized room would jam it against the ship in every
+   * corridor. */
+  function camClear(x: number, y: number, z: number): boolean {
+    const gx = Math.floor(x / CELL + MID + 0.5);
+    const gy = Math.floor(y / LEVEL_H);
+    const gz = Math.floor(-z / CELL + 0.5);
+    return isOpen(gx, gy, gz);
+  }
+
   const SHIP_R = 1.5;
   function flyable(x: number, y: number, z: number): boolean {
     // Grid coordinates of the extremes of the ship's bounding sphere.
@@ -725,7 +759,7 @@ window.addEventListener("load", () => {
     lost = false;
     shipX = 0;
     shipY = cellY(1) + LEVEL_H * 0.5;
-    shipZ = -3 * CELL;
+    shipZ = -3.5 * CELL;
     velX = 0; velY = 0; velZ = 0;
     shipYaw = Math.PI;
     shipPitch = 0;
@@ -866,10 +900,10 @@ window.addEventListener("load", () => {
       /* Attract mode: fly the spine so the demo shows itself off. */
       const span = (GZ - 6) * CELL;
       const tt = (elapsed * 0.06) % 2;
-      shipZ = -3 * CELL - (tt < 1 ? tt : 2 - tt) * span;
-      shipX = Math.sin(elapsed * 0.4) * CELL * 0.8;
+      shipZ = -3.5 * CELL - (tt < 1 ? tt : 2 - tt) * span;
+      shipX = Math.sin(elapsed * 0.4) * CELL * 0.45;
       shipY = cellY(1) + LEVEL_H * 0.5 + Math.sin(elapsed * 0.3) * 1.2;
-      shipYaw = Math.PI + Math.sin(elapsed * 0.25) * 0.4;
+      shipYaw = Math.PI + Math.sin(elapsed * 0.25) * 0.22;
       shipPitch = Math.sin(elapsed * 0.19) * 0.12;
       velX = 0; velY = 0; velZ = 0;
       /* The attract mode shoots too, so an unattended demo shows the
@@ -908,7 +942,11 @@ window.addEventListener("load", () => {
 
       const thrust = 26 * run;
       velX += (fx * fwd + rx * strafe) * thrust * dt;
-      velY += (fy * fwd + lift) * thrust * dt;
+      /* Vertical gets its OWN, stronger thrust. At the shared value the
+       * climb rate lost to drag almost immediately and the ship felt
+       * pinned at whatever height it was already at -- shafts were
+       * unusable. */
+      velY += (fy * fwd * thrust + lift * thrust * 1.8) * dt;
       velZ += (fz * fwd + rz * strafe) * thrust * dt;
 
       /* Exponential drag: v *= k^dt behaves the same at 30 and 144 fps,
@@ -968,15 +1006,41 @@ window.addEventListener("load", () => {
      * CAM_UP 2.4 the camera sat 0.4m under the ceiling and spent most of
      * the flight INSIDE the roof slab, which is why the view was dark and
      * full of wall. Just above the hull is enough to see over it. */
-    const CAM_DIST = 6.2;
-    const CAM_UP = 1.15;
+    /* A space shooter puts your ship LOW AND CLOSE, filling the bottom of
+     * the frame, with the level above and ahead of it. 6m back reads as a
+     * racing chase-cam and pushes the ship into the middle distance. */
+    const CAM_DIST = 4.2;
+    const CAM_UP = 1.0;
     const wantX = shipX + camBackX * CAM_DIST;
     const wantY = shipY + camBackY * CAM_DIST + CAM_UP;
     const wantZ = shipZ + camBackZ * CAM_DIST;
-    const follow = Math.min(1, dt * 7);
-    camX += (wantX - camX) * follow;
-    camY += (wantY - camY) * follow;
-    camZ += (wantZ - camZ) * follow;
+    /* PULL THE CAMERA IN until it is inside the tunnel.
+     *
+     * A chase camera with no collision passes straight through walls: at
+     * 3.4m back it spent every turn outside the corridor, slicing the
+     * geometry open and showing three tunnels at once. Marching from the
+     * ship outwards and stopping at the last clear position keeps it in
+     * the room the player is in, and naturally tightens the view in a
+     * narrow passage -- which is what a space shooter wants anyway.
+     *
+     * This is also why the game does not need a physics engine: the world
+     * is an axis-aligned grid, so "is this point inside a wall" is an
+     * array lookup, not a collision query. */
+    let fitX = wantX;
+    let fitY = wantY;
+    let fitZ = wantZ;
+    for (let s = 0; s < 6; s++) {
+      const k = 1 - s * 0.16;
+      fitX = shipX + (wantX - shipX) * k;
+      fitY = shipY + (wantY - shipY) * k;
+      fitZ = shipZ + (wantZ - shipZ) * k;
+      if (camClear(fitX, fitY, fitZ)) break;
+    }
+
+    const follow = Math.min(1, dt * 10);
+    camX += (fitX - camX) * follow;
+    camY += (fitY - camY) * follow;
+    camZ += (fitZ - camZ) * follow;
 
     /* The headlight leads the ship slightly, so the tunnel ahead is lit
      * before you reach it rather than behind you after you pass. */
@@ -987,8 +1051,13 @@ window.addEventListener("load", () => {
     /* Aim WELL ahead of the ship, so the hull sits low in the frame and
      * the tunnel you are flying into fills it. Looking at the ship itself
      * puts a model in the middle of the screen and hides the level. */
-    _look.set(shipX - camBackX * 13, shipY - camBackY * 13 + 1.0,
-              shipZ - camBackZ * 13);
+    /* Aim high and far ahead: this drops the hull into the lower third of
+     * the frame and fills the rest with where you are going. */
+    /* Straight down the flight axis, with only a small lift. Aiming
+     * well above it pitches the camera down and fills the frame with the
+     * floor immediately ahead instead of the tunnel. */
+    _look.set(shipX - camBackX * 20, shipY - camBackY * 20 + 0.9,
+              shipZ - camBackZ * 20);
     camera.lookAt(_look);
 
     /* Lamps travel the corridor at a constant spacing, so the walker is
