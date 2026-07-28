@@ -64,12 +64,31 @@ export class InstancedBufferAttribute {
     let n = items * this.itemSize;
     if (n > this.array.length) n = this.array.length;
     if (n < 0) n = 0;
-    const out = Buffer.alloc(n * 4);
-    for (let i = 0; i < n; i++) {
-      out.writeFloatLE(this.array[i], i * 4);
+
+    /* REUSE the scratch buffer across frames.
+     *
+     * This is called every frame for every InstancedMesh whose transforms
+     * changed, and it was allocating a fresh Buffer each time -- 640KB per
+     * frame at 10000 instances, handed straight to the collector. The
+     * buffer only ever grows, so one allocation covers the whole run.
+     *
+     * Sized to the FULL array rather than the current prefix, so lowering
+     * and raising `count` does not reallocate. */
+    let buf = this.scratch;
+    if (buf === null || buf.length < n * 4) {
+      buf = Buffer.alloc(this.array.length * 4);
+      this.scratch = buf;
     }
-    return out;
+    for (let i = 0; i < n; i++) {
+      buf.writeFloatLE(this.array[i], i * 4);
+    }
+    /* The GL upload takes a length, and a too-long buffer would send the
+     * stale tail as well, so the prefix is handed over as its own view. */
+    return n * 4 === buf.length ? buf : buf.subarray(0, n * 4);
   }
+
+  /** Grow-only staging buffer; see prefixFloat32Buffer. */
+  private scratch: Buffer | null = null;
 }
 
 export class InstancedMesh extends Mesh {
