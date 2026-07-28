@@ -32,13 +32,14 @@ jobs:
             runner: macos-15-intel
           - target: windows-x86_64
             runner: windows-2022
-          - target: android-aarch64
-            runner: ubuntu-24.04
-            # Cross-compiled with the NDK: the archives and the toolchain
-            # exist, but nothing here can RUN an arm64 Android binary, so
-            # this lane builds and stops. A build failure is still the thing
-            # worth catching, since it is what a bad link looks like.
-            build_only: true
+          # android-aarch64 gets as far as VENDORING and compiling the
+          # shim, then stops at the final link, and the wall is upstream:
+          # scriptc has no Android support at all. Cross-compiling requires
+          # SCRIPTC_CC=zigcc, which links with `zig cc` rather than the
+          # NDK's linker, and there is no way to point it at the NDK
+          # sysroot. The archives are fine (204 skiac symbols) and
+          # scripts/fetch-archives.sh handles the target today, so this
+          # becomes a matrix entry the moment scriptc can link it.
 
     steps:
       - uses: actions/checkout@v5
@@ -124,34 +125,11 @@ jobs:
           echo "SDL2_INCLUDE=$SDLDIR/include" >> "$GITHUB_ENV"
           echo "SDL2_LIB=$SDLDIR/lib/x64" >> "$GITHUB_ENV"
 
-      - name: Android deps
-        if: startsWith(matrix.target, 'android')
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends clang-18 ninja-build
-          echo "ANDROID_NDK_ROOT=$ANDROID_NDK_LATEST_HOME" >> "$GITHUB_ENV"
-
       # ---- vendored archives ----
 
       - name: Fetch Skia archives
         shell: bash
         run: ./scripts/fetch-archives.sh ${{ matrix.target }}
-
-      # The NDK's clang knows the Android sysroot; nothing else does.
-      - name: Select the Android toolchain
-        if: startsWith(matrix.target, 'android')
-        shell: bash
-        run: |
-          TC="$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
-          echo "SG_CC=$TC/aarch64-linux-android24-clang" >> "$GITHUB_ENV"
-          echo "SG_CXX=$TC/aarch64-linux-android24-clang++" >> "$GITHUB_ENV"
-          # SDL2 is not packaged for the NDK; its headers come from the
-          # source release, which is all the shim needs to compile.
-          curl -fsSL -o /tmp/sdl.tar.gz \
-            https://github.com/libsdl-org/SDL/releases/download/release-2.32.10/SDL2-2.32.10.tar.gz
-          mkdir -p "$GITHUB_WORKSPACE/sdl2-src"
-          tar -xzf /tmp/sdl.tar.gz -C "$GITHUB_WORKSPACE/sdl2-src" --strip-components=1
-          echo "SDL2_INCLUDE=$GITHUB_WORKSPACE/sdl2-src/include" >> "$GITHUB_ENV"
 
       - name: Build the webaudio graph
         shell: bash
@@ -180,7 +158,6 @@ jobs:
           done
 
       - name: Test suite
-        if: ${{ !matrix.build_only }}
         shell: bash
         env:
           SCRIPTC_BIN: ${{ github.workspace }}/scriptc/packages/cli/dist/main.js
@@ -201,7 +178,6 @@ jobs:
       # every test still passes.
 
       - name: Size and startup report
-        if: ${{ !matrix.build_only }}
         shell: bash
         run: |
           echo "### ${{ matrix.target }}" >> "$GITHUB_STEP_SUMMARY"

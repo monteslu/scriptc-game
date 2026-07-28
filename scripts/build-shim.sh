@@ -102,11 +102,20 @@ if [ "$NEED_MERGE" = "1" ]; then
   (
     cd "$MERGE"
     for a in "$DEST"/libskiac.a "$DEST"/skia/*.a; do
+      [ -f "$a" ] || continue
       # Members can share basenames across archives, so give each archive
       # its own subdirectory and extraction cannot clobber.
       sub="$(basename "$a" .a)"
       mkdir -p "$sub"
-      ( cd "$sub" && ar x "$a" )
+      # The Windows archives store members under their full build path
+      # ("obj/src/.../foo.obj"), and GNU ar reads the slashes as
+      # directories: it extracts NOTHING and reports "No such file or
+      # directory" per member. ar-extract.py reads the format directly.
+      if ! ( cd "$sub" && ar x "$a" 2>/dev/null ) || \
+         [ -z "$(find "$sub" -name '*.o' -o -name '*.obj' | head -1)" ]; then
+        python3 "$ROOT/scripts/ar-extract.py" --all "$a" "$sub" >/dev/null || {
+          echo "could not extract $a" >&2; exit 1; }
+      fi
     done
   )
   rm -f "$DEST/libsggfx.a"
@@ -122,7 +131,7 @@ if [ "$NEED_MERGE" = "1" ]; then
     ar q "$DEST/libsggfx.a" $SHIM_OBJS || {
       echo "ar: could not append shim objects to libsggfx.a" >&2; exit 1; }
   }
-  find "$MERGE" -name '*.o' -print0 \
+  find "$MERGE" \( -name '*.o' -o -name '*.obj' \) -print0 \
     | xargs -0 -n 300 ar "$AR_APPEND" "$DEST/libsggfx.a" || {
         echo "ar: could not append Skia members to libsggfx.a" >&2; exit 1; }
   ranlib "$DEST/libsggfx.a" || { echo "ranlib failed" >&2; exit 1; }

@@ -15,6 +15,7 @@ single enormous "name" containing the whole table, which is exactly the
 failure this replaced.
 
     ar-extract.py <archive> <output-path> <suffix> [suffix...]
+    ar-extract.py --all <archive> <output-dir>
 """
 import os
 import sys
@@ -49,7 +50,40 @@ def members(data):
         pos += 60 + size + (size % 2)   # members are 2-byte aligned
 
 
+def extract_all(archive, outdir):
+    """Writes every member into outdir, flattening its stored path.
+
+    Members from different directories can share a basename (Skia has many
+    of them), so a counter disambiguates rather than letting a later member
+    silently overwrite an earlier one. The names do not matter to the
+    linker; only the contents do.
+    """
+    with open(archive, "rb") as fh:
+        data = fh.read()
+    os.makedirs(outdir, exist_ok=True)
+    seen, count = {}, 0
+    for name, body in members(data):
+        base = name.replace("\\", "/").split("/")[-1]
+        if not base or base in ("/", "//") or base.startswith("__.SYMDEF"):
+            continue
+        if not base.endswith((".o", ".obj")):
+            continue
+        n = seen.get(base, 0)
+        seen[base] = n + 1
+        out = os.path.join(outdir, base if n == 0 else f"{n}-{base}")
+        with open(out, "wb") as fh:
+            fh.write(body)
+        count += 1
+    print(f"extracted {count} members from {os.path.basename(archive)}")
+    return 0 if count else 1
+
+
 def main():
+    if len(sys.argv) >= 2 and sys.argv[1] == "--all":
+        if len(sys.argv) != 4:
+            raise SystemExit("usage: ar-extract.py --all <archive> <outdir>")
+        return extract_all(sys.argv[2], sys.argv[3])
+
     if len(sys.argv) < 4:
         raise SystemExit("usage: ar-extract.py <archive> <out> <suffix>...")
     archive, out = sys.argv[1], sys.argv[2]
