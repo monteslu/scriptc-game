@@ -63,26 +63,59 @@ fi
 # REWRITE THE INSTALL NAMES to absolute paths.
 #
 # The archive ships them as "./libGLESv2.dylib" -- a RELATIVE install name,
-# which the linker copies verbatim into every binary. The result only
-# resolves if the process happens to be run from the directory holding the
-# dylibs, so the build would link cleanly and then fail at startup with
-# "image not found" anywhere else.
+# which the linker copies verbatim into every binary. The result links
+# cleanly and then dies at startup with
 #
-# Absolute paths are correct here because these live in the build tree and
-# the binaries that use them are run from it. A redistributable build would
-# want @rpath and a matching -rpath instead.
-if command -v install_name_tool >/dev/null 2>&1; then
-  for f in "$DEST"/lib/*.dylib; do
-    install_name_tool -id "$f" "$f" 2>/dev/null || true
-  done
-  # ...and the cross-references between them: libGLESv2 pulls in libEGL.
-  for f in "$DEST"/lib/*.dylib; do
-    for dep in $(otool -L "$f" 2>/dev/null | awk 'NR>1 {print $1}' | grep '^\./' || true); do
-      base="$(basename "$dep")"
-      [ -f "$DEST/lib/$base" ] && install_name_tool -change "$dep" "$DEST/lib/$base" "$f" 2>/dev/null || true
-    done
-  done
+#   dyld: Library not loaded: ./libGLESv2.dylib
+#
+# ...which is exactly what CI hit. Absolute paths are correct here because
+# these live in the build tree and the binaries are run from it; a
+# redistributable build would want @rpath instead.
+#
+# NOT silenced. The first version wrapped every call in `2>/dev/null ||
+# true`, so when the rewrite failed the script still printed "installed"
+# and the failure only surfaced as a dyld abort three steps later.
+#
+# On Apple silicon a dylib carries a code signature that install_name_tool
+# invalidates, and the tool refuses to touch a signed binary. Stripping the
+# signature first is what makes the rewrite possible; these are build-tree
+# libraries loaded by locally-built binaries, so an ad-hoc signature is
+# reapplied afterwards to keep dyld happy.
+if ! command -v install_name_tool >/dev/null 2>&1; then
+  echo "fetch-angle.sh: install_name_tool not found (needs Xcode CLT)" >&2
+  exit 1
 fi
+
+for f in "$DEST"/lib/*.dylib; do
+  codesign --remove-signature "$f" 2>/dev/null || true
+  install_name_tool -id "$f" "$f"
+done
+
+# ...and the cross-references between them: libGLESv2 pulls in libEGL.
+for f in "$DEST"/lib/*.dylib; do
+  deps="$(otool -L "$f" | awk 'NR>1 {print $1}' | grep -E '^(\./|@)' || true)"
+  for dep in $deps; do
+    base="$(basename "$dep")"
+    if [ -f "$DEST/lib/$base" ]; then
+      install_name_tool -change "$dep" "$DEST/lib/$base" "$f"
+    fi
+  done
+  # Re-sign ad hoc: dyld rejects a modified, still-signed image otherwise.
+  codesign --force --sign - "$f" 2>/dev/null || true
+done
+
+# VERIFY, rather than trust: a rewrite that silently did nothing is the
+# whole reason this failed the first time.
+for f in "$DEST"/lib/*.dylib; do
+  id="$(otool -D "$f" | tail -1)"
+  case "$id" in
+    /*) ;;
+    *)
+      echo "fetch-angle.sh: $f still has a relative install name '$id'" >&2
+      exit 1
+      ;;
+  esac
+done
 
 echo "angle: installed into $DEST"
 echo "  export ANGLE_LIB=$DEST/lib"

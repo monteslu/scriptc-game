@@ -696,11 +696,40 @@ export class WebGLRenderer {
      * expected"). Object3D keeps typed self-references instead, which the
      * subclass constructors fill in, so this reads the concrete object
      * without a cast. */
-    for (let i = 0; i < scene.meshes.length; i++) {
-      const mesh = scene.meshes[i];
-      if (!mesh.visible || !mesh.material.visible) continue;
-      if (mesh.material.transparent) this.transparent.push(mesh);
-      else this.opaque.push(mesh);
+    /* Refresh the flat flag mirror, then scan THAT.
+     *
+     * The refresh still reads through the fat objects, but it writes one
+     * number per mesh into a contiguous array; the scan that follows --
+     * and every later pass that only needs "is this drawable" -- touches
+     * 4 bytes per mesh instead of chasing pointers through two Matrix4s
+     * and four separately-allocated math objects.
+     *
+     * `visible` and `material.visible` are plain public fields a game
+     * assigns whenever it likes, so there is no flag to trust: the mirror
+     * is rebuilt each frame. That still wins, because it turns N random
+     * reads spread over megabytes into N sequential writes over 40KB. */
+    const meshes = scene.meshes;
+    const flags = scene.meshFlags;
+    const n = meshes.length;
+    while (flags.length < n) flags.push(0);
+
+    for (let i = 0; i < n; i++) {
+      const mesh = meshes[i];
+      const mat = mesh.material;
+      /* bit 0 drawable, bit 1 transparent. */
+      let f = 0;
+      if (mesh.visible && mat.visible) {
+        f = 1;
+        if (mat.transparent) f = 3;
+      }
+      flags[i] = f;
+    }
+
+    for (let i = 0; i < n; i++) {
+      const f = flags[i];
+      if (f === 0) continue;
+      if (f === 3) this.transparent.push(meshes[i]);
+      else this.opaque.push(meshes[i]);
     }
     for (let i = 0; i < scene.lights.length; i++) {
       const light = scene.lights[i];

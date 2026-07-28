@@ -478,6 +478,36 @@ render-list sorting and state caching pay for themselves. The worst case
 is 10000 per-mesh at 1.67x slower -- three batches state changes across a
 long draw list far better than a straight loop does.
 
+### Where the remaining gap actually is
+
+Profiled rather than guessed, at 10000 per-mesh cubes:
+
+```
+mesh.visible read x10000        9.1 ms   (910 ns per read)
++ material.visible hop         18.0 ms
+flat-array scan of the same    0.15 ms
+```
+
+910ns to read one boolean field is roughly ten DRAM misses per object.
+Each Mesh touches its own allocation, its Object3D base (which carries TWO
+Matrix4s at 128 bytes each plus separately-allocated Vector3, Quaternion
+and Euler), and its Material -- all heap objects in allocation order. Ten
+thousand of them span megabytes and the scan is entirely cache-bound.
+
+The renderer caches what it can: `Scene.meshFlags` mirrors "drawable" and
+"transparent" into one number per mesh, so every pass after the first
+touches 40KB of contiguous memory instead of chasing pointers, and that
+scan drops to 0.15 ms. But the mirror itself has to read the objects once,
+and `visible` is a plain public field a game may assign at any moment, so
+there is no flag that would let it be skipped.
+
+Closing the rest means changing Object3D's memory layout -- packing
+transforms into shared typed arrays rather than per-object Matrix4s. That
+is a real option and it is how a data-oriented engine would be built, but
+it would stop `mesh.position.set(...)` and `mesh.matrixWorld` from being
+what a three user expects, and API compatibility is the point of this
+tier. It is not being done.
+
 Both sides measure CPU SUBMIT TIME, deliberately without `glFinish`. An
 earlier attempt called finish() to "measure the real work" and produced an
 identical 33.2ms for every configuration from 250 to 10000 cubes: the
