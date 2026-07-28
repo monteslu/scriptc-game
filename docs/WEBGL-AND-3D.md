@@ -85,6 +85,34 @@ picks per-platform:
    between Skia-Ganesh and a GLES-dialect scene requires matching builds.
    Resolution deferred to the phase; model 1 has no such constraint.
 
+### Two traps in the 2D-canvas-as-texture path
+
+Both of these are silent: the frame renders, it is just wrong. Both were
+hit building `examples/runner` and both are fixed in the tree.
+
+**A canvas is 300x150 until you say otherwise.** `document.createElement(
+"canvas")` returns the HTML default size, exactly as in a browser. A HUD
+that draws in 512x256 coordinates without assigning `width`/`height` first
+draws into a surface roughly half that size and clips at the right edge,
+with no error and a plausible-looking result. Assigning either dimension
+reallocates the backing surface and clears it to transparent black, per
+spec:
+
+```ts
+const hud = document.createElement("canvas");
+hud.width = 512;                 // REQUIRED: the default is 300x150
+hud.height = 256;
+```
+
+**Texture sources are top-down; GL is bottom-up.** A Skia surface's first
+row is the top of the image, while GL texture space puts v=0 at the
+bottom. Uploading rows as-is renders the HUD vertically mirrored, which on
+text is obvious and on a symmetric panel is not. `texImage2DFromCanvas`
+flips rows natively (`sg_gl_tex_image_from_surface`); the browser shim
+does the same through `UNPACK_FLIP_Y_WEBGL`, saved and restored so it
+cannot leak into other uploads. Call the helper rather than
+`texImage2D` directly and the orientation is handled in both tiers.
+
 Headless CI uses model 2 (pbuffer, dummy-video SDL not even needed) with
 readback-hash assertions; that is exactly native-gles's designed-for mode.
 
