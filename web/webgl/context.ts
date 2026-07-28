@@ -22,6 +22,7 @@
  */
 import * as gl from "../../host/gl-ffi.js";
 import { readMailbox } from "../../host/mailbox.js";
+import { Image } from "../canvas/image.js";
 import {
   WebGLBuffer, WebGLTexture, WebGLFramebuffer, WebGLRenderbuffer,
   WebGLProgram, WebGLShader, WebGLVertexArrayObject, WebGLSampler,
@@ -448,6 +449,19 @@ export class WebGL2RenderingContext {
   }
 
   generateMipmap(target: number): void { gl.GenerateMipmap(target); }
+
+  /* texImage2D from a decoded Image.
+   *
+   * The web spells this as the 6-argument texImage2D overload taking an
+   * image source. Here it is its own method, because the pixels never enter
+   * TS: format 1 has no out-bytes class, so the copy happens natively,
+   * Skia bitmap straight to GL texture. That is FASTER than the browser
+   * path, which round-trips through an ImageData.
+   *
+   * The internal format is RGBA8, which is what the decoder produces. */
+  texImage2DFromImage(target: number, level: number, image: Image): void {
+    gl.texImageFromBitmap(target, level, image.handle);
+  }
 
   /* ---- framebuffers and renderbuffers ---- */
 

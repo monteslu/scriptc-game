@@ -57,6 +57,7 @@ mkdir -p "$OUT"
 # The shim is already JavaScript: copy, do not compile.
 mkdir -p "$OUT/browser"
 cp "$ROOT/browser/globals.js" "$OUT/browser/globals.js"
+cp "$ROOT/browser/webgl-constants.js" "$OUT/browser/webgl-constants.js"
 
 # Assets: the game directory IS the web root, same rule as native.
 if [ -d "$GAMEDIR/public" ]; then
@@ -91,7 +92,9 @@ cat > "$OUT/index.html" <<HTML
 {
   "imports": {
     "../../web/globals.js": "./browser/globals.js",
-    "../web/globals.js": "./browser/globals.js"
+    "../web/globals.js": "./browser/globals.js",
+    "../../web/webgl/constants.js": "./browser/webgl-constants.js",
+    "../web/webgl/constants.js": "./browser/webgl-constants.js"
   }
 }
 </script>

@@ -109,6 +109,25 @@ function main(): void {
   const b = gl.hashPixels(0, 0, W, H);
   check(a === b, "CONTROL: identical clears hash identically");
 
+  /* 5. PARITY. The same three scenes the Node reference renders
+   * (test/webgl-parity/reference.mjs), hashed with the same FNV-1a. These
+   * are printed rather than asserted here: scripts/webgl-parity.sh runs
+   * both stacks and compares, because the reference needs Node and cannot
+   * run inside this binary. */
+  gl.clearColor(1, 0, 0, 1);
+  gl.clear(COLOR_BUFFER_BIT);
+  const pRed = gl.hashPixels(0, 0, W, H);
+  gl.clearColor(0, 1, 0, 1);
+  gl.clear(COLOR_BUFFER_BIT);
+  const pGreen = gl.hashPixels(0, 0, W, H);
+  gl.clearColor(0, 0, 0, 1);
+  gl.clear(COLOR_BUFFER_BIT);
+  gl.drawArrays(TRIANGLES, 0, 3);
+  const pTri = gl.hashPixels(0, 0, W, H);
+  console.log(`PARITY clearRed=${pRed}`);
+  console.log(`PARITY clearGreen=${pGreen}`);
+  console.log(`PARITY triangle=${pTri}`);
+
   gl.deleteBuffer(buf);
   gl.deleteProgram(prog);
   shutdownHeadless();

@@ -206,6 +206,48 @@ extern "C" uint32_t sg_is_fullscreen(int32_t unused) {
   return (f & (SDL_WINDOW_FULLSCREEN | SDL_WINDOW_FULLSCREEN_DESKTOP)) ? 1u : 0u;
 }
 
+/* ---- WebGL2: a GL context on the SAME window ----
+ *
+ * Verified in the 8.2 spike: SDL_GL_CreateContext succeeds on a
+ * renderer-backed window (the renderer's own backend is already opengl),
+ * and raw GL interleaves with SDL_RenderPresent across SDL_RenderFlush. So
+ * a game can use Canvas 2D, WebGL2, or both, in one window.
+ *
+ * The ES profile must be requested EXPLICITLY. Without it SDL hands back
+ * desktop GL 4.6 Compatibility, and WebGL2 maps to GLES 3.
+ */
+static SDL_GLContext g_gl_context = NULL;
+
+extern "C" int32_t sg_gl_init_window(int32_t unused) {
+  (void)unused;
+  if (g_gl_context) return SG_OK;                 /* idempotent */
+  if (!g_window) { mail_set("GL context before init"); return SG_ESDL; }
+
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
+  SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+  SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
+
+  g_gl_context = SDL_GL_CreateContext(g_window);
+  if (!g_gl_context) { mail_set(SDL_GetError()); return SG_ESDL; }
+  SDL_GL_MakeCurrent(g_window, g_gl_context);
+  return SG_OK;
+}
+
+/* Present a GL frame: swap the window's buffers directly.
+ *
+ * The 2D present path blits a Skia raster surface through an SDL texture;
+ * a GL frame is already in the window's back buffer, so it only needs the
+ * swap. A game using both would present through the 2D path, which SDL
+ * flushes around. */
+extern "C" int32_t sg_gl_present(int32_t unused) {
+  (void)unused;
+  if (!g_gl_context) { mail_set("GL present before context"); return SG_ESDL; }
+  SDL_GL_SwapWindow(g_window);
+  return SG_OK;
+}
+
 /* ---- present ----
  * One full-frame copy: Skia raster pixels -> streaming texture -> GPU blit.
  * At 1280x720 this is ~3.7MB/frame; measured cost lives in SPIKE-RESULTS.

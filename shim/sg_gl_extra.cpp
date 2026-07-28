@@ -30,6 +30,7 @@
 #include <EGL/eglext.h>
 #include <GLES3/gl3.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -183,6 +184,50 @@ void sg_gl_tex_sub_image_2d(uint32_t target, int32_t level, int32_t xoffset,
   if (len == 0) return;
   glTexSubImage2D(target, level, xoffset, yoffset, width, height, format, type,
                   pixels);
+}
+
+/* Upload a decoded Skia bitmap straight into a GL texture.
+ *
+ * The pixels never cross the FFI. Format 1 has no out-bytes class, so a
+ * game cannot read an Image's bytes into TS and pass them to texImage2D the
+ * way a browser does. Both ends are native, though, so the whole copy
+ * happens down here: Skia bitmap in, GL texture out, one call.
+ *
+ * Skia's C ABI exposes no direct pixel reader on a bitmap, so the bitmap is
+ * drawn into a scratch RGBA surface and read back from there. That is one
+ * extra blit at LOAD time, not per frame, and it is the same path
+ * sg_present already uses for the screen.
+ */
+int32_t sg_gl_tex_image_from_bitmap(uint32_t target, int32_t level,
+                                    uint32_t bitmap_handle) {
+  skiac_bitmap* b = (skiac_bitmap*)sg_table_get(SG_T_BITMAP, bitmap_handle);
+  if (!b) { sg_mail_set("texImage2D: bitmap handle is stale or invalid"); return SG_EBADHANDLE; }
+
+  const int w = (int)skiac_bitmap_get_width(b);
+  const int h = (int)skiac_bitmap_get_height(b);
+  if (w <= 0 || h <= 0) { sg_mail_set("texImage2D: image has no pixels"); return SG_ERANGE; }
+
+  skiac_surface* surf = skiac_surface_create_rgba(w, h, 0);
+  if (!surf) { sg_mail_set("texImage2D: could not create a scratch surface"); return SG_ESKIA; }
+
+  skiac_canvas* canvas = skiac_surface_get_canvas(surf);
+  skiac_canvas_draw_image(canvas, b, false, 0.0f, 0.0f, (float)w, (float)h,
+                          0.0f, 0.0f, (float)w, (float)h, false, 0, nullptr);
+
+  skiac_surface_data data;
+  data.ptr = nullptr;
+  data.size = 0;
+  skiac_surface_read_pixels(surf, &data);
+  if (!data.ptr) {
+    skiac_surface_destroy(surf);
+    sg_mail_set("texImage2D: read_pixels returned no data");
+    return SG_ESKIA;
+  }
+
+  glTexImage2D(target, level, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE,
+               data.ptr);
+  skiac_surface_destroy(surf);
+  return SG_OK;
 }
 
 /* ---- 4. out-param getters -------------------------------------------- */
@@ -372,6 +417,76 @@ void sg_gl_draw_elements_instanced(uint32_t mode, int32_t count, uint32_t type,
  * so this is the one place the WebGL layer cannot hand back pixels directly;
  * the conformance harness hashes them natively instead (see sg_gl_hash_pixels).
  */
+/* Save the GL framebuffer as a PNG.
+ *
+ * The 2D screenshot path reads the SKIA surface, which a GL frame never
+ * touches, so a WebGL game captured through it comes out blank. That is not
+ * hypothetical: it is exactly what happened, and a green exit code hid it
+ * until the framebuffer was hashed.
+ *
+ * glReadPixels is bottom-up while an image file is top-down, so rows are
+ * flipped on the way out. Encoding reuses Skia rather than adding a second
+ * PNG writer.
+ */
+int32_t sg_gl_save_png(const uint8_t* path, size_t path_len) {
+  char file[1024];
+  if (path_len >= sizeof(file)) { sg_mail_set("screenshot path too long"); return SG_ERANGE; }
+  memcpy(file, path, path_len);
+  file[path_len] = 0;
+
+  GLint vp[4] = {0, 0, 0, 0};
+  glGetIntegerv(GL_VIEWPORT, vp);
+  const int w = vp[2];
+  const int h = vp[3];
+  if (w <= 0 || h <= 0) { sg_mail_set("GL viewport is empty"); return SG_ERANGE; }
+
+  const size_t stride = (size_t)w * 4;
+  const size_t total = stride * (size_t)h;
+  uint8_t* rows = (uint8_t*)malloc(total);
+  uint8_t* flipped = (uint8_t*)malloc(total);
+  if (!rows || !flipped) {
+    free(rows); free(flipped);
+    sg_mail_set("out of memory reading the framebuffer");
+    return SG_ERANGE;
+  }
+  glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, rows);
+  for (int row = 0; row < h; row++) {
+    memcpy(flipped + (size_t)row * stride,
+           rows + (size_t)(h - 1 - row) * stride, stride);
+  }
+  free(rows);
+
+  skiac_surface* surf = skiac_surface_create_rgba(w, h, 0);
+  if (!surf) { free(flipped); sg_mail_set("could not create the encode surface"); return SG_ESKIA; }
+  skiac_canvas* canvas = skiac_surface_get_canvas(surf);
+  skiac_canvas_put_image_data(canvas, w, h, flipped, stride, total,
+                              0.0f, 0.0f, 0.0f, 0.0f, (float)w, (float)h,
+                              0, false);
+  free(flipped);
+
+  skiac_sk_data png;
+  png.ptr = NULL; png.size = 0; png.data = NULL;
+  skiac_surface_png_data(surf, &png);
+  if (!png.ptr || png.size == 0) {
+    skiac_surface_destroy(surf);
+    sg_mail_set("png encode failed");
+    return SG_ESKIA;
+  }
+  FILE* f = fopen(file, "wb");
+  if (!f) {
+    if (png.data) skiac_sk_data_destroy(png.data);
+    skiac_surface_destroy(surf);
+    sg_mail_set("could not open png path for writing");
+    return SG_ERANGE;
+  }
+  const size_t wrote = fwrite(png.ptr, 1, png.size, f);
+  fclose(f);
+  if (png.data) skiac_sk_data_destroy(png.data);
+  skiac_surface_destroy(surf);
+  if (wrote != png.size) { sg_mail_set("short write encoding png"); return SG_ERANGE; }
+  return SG_OK;
+}
+
 uint32_t sg_gl_hash_pixels(int32_t x, int32_t y, int32_t w, int32_t h) {
   if (w <= 0 || h <= 0) return 0;
   const size_t n = (size_t)w * (size_t)h * 4;

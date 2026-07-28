@@ -19,6 +19,7 @@
  */
 import * as ffi from "./ffi.js";
 import { setGameDir } from "./resources.js";
+import { usesGLPresent } from "./tasks.js";
 import { Input } from "../web/input/input.js";
 import {
   __initScreen, __runFrameCallbacks, __hasFrameCallbacks,
@@ -168,12 +169,19 @@ export async function run(opts: HostOptions): Promise<number> {
     __runFrameCallbacks(now);
 
     if (opts.shotPath !== "" && stats.frames + 1 === opts.shotFrame) {
-      const src = ffi.surfaceSavePng(0, opts.shotPath);
+      /* A GL frame lives in the GL framebuffer, not in the Skia surface,
+       * so capturing a WebGL game through the 2D path yields a blank image.
+       * That actually happened, and a zero exit code hid it. */
+      const src = usesGLPresent()
+        ? ffi.glSavePng(opts.shotPath)
+        : ffi.surfaceSavePng(0, opts.shotPath);
       if (src !== 0) console.log(`screenshot failed (${src}): ${lastError()}`);
       else console.log(`screenshot: ${opts.shotPath}`);
     }
 
-    const prc = ffi.present();
+    /* A GL frame is already in the window's back buffer, so it presents
+     * with a swap; the 2D path blits a Skia raster surface instead. */
+    const prc = usesGLPresent() ? ffi.glPresent() : ffi.present();
     if (prc !== 0) {
       console.log(`present failed (${prc}): ${lastError()}`);
       break;

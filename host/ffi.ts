@@ -30,6 +30,9 @@ declare function sgScreenHeight(unused: number): number;
 declare function sgDisplayHz(unused: number): number;
 declare function sgSetFullscreen(on: number): number;
 declare function sgIsFullscreen(unused: number): number;
+declare function sgGlInitWindow(unused: number): number;
+declare function sgGlPresent(unused: number): number;
+declare function sgGlSavePng(path: string): number;
 declare function sgPresent(unused: number): number;
 declare function sgSurfaceSavePng(hs: number, path: string): number;
 declare function sgSurfaceCreate(w: number, h: number): number;
@@ -192,6 +195,11 @@ export function screenHeight(): number { return sgScreenHeight(0); }
 export function displayHz(): number { return sgDisplayHz(0); }
 export function setFullscreen(on: number): number { return sgSetFullscreen(on); }
 export function isFullscreen(): number { return sgIsFullscreen(0); }
+
+/* WebGL2 on the SAME window as the 2D path (see the 8.2 spike). */
+export function glInitWindow(): number { return sgGlInitWindow(0); }
+export function glPresent(): number { return sgGlPresent(0); }
+export function glSavePng(path: string): number { return sgGlSavePng(path); }
 export function present(): number { return sgPresent(0); }
 /** Encodes a surface to a PNG file; handle 0 means the screen. 0 on success. */
 export function surfaceSavePng(hs: number, path: string): number { return sgSurfaceSavePng(hs, path); }

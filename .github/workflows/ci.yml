@@ -117,7 +117,8 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             clang-18 libc++-18-dev libc++abi-18-dev libsdl2-dev \
             libfontconfig1-dev libfreetype6-dev pkg-config \
-            firefox xvfb ffmpeg
+            firefox xvfb ffmpeg \
+            libgles2-mesa-dev libegl1-mesa-dev libgl1-mesa-dri
           # scriptc emits LLVM IR with opaque pointers (`ptr`), which needs
           # clang 15 or newer; the distro default is older on some images.
           sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-18 100
@@ -192,6 +193,21 @@ jobs:
             ./scripts/build.sh "$g" "${{ matrix.target }}"
           done
 
+      # The WebGL2 parity gate needs the Node reference stack. Linux only:
+      # it renders through surfaceless EGL with the software rasteriser,
+      # which is the lane native-gles's own CI uses.
+      - name: Install the WebGL reference
+        if: startsWith(matrix.target, 'linux')
+        shell: bash
+        run: |
+          git clone --depth 1 https://github.com/monteslu/webgl-node "$GITHUB_WORKSPACE/webgl-node"
+          cd test/webgl-parity
+          # The committed package.json points at a SIBLING checkout, which is
+          # the local layout; CI clones inside the workspace instead. Install
+          # from the real path rather than editing the committed file.
+          npm install --no-audit --no-fund "$GITHUB_WORKSPACE/webgl-node" \
+            || echo "reference unavailable; the parity gate will SKIP"
+
       - name: Test suite
         shell: bash
         env:
@@ -203,6 +219,9 @@ jobs:
           # Headless: SDL's dummy drivers, and xvfb on Linux for the browser
           # proof (Firefox headless still wants a display on some runners).
           if [ "${{ runner.os }}" = "Linux" ]; then
+            # surfaceless + software GL so the WebGL lane needs no GPU.
+            export EGL_PLATFORM=surfaceless
+            export LIBGL_ALWAYS_SOFTWARE=1
             xvfb-run -a ./scripts/test.sh
           else
             ./scripts/test.sh

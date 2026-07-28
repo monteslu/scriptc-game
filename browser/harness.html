@@ -9,7 +9,9 @@
 {
   "imports": {
     "../../web/globals.js": "/browser/globals.js",
-    "../web/globals.js": "/browser/globals.js"
+    "../web/globals.js": "/browser/globals.js",
+    "../../web/webgl/constants.js": "/browser/webgl-constants.js",
+    "../web/webgl/constants.js": "/browser/webgl-constants.js"
   }
 }
 </script>
@@ -33,6 +35,12 @@ const fail = (m) => { say("FAIL: " + m); say("VERDICT: FAIL"); };
 
 addEventListener("error", (e) => fail("uncaught: " + (e.message || e.error)));
 addEventListener("unhandledrejection", (e) => fail("rejected: " + e.reason));
+
+/* Mirror the game's console into the page: a game that logs a diagnostic
+ * (a shader log, a GL error) should not have it vanish into a headless
+ * browser's devtools. */
+const realLog = console.log.bind(console);
+console.log = (...args) => { say("  [game] " + args.join(" ")); realLog(...args); };
 
 const canvas = document.getElementById("game-canvas");
 
@@ -84,13 +92,29 @@ Promise.all(preload)
     /* Did anything actually get drawn? A game that throws inside its frame
      * callback leaves the canvas blank, and a blank canvas is the failure
      * this whole harness exists to catch. */
-    const ctx = canvas.getContext("2d");
-    const px = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    /* A canvas has ONE context type for its lifetime, so a WebGL game's
+     * canvas returns null from getContext("2d"). Read through whichever
+     * context the game actually took. */
+    let px;
+    const ctx2d = canvas.getContext("2d");
+    if (ctx2d !== null) {
+      px = ctx2d.getImageData(0, 0, canvas.width, canvas.height).data;
+    } else {
+      /* The game's own context, not a fresh request: asking again with
+       * different options returns null, and a second handle would not see
+       * the game's drawing buffer. */
+      const gl = canvas.__sgGL || canvas.getContext("webgl2");
+      if (gl === null) { fail("canvas has neither a 2d nor a webgl2 context"); return; }
+      px = new Uint8Array(canvas.width * canvas.height * 4);
+      gl.readPixels(0, 0, canvas.width, canvas.height,
+                    gl.RGBA, gl.UNSIGNED_BYTE, px);
+    }
     const colors = new Set();
     for (let i = 0; i < px.length; i += 4) {
       colors.add(px[i] + "," + px[i + 1] + "," + px[i + 2]);
     }
     say("colors: " + colors.size + " distinct");
+
 
     if (colors.size < 2) {
       fail("canvas is blank after 120 frames");
