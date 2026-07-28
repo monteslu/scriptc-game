@@ -423,7 +423,9 @@ window.addEventListener("load", () => {
   }
 
   function draw(): void {
-    ctx.clear("#0d1117");
+    // The spec has no ctx.clear(): fill the canvas instead.
+    ctx.fillStyle = "#0d1117";
+    ctx.fillRect(0, 0, W, H);
 
     ctx.strokeStyle = "#161d27";
     ctx.lineWidth = 1;
@@ -460,7 +462,7 @@ window.addEventListener("load", () => {
         if (coin.complete) {
           // One strip, four 16px frames: the source rect picks the frame.
           const frameIdx = Math.floor(coinAnimMs / 90) % 4;
-          ctx.drawImageRect(coin, frameIdx * 16, 0, 16, 16,
+          ctx.drawImage(coin, frameIdx * 16, 0, 16, 16,
                             f.x - f.size / 2, f.y - f.size / 2, f.size, f.size);
         } else {
           ctx.fillStyle = "#ffd257";
@@ -469,7 +471,7 @@ window.addEventListener("load", () => {
           ctx.fill("nonzero");
         }
       } else if (hazard.complete) {
-        ctx.drawImageScaled(hazard, f.x - f.size / 2, f.y - f.size / 2,
+        ctx.drawImage(hazard, f.x - f.size / 2, f.y - f.size / 2,
                             f.size, f.size);
       } else {
         ctx.fillStyle = "#e5484d";
@@ -487,7 +489,7 @@ window.addEventListener("load", () => {
         ctx.save();
         ctx.translate(px, py);
         ctx.rotate(heading + Math.PI / 2);   // the art faces up
-        ctx.drawImageScaled(player, -size / 2, -size / 2, size, size);
+        ctx.drawImage(player, -size / 2, -size / 2, size, size);
         ctx.restore();
         if (dashMs > 0) {
           ctx.globalAlpha = 0.45;

@@ -28,3 +28,14 @@ export function drainTasks(): void {
 }
 
 export function hasTasks(): boolean { return tasks.length > 0; }
+
+
+/* Whether the frame is presented by GL rather than by the 2D blit.
+ *
+ * Lives here, not in runtime.ts, for the same reason the task queue does:
+ * web/globals.ts sets it when a game takes a WebGL2 context, and
+ * runtime.ts reads it, so a shared leaf module is what keeps that from
+ * being a circular import (SC1016). */
+let glPresent = false;
+export function setGLPresent(): void { glPresent = true; }
+export function usesGLPresent(): boolean { return glPresent; }

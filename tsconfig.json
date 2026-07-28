@@ -1,0 +1,68 @@
+{
+  /* Editor feedback that matches the compiler.
+   *
+   * scriptc is the authority: `scriptc build` is what decides whether a
+   * program is valid, and its SC-coded diagnostics carry rewrite hints no
+   * editor can reproduce. This file exists so an editor agrees with it
+   * about the BASICS (types, strictness, the standard library surface)
+   * instead of underlining correct code or greenlighting code that will
+   * fail to compile seven seconds later.
+   *
+   * Deliberately NOT an eslint setup. The fences that actually bite here
+   * are scriptc-specific -- SC1090 (compound assignment through an indexed
+   * receiver, calling a function-typed field), SC2001 (function unions),
+   * SC1016 (circular imports), SC2020 (a stdlib method with no lowering) --
+   * and no generic lint rule models any of them. A preset would add a Node
+   * dependency tree to a project that has none, to catch almost nothing the
+   * compiler does not already catch better. See docs/DIALECT.md.
+   */
+  "compilerOptions": {
+    /* Matches scriptc's own tsconfig.base.json. "lib" is ES2023 with NO
+     * "DOM": programs compile against the real standard library, and the
+     * browser surface comes from web/globals.ts rather than from ambient
+     * DOM types. Adding "DOM" here would be actively misleading: the editor
+     * would resolve `document` and `fetch` as globals that do not exist in
+     * a compiled program, which is the exact confusion this project is
+     * built to avoid. */
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+
+    "strict": true,
+    "noImplicitAny": true,
+    "strictNullChecks": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "useUnknownInCatchVariables": true,
+
+    /* Type-check only. scriptc emits the binary; tsc must never write
+     * JavaScript next to the sources. */
+    "noEmit": true,
+
+    /* Sources import each other with .js specifiers (ES module semantics)
+     * while the files on disk are .ts. */
+    "allowImportingTsExtensions": true,
+
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+
+    /* scriptc's own ambient declarations, so the editor sees exactly the
+     * surface the compiler does: `comptime`, setTimeout, and the Node-ish
+     * fallbacks (console, process, node:fs, Buffer) typed to the SUPPORTED
+     * subset rather than to all of @types/node. Without these, tsc reports
+     * hundreds of phantom errors on code that compiles cleanly.
+     *
+     * Path assumes a sibling scriptc checkout, the same default build.sh
+     * uses. Point it elsewhere if yours lives somewhere else; nothing in
+     * the build reads this file. */
+    "types": [],
+    "typeRoots": []
+  },
+  "files": [
+    "../scriptc/packages/compiler/ambient/scriptc.d.ts",
+    "../scriptc/packages/compiler/ambient/scriptc-node-fallback.d.ts"
+  ],
+  "include": ["web/**/*.ts", "engine/**/*.ts", "host/**/*.ts", "examples/**/*.ts", "test/**/*.ts"],
+  "exclude": ["node_modules", "build", "vendor", "**/.sg-build/**", "spike"]
+}

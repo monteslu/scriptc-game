@@ -53,7 +53,7 @@ function main(): void {
     // Every scene starts from opaque white, matching the goldens: a
     // transparent backdrop would make antialiased edges compare against
     // undefined colour, and PNG alpha would hide real differences.
-    ctx.clear("#ffffff");
+    ctx.__clearToColor("#ffffff");
     drawScene(name, ctx, img);
 
     const path = `${outDir}/${name}.png`;

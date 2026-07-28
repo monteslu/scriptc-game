@@ -12,7 +12,9 @@ window.addEventListener("load", () => {
   let x = 0;
 
   function frame(time: number): void {
-    ctx.clear("#101820");
+    // The spec has no ctx.clear(): fill the canvas instead.
+    ctx.fillStyle = "#101820";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
     x = (x + 3) % canvas.width;
     ctx.fillStyle = "#58a6ff";
     ctx.fillRect(x, canvas.height / 2 - 20, 40, 40);

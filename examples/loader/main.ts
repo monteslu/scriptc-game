@@ -100,7 +100,9 @@ window.addEventListener("load", () => {
   }
 
   function render(alpha: number): void {
-    ctx.clear("#0d1117");
+    // The spec has no ctx.clear(): fill the canvas instead.
+    ctx.fillStyle = "#0d1117";
+    ctx.fillRect(0, 0, W, H);
 
     if (loading) {
       const pct = loader.getPercentComplete();
@@ -129,9 +131,7 @@ window.addEventListener("load", () => {
       ctx.translate(s.x, s.y);
       // alpha smooths rotation between fixed steps.
       ctx.rotate(s.angle + s.speed * alpha * 16);
-      // drawImageScaled, not drawImage(img,x,y,w,h): the dialect has no
-      // overloads, so each drawImage arity is its own method name.
-      ctx.drawImageScaled(img, -s.size / 2, -s.size / 2, s.size, s.size);
+      ctx.drawImage(img, -s.size / 2, -s.size / 2, s.size, s.size);
       ctx.restore();
     }
 

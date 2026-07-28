@@ -446,12 +446,12 @@ export function drawScene(name: string, ctx: Context2D, img: Image): void {
     ctx.drawImage(img, 10, 10);
     ctx.drawImage(img, 120, 70);
   } else if (name === "image-scaled") {
-    ctx.drawImageScaled(img, 10, 10, 128, 96);
-    ctx.drawImageScaled(img, 150, 100, 32, 24);
+    ctx.drawImage(img, 10, 10, 128, 96);
+    ctx.drawImage(img, 150, 100, 32, 24);
   } else if (name === "image-subrect") {
     // Top-left red quadrant, blown up; then the green quadrant at 1:1.
-    ctx.drawImageRect(img, 0, 0, 32, 32, 10, 10, 96, 96);
-    ctx.drawImageRect(img, 32, 0, 32, 32, 120, 10, 32, 32);
+    ctx.drawImage(img, 0, 0, 32, 32, 10, 10, 96, 96);
+    ctx.drawImage(img, 32, 0, 32, 32, 120, 10, 32, 32);
   } else if (name === "image-alpha") {
     ctx.fillStyle = "#404040";
     ctx.fillRect(0, 0, 200, 150);
@@ -461,9 +461,9 @@ export function drawScene(name: string, ctx: Context2D, img: Image): void {
     ctx.drawImage(img, 110, 60);
   } else if (name === "image-smoothing-off") {
     ctx.imageSmoothingEnabled = false;
-    ctx.drawImageRect(img, 0, 0, 8, 8, 10, 10, 80, 80);
+    ctx.drawImage(img, 0, 0, 8, 8, 10, 10, 80, 80);
     ctx.imageSmoothingEnabled = true;
-    ctx.drawImageRect(img, 0, 0, 8, 8, 110, 10, 80, 80);
+    ctx.drawImage(img, 0, 0, 8, 8, 110, 10, 80, 80);
   } else if (name === "pattern-repeat") {
     const p = createPattern(img, "repeat");
     ctx.setFillPattern(p);
@@ -495,7 +495,7 @@ export function drawScene(name: string, ctx: Context2D, img: Image): void {
     // Compose into an offscreen surface, then blit it twice.
     const off = createCanvas(80, 60);
     if (off !== null) {
-      off.clear("#ffffff");
+      off.__clearToColor("#ffffff");
       off.fillStyle = "#cc4422";
       off.fillRect(5, 5, 70, 50);
       off.fillStyle = "#2244cc";

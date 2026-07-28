@@ -77,7 +77,46 @@ real URLs rather than filenames.
 | **Engine** (optional) | Fixed-step loop with interpolation, and an asset loader with progress. Pure web API underneath; skippable |
 | **Build** | One command from a game directory to a self-contained native binary |
 
-Not yet: WebGL and 3D, a cross-compile matrix, and CI.
+Not yet: WebGL and 3D.
+
+| Target | Runner | Notes |
+| --- | --- | --- |
+| linux-x86_64 | ubuntu-24.04 | |
+| linux-aarch64 | ubuntu-24.04-arm | |
+| macos-aarch64 | macos-14 | frameworks via Mach-O linker options |
+| macos-x86_64 | macos-15-intel | |
+
+Each target builds on its own runner rather than cross-compiling. scriptc
+can cross-compile, but Skia, SDL2 and the audio graph are per-platform
+binaries, so only a native runner links a real result.
+
+Windows is not a target yet, and the blocker is a standoff between two
+upstreams rather than anything here. scriptc's Windows support is built for
+mingw: 16 of its 54 runtime translation units include POSIX headers
+(`dirent.h`, `unistd.h`, `poll.h`) unguarded, which mingw-w64 provides and
+MSVC does not. Skia's GN goes the other way, routing every `target_os="win"`
+build to its `msvc` toolchain, so build-libcanvas can only publish an MSVC
+Skia whose objects import a CRT mingw cannot supply. Verified locally: the
+gnu triple compiles scriptc programs cleanly and cannot link Skia; the MSVC
+triple links Skia and cannot compile the runtime.
+
+Everything on this side is done: `fetch-archives.sh` vendors the Windows
+archives (204 skiac symbols) and `build-shim.sh` merges them, both checked
+against the real release tarball. Two of the MSVC-side compiler gaps are
+already fixed on branches (see the table above). The likely path to Windows
+is a wasmcart build rather than a native one, which avoids the toolchain
+question entirely.
+
+**Android is blocked upstream**: scriptc has no Android support, and its
+cross path goes through `zig cc`, which cannot be pointed at an NDK
+sysroot. This side is ready, since `fetch-archives.sh` vendors the target
+today.
+
+macOS needs Skia's platform frameworks (CoreText for fonts), which link with
+`-framework Foo` while scriptc's manifest only emits `-l<name>`.
+`shim/sg_macos_frameworks.c` carries them as Mach-O `LC_LINKER_OPTION` load
+commands inside `libsggfx.a`, so the linker finds them without the manifest
+knowing. Same mechanism as Rust's `#[link(kind = "framework")]`.
 
 ### Verified
 
@@ -98,6 +137,14 @@ Assets shared by more than one example live once in `examples/shared/` and are
 symlinked into each game's `public/`. Windows clones need `core.symlinks`
 enabled; see [examples/shared/README.md](examples/shared/README.md).
 
+Eight examples: `minimal` (no engine, no assets), `bounce` (the engine's
+fixed-step loop), `inputs` (keyboard, mouse and gamepad state), `loader`
+(the optional asset loader with a progress bar), `dodge` (the reference
+game), `paddle` (swept collision and a CPU opponent), `scroller` (tilemap
+platformer with a scrolling camera) and `synth` (a playable Web Audio
+graph). Every one of them also runs in a browser, checked by
+`./browser/test.sh`.
+
 `./scripts/build.sh examples/dodge` builds the reference game: sprites, looping
 music, sound effects, and gamepad input with rumble. `examples/loader` is the
 same stack driven through the optional engine, with a loading screen.
@@ -111,6 +158,17 @@ pins them). Each has a default location and an environment override.
 | Dependency | Default location | Override |
 | --- | --- | --- |
 | [scriptc](https://github.com/vercel-labs/scriptc) | `../scriptc/packages/cli/dist/main.js` (a sibling checkout) | `SCRIPTC_BIN` |
+
+Build from the `game-integration` branch of
+[monteslu/scriptc](https://github.com/monteslu/scriptc), which carries two
+compiler fixes this project needs. Each lives on its own topic branch, kept
+separate and self-contained so any one can go upstream on its own:
+
+| Branch | What it fixes |
+| --- | --- |
+| `fix/ffi-const-binding` | An FFI-bound call is silently dropped when its result initializes a never-reassigned local: the build succeeds and the program dies at load ([vercel-labs/scriptc#21](https://github.com/vercel-labs/scriptc/issues/21)) |
+| `fix/msvc-ssize-t` | `scr_runtime.h` declares `ssize_t` function pointers, which MSVC does not define, so any Windows build through that header fails to parse |
+| `fix/msvc-posix-time` | Five runtime TUs call `clock_gettime` / `nanosleep`; mingw-w64 ships both, MSVC ships neither, so an `x86_64-windows-msvc` build does not compile |
 | [build-libcanvas](https://github.com/monteslu/build-libcanvas) output | `../build-libcanvas/out/<target>` | `LIBCANVAS_OUT` |
 | [webaudio-node](https://github.com/monteslu/webaudio-node) source | `../webaudio-node` | `WEBAUDIO_SRC` |
 
@@ -120,8 +178,15 @@ Run the two vendor steps once, then build:
 ./scripts/fetch-archives.sh        # vendor/<target>/libskiac.a  + headers
 ./scripts/build-webaudio.sh        # vendor/<target>/libwebaudio.a
 ./scripts/build.sh examples/dodge  # -> build/dodge
+./scripts/dev.sh examples/dodge    # rebuild + relaunch on every save
+./scripts/typecheck.sh             # tsc only, ~0.4s
 ./scripts/test.sh                  # every suite, headless
 ```
+
+`dev.sh` watches the game plus `web/`, `engine/`, `host/` and `shim/`. A
+game-code change is about 7 seconds end to end, since the C++ shim is only
+recompiled when it actually changes. Install `inotify-tools` for instant
+change detection; without it the watcher polls once a second.
 
 Skipping either vendor step fails at link time with a missing-archive error
 (`ar: ... libskiac.a: No such file or directory`, or an FFI manifest complaint
@@ -133,6 +198,23 @@ MIT. See [LICENSE](LICENSE).
 
 Every dependency below is permissively licensed and nothing linked into the
 output binary imposes a copyleft obligation.
+
+## What this project needs from the compiler
+
+scriptc is doing the hard part, and these are the places a game-shaped
+workload pushes past what it currently offers. Listed plainly because
+they are useful signal, not complaints: two have fixes on branches above,
+and the rest are worked around here.
+
+| Need | Status |
+| --- | --- |
+| FFI call not dropped when its result initializes a `const` | fixed on `fix/ffi-const-binding`, filed as [#21](https://github.com/vercel-labs/scriptc/issues/21) |
+| `ssize_t` on MSVC | fixed on `fix/msvc-ssize-t` |
+| `clock_gettime` / `nanosleep` on MSVC | fixed on `fix/msvc-posix-time`. Needed because Windows here must use the **MSVC** triple: Skia is MSVC-built and mingw cannot supply the CRT its objects import |
+| An **`f32`** FFI class | worked around. `f64` is the only float class, so every `float`-taking C function needs a narrowing wrapper. Free at runtime (one `cvtsd2ss`, measured as noise) but pure code volume: the GLES3 surface alone has 18 such entry points. See [docs/FFI-SHIM.md](docs/FFI-SHIM.md) |
+| **Ambient globals** (a value, not just `declare function`) | worked around. Games import their browser globals from one module instead of getting them ambiently; that import line is the single thing separating this source from literal browser code. See [docs/WRITING-GAMES.md](docs/WRITING-GAMES.md) |
+| **Function overloads** in the dialect | worked around. `drawImage` handles its three spec arities with a rest parameter; `addEventListener` cannot, so `KeyboardEvent` and `MouseEvent` are one record. See [docs/WRITING-GAMES.md](docs/WRITING-GAMES.md) |
+| A **framework** spelling in `system_libraries` | worked around. Entries become `-l<name>`, so macOS frameworks ride in as Mach-O `LC_LINKER_OPTION` load commands compiled into the archive |
 
 ## Credits
 

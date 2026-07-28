@@ -7,20 +7,38 @@
  * has only `number`, so the manifest is the ABI authority and the C source
  * is the only truth about widths.
  */
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { execFileSync } from "node:child_process";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 /** camelCase FFI name -> snake_case C symbol (sgCanvasDrawRect -> sg_canvas_draw_rect) */
 function symbolOf(name) {
+  /* Raw GL entry points ARE their own symbol: glClear is exported by
+   * libGLESv2 as glClear, not gl_clear. Only the sg* shim names follow the
+   * camelCase -> snake_case convention. */
+  if (/^gl[A-Z]/.test(name)) return name;
   return name.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase();
 }
 
+/* GL's typedefs, which the GL shim signatures use directly rather than
+ * spelling out uint32_t. Same widths, different names. */
+const GL_TYPES = {
+  GLenum: "uint32_t", GLuint: "uint32_t", GLbitfield: "uint32_t",
+  GLint: "int32_t", GLsizei: "int32_t", GLfixed: "int32_t",
+  GLboolean: "uint8_t", GLubyte: "uint8_t",
+  /* 64-bit GL types cross as f64: exact to 2^53, which covers every buffer
+   * size and offset a game will produce. */
+  GLintptr: "double", GLsizeiptr: "double",
+  GLint64: "double", GLuint64: "double",
+};
+
 /** Map a C type to its format-1 ABI class. */
 function abiClass(cType, isReturn) {
-  const t = cType.trim().replace(/\s+/g, " ");
+  let t = cType.trim().replace(/\s+/g, " ");
+  if (t in GL_TYPES) t = GL_TYPES[t];
   if (t === "void") return isReturn ? "void" : null;
   if (t === "double") return "f64";
   if (t === "uint32_t") return "u32";
@@ -60,12 +78,36 @@ const shimSrc = [
   "shim/sg_input.cpp",
   "shim/sg_audio.cpp",
   "shim/sg_audio_decode.cpp",
+  /* The GL tier. Generated and hand-written halves both export C symbols
+   * the WebGL layer declares. */
+  "shim/sg_gl_gen.cpp",
+  "shim/sg_gl_extra.cpp",
 ]
+  .filter((f) => existsSync(join(root, f)))
   .map((f) => readFileSync(join(root, f), "utf8"))
   .join("\n");
 
 const cSigs = new Map();
-const sigRe = /extern\s+"C"\s+([A-Za-z_][A-Za-z0-9_ ]*?)\s+(sg_[a-z0-9_]+)\s*\(([^)]*)\)/g;
+
+/* Raw GL entry points live in libGLESv2, not in shim/*.cpp, so their
+ * signatures cannot be parsed from our sources. gen-gl.js writes them to a
+ * sidecar when it parses the GLES3 header; without it, a program using the
+ * GL tier reports every one as "no C signature found". */
+const glSigPath = join(root, "codegen/gl-signatures.json");
+if (existsSync(glSigPath)) {
+  const glSigs = JSON.parse(readFileSync(glSigPath, "utf8"));
+  for (const [symbol, sig] of Object.entries(glSigs)) cSigs.set(symbol, sig);
+}
+/* Two spellings, both used in the tree: `extern "C" TYPE sg_foo(...)` per
+ * function (the Skia shims) and one `extern "C" { ... }` block wrapping many
+ * (the GL shim). Matching only the first silently dropped every symbol in a
+ * block, which surfaces much later as "sg_foo is not defined" at RUNTIME,
+ * so both are matched here.
+ *
+ * The block form is found by taking any top-level definition of an sg_
+ * symbol; a name is only reachable from TS if it is extern "C" anyway, and
+ * a static helper would not be declared on the TS side. */
+const sigRe = /(?:extern\s+"C"\s+|^)([A-Za-z_][A-Za-z0-9_ ]*?)\s+(sg_[a-z0-9_]+)\s*\(([^)]*)\)/gm;
 for (let m; (m = sigRe.exec(shimSrc)); ) {
   const [, ret, symbol, params] = m;
   const paramList = params
@@ -122,7 +164,11 @@ function reachableFiles(start) {
 }
 
 const tsSrc = declFiles.map((f) => readFileSync(f, "utf8")).join("\n");
-const declRe = /^declare function (sg[A-Za-z0-9]*)\s*\(([^)]*)\)\s*:\s*([A-Za-z]+);/gm;
+/* camelCase (sgCanvasClear) is the established spelling and maps to its C
+ * symbol through symbolOf(). The GL tier declares raw GL entry points too
+ * (glClear, glDrawArrays), whose symbol IS the declared name. Both are
+ * matched; symbolOf leaves an all-lowercase name alone. */
+const declRe = /^declare function ((?:sg|gl)[A-Za-z0-9_]*)\s*\(([^)]*)\)\s*:\s*([A-Za-z]+);/gm;
 
 const functions = [];
 const problems = [];
@@ -181,6 +227,113 @@ if (problems.length > 0) {
 const target = process.argv[2] ?? "linux-x86_64";
 const vendor = `../vendor/${target}`;
 
+/* What Skia and SDL need from the SYSTEM, per platform.
+ *
+ * Skia links against platform graphics and text stacks rather than bundling
+ * them, so this list is genuinely different per OS: fontconfig/freetype and
+ * GL on Linux, the equivalent frameworks on macOS, and the Win32 GDI/user
+ * libraries on Windows. Getting it wrong surfaces as thousands of undefined
+ * symbols at link time, not as a clean error. */
+function systemLibraries(t) {
+  if (t.startsWith("macos")) {
+    /* Frameworks are NOT here, and cannot be: system_libraries is validated
+     * against /^[A-Za-z0-9_+.-]+$/ and every entry becomes -l<name>, so
+     * "-framework CoreText" has no spelling in this manifest.
+     *
+     * shim/sg_core.cpp carries them instead, as Mach-O LC_LINKER_OPTION
+     * load commands compiled into libsggfx.a. The linker reads them
+     * straight out of the archive, which is the same mechanism Rust's
+     * #[link(kind = "framework")] uses. Verified working on a real Mac:
+     * the linked binary carries CoreText/CoreGraphics/CoreFoundation with
+     * nothing on the command line.
+     *
+     * SDL2 is NOT here either: -l<name> only searches the toolchain's
+     * default paths, and the modern ld (Xcode 15+) searches neither
+     * /opt/homebrew/lib (arm64 Homebrew) nor /usr/local/lib (intel
+     * Homebrew), so `-lSDL2` fails with "ld: library 'SDL2' not found".
+     * The dylib joins `libraries` by full path instead (sdl2DylibPath). */
+    return [
+      "m", "pthread",
+      // libc++ is the system default; c++abi lives inside it on Darwin.
+      "c++",
+    ];
+  }
+  if (t.startsWith("windows")) {
+    /* SDL2 is NOT here: the VC release is unpacked to a workspace path the
+     * linker does not search, so -lSDL2 fails the same way it does on
+     * macOS. SDL2.lib joins `libraries` by full path instead
+     * (windowsSdl2Lib), via SDL2_LIB from the CI step that unpacks it. */
+    /* Skia on Windows uses GDI for fonts and opengl32 for the GL surface;
+     * the rest are the usual Win32 support libraries its codecs and
+     * threading pull in. No libc++: the MSVC toolchain supplies its own. */
+    return [
+      "gdi32", "user32", "opengl32", "ole32", "oleaut32", "uuid",
+      "advapi32", "shell32", "winmm", "imm32", "setupapi", "version",
+    ];
+  }
+  if (t.startsWith("android")) {
+    /* Android is GLES, not desktop GL (SKIA_GL_STANDARD is "gles" in the
+     * build-libcanvas output), and log is what Skia's own logging needs.
+     * There is no fontconfig: Skia falls back to its bundled FreeType. */
+    return [
+      "SDL2", "m",
+      "c++", "c++abi",
+      "GLESv3", "EGL", "log", "android",
+    ];
+  }
+  // Linux (x86_64 and aarch64).
+  return [
+    "SDL2", "m", "pthread", "dl",
+    /* libc++, NOT libstdc++: build-libcanvas compiles Skia against LLVM's
+     * libc++ (every symbol is `std::__1::`), so linking libstdc++ leaves
+     * thousands of undefined std:: references. shim/*.cpp is compiled
+     * -stdlib=libc++ for the same reason. */
+    "c++", "c++abi",
+    "GL", "fontconfig", "freetype",
+  ];
+}
+
+/* macOS SDL2, linked by full path because -lSDL2 cannot find it (see the
+ * macos branch of systemLibraries above). The prefix is resolved through
+ * pkg-config at generation time rather than hardcoded: Homebrew installs
+ * under /opt/homebrew on arm64 and /usr/local on intel, and both CI lanes
+ * `brew install sdl2 pkg-config`. A dylib's position in the link line does
+ * not matter (unlike archives, it resolves symbols lazily), so it rides at
+ * the end of `libraries`. */
+function sdl2DylibPath() {
+  let libdir;
+  try {
+    libdir = execFileSync("pkg-config", ["--variable=libdir", "sdl2"], {
+      encoding: "utf8",
+    }).trim();
+  } catch (err) {
+    throw new Error(
+      `gen-ffi: pkg-config could not locate sdl2 (brew install sdl2 pkg-config): ${err.message}`,
+    );
+  }
+  const dylib = join(libdir, "libSDL2.dylib");
+  if (!existsSync(dylib)) {
+    throw new Error(`gen-ffi: no libSDL2.dylib in '${libdir}' (brew install sdl2)`);
+  }
+  return dylib;
+}
+
+/* Windows SDL2, linked by full path for the same reason macOS is: the
+ * import library sits wherever CI unpacked the VC release, which is not a
+ * default search path. SDL2_LIB is set by the workflow step that unpacks
+ * it. */
+function windowsSdl2Lib() {
+  const dir = process.env.SDL2_LIB;
+  if (!dir) {
+    throw new Error("gen-ffi: SDL2_LIB is unset (the Windows lane unpacks the SDL2 VC release)");
+  }
+  const lib = join(dir, "SDL2.lib");
+  if (!existsSync(lib)) {
+    throw new Error(`gen-ffi: no SDL2.lib in '${dir}'`);
+  }
+  return lib;
+}
+
 /* Skia ships ~28 MUTUALLY dependent archives (libsvg needs SkColorMatrix
  * and SkParse from libskia; libskia pulls codec/image archives back), and
  * GNU ld resolves each static archive exactly once, left to right. The
@@ -190,6 +343,10 @@ const vendor = `../vendor/${target}`;
  * shim objects into ONE archive: within a single archive the linker
  * iterates to a fixpoint, so mutual dependencies resolve regardless of
  * member order. */
+/* Does this program reach the GL bindings? gen-ffi already walks the entry
+ * file's import graph, so the answer is just whether gl-ffi.ts is in it. */
+const usesGl = declFiles.some((f) => f.endsWith("gl-ffi.ts"));
+
 const manifest = {
   ffi_format: 1,
   functions,
@@ -198,16 +355,19 @@ const manifest = {
    * own archive means a webaudio bump does not force the 30-second Skia merge.
    * Order matters to the linker, and sggfx (which calls into the engine) must
    * come first. */
-  libraries: [`${vendor}/libsggfx.a`, `${vendor}/libwebaudio.a`],
-  /* libc++, NOT libstdc++: build-libcanvas compiles Skia against LLVM's
-   * libc++ (every symbol is `std::__1::`), so linking libstdc++ leaves
-   * thousands of undefined std:: references. c++abi and unwind follow it.
-   * shim/*.cpp is compiled -stdlib=libc++ for the same reason. */
-  system_libraries: [
-    "SDL2", "m", "pthread", "dl",
-    "c++", "c++abi",
-    "GL", "fontconfig", "freetype",
+  /* The GL tier's archive joins only when a program actually imports the
+   * WebGL layer: a 2D game should not link libGLESv2. Detected from the
+   * declaration set, which is already the reachable-from-entry union. */
+  libraries: [
+    ...(usesGl ? [`${vendor}/libsggl.a`] : []),
+    `${vendor}/libsggfx.a`,
+    `${vendor}/libwebaudio.a`,
+    ...(target.startsWith("macos") ? [sdl2DylibPath()] : []),
+    ...(target.startsWith("windows") ? [windowsSdl2Lib()] : []),
   ],
+  system_libraries: usesGl
+    ? [...systemLibraries(target), "GLESv2", "EGL"]
+    : systemLibraries(target),
 };
 
 mkdirSync(join(root, "ffi"), { recursive: true });

@@ -1,0 +1,261 @@
+name: ci
+
+# Build every example and run the full suite on each target platform.
+#
+# Each target builds on its OWN runner rather than cross-compiling. scriptc
+# can cross-compile via SCRIPTC_CC=zigcc, but the FFI archives cannot: Skia,
+# SDL2 and the webaudio graph are per-platform binaries, and Skia in
+# particular comes prebuilt from build-libcanvas. A native runner per target
+# is the only way the linked result is real.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Runs on the SAME ref supersede each other, but a run must be allowed to
+# finish once it starts reporting: cancelling mid-flight leaves lanes in a
+# "cancelled" state that reads as a failure and hides which target actually
+# broke.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false          # one platform's breakage must not hide another's
+      matrix:
+        include:
+          - target: linux-x86_64
+            runner: ubuntu-24.04
+          - target: linux-aarch64
+            runner: ubuntu-24.04-arm
+          - target: macos-aarch64
+            runner: macos-14
+          - target: macos-x86_64
+            runner: macos-15-intel
+          # windows-x86_64 is OUT, and the reason is a genuine standoff
+          # between two upstreams rather than anything in this repo.
+          #
+          # scriptc's Windows support is written for mingw: 27 unguarded
+          # POSIX includes across the runtime (dirent.h, unistd.h, fcntl.h,
+          # signal.h...), which mingw-w64 provides and MSVC does not. The
+          # x86_64-windows-gnu triple builds scriptc programs cleanly,
+          # verified locally.
+          #
+          # Skia's GN goes the other way: gn/BUILDCONFIG.gn routes EVERY
+          # target_os="win" build to the msvc toolchain (the only others
+          # are gcc_like and wasm), so build-libcanvas can only publish an
+          # MSVC Skia, whose objects import the MSVC CRT that mingw cannot
+          # supply.
+          #
+          # So gnu compiles but cannot link Skia, and msvc links Skia but
+          # cannot compile the runtime. Closing it needs one of: a mingw
+          # toolchain in Skia's GN, or MSVC ports of those 27 POSIX include
+          # sites. Both are upstream, and neither is a shim.
+          #
+          # Everything on THIS side is done and verified against the real
+          # release tarball: fetch-archives.sh vendors the Windows archives
+          # (204 skiac symbols) and build-shim.sh merges them.
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # scriptc is the compiler; it is not published to npm, so it is built
+      # from the pinned fork named in versions.json.
+      - name: Read pins
+        id: pins
+        shell: bash
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          v = json.load(open("versions.json"))
+          print(f"scriptc_repo={v['scriptc']['fork']}")
+          print(f"scriptc_branch={v['scriptc']['branch']}")
+          print(f"webaudio_repo={v['webaudio']['source']}")
+          print(f"webaudio_commit={v['webaudio']['commit']}")
+          PY
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Checkout scriptc (the compiler)
+        uses: actions/checkout@v7
+        with:
+          repository: monteslu/scriptc
+          ref: ${{ steps.pins.outputs.scriptc_branch }}
+          path: scriptc
+
+      # scriptc is a pnpm workspace (pnpm-workspace.yaml, pnpm-lock.yaml).
+      # `npm ci` fails outright: there is no package-lock.json to install from.
+      - name: Build scriptc
+        working-directory: scriptc
+        shell: bash
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+          pnpm run build
+
+      - name: Checkout webaudio-node (the audio graph source)
+        uses: actions/checkout@v7
+        with:
+          repository: monteslu/webaudio-node
+          ref: ${{ steps.pins.outputs.webaudio_commit }}
+          path: webaudio-node
+
+      # ---- platform dependencies ----
+
+      - name: Linux deps
+        if: startsWith(matrix.target, 'linux')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            clang-18 libc++-18-dev libc++abi-18-dev libsdl2-dev \
+            libfontconfig1-dev libfreetype6-dev pkg-config \
+            firefox xvfb ffmpeg \
+            libgles2-mesa-dev libegl1-mesa-dev libgl1-mesa-dri
+          # scriptc emits LLVM IR with opaque pointers (`ptr`), which needs
+          # clang 15 or newer; the distro default is older on some images.
+          sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-18 100
+          sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-18 100
+          clang --version
+
+      # scriptc cross-compiles through zig; its own CI uses this action.
+      - uses: vercel-labs/setup-zig@v1
+        if: matrix.scriptc_cc == 'zigcc'
+        with:
+          version: 0.16.0
+
+      - name: Windows deps
+        if: startsWith(matrix.target, 'windows')
+        shell: bash
+        run: |
+          choco install -y ffmpeg
+          # SDL2 development libraries. The VC release ships the import
+          # library and headers, which is all the shim and the link need.
+          curl -fsSL -o /tmp/sdl.zip \
+            https://github.com/libsdl-org/SDL/releases/download/release-2.32.10/SDL2-devel-2.32.10-VC.zip
+          unzip -q /tmp/sdl.zip -d "$GITHUB_WORKSPACE/sdl2"
+          SDLDIR="$(find "$GITHUB_WORKSPACE/sdl2" -maxdepth 1 -type d -name 'SDL2-*' | head -1)"
+          echo "SDL2_INCLUDE=$SDLDIR/include" >> "$GITHUB_ENV"
+          echo "SDL2_LIB=$SDLDIR/lib/x64" >> "$GITHUB_ENV"
+
+      - name: macOS deps
+        if: startsWith(matrix.target, 'macos')
+        env:
+          # The runner image preinstalls aws/tap, which recent Homebrew
+          # refuses to read without an explicit trust grant, so every brew
+          # command prints a nine-line warning about a tap this project
+          # never uses. Nothing here installs from a third-party tap.
+          HOMEBREW_NO_REQUIRE_TAP_TRUST: 1
+          HOMEBREW_NO_AUTO_UPDATE: 1
+          HOMEBREW_NO_INSTALL_CLEANUP: 1
+        run: |
+          # webp: Homebrew's ffmpeg 8 has no webp encoder, so the image
+          # fixtures use cwebp for that one format (make-decode-fixtures.sh).
+          brew install sdl2 pkg-config ffmpeg webp
+          brew install llvm || true
+
+      - name: Fetch Skia archives
+        shell: bash
+        run: ./scripts/fetch-archives.sh ${{ matrix.target }}
+
+      - name: Build the webaudio graph
+        shell: bash
+        env:
+          WEBAUDIO_SRC: ${{ github.workspace }}/webaudio-node
+        run: ./scripts/build-webaudio.sh ${{ matrix.target }}
+
+      # WEBAUDIO_SRC is exported for every later step, not just the one
+      # above: shim/sg_audio_decode.cpp includes dr_mp3.h and friends from
+      # the same vendor directory, so build.sh needs it too.
+      - name: Export WEBAUDIO_SRC
+        shell: bash
+        run: echo "WEBAUDIO_SRC=${{ github.workspace }}/webaudio-node" >> "$GITHUB_ENV"
+
+      # ---- build + test ----
+
+      - name: Build every example
+        shell: bash
+        env:
+          SCRIPTC_BIN: ${{ github.workspace }}/scriptc/packages/cli/dist/main.js
+          SCRIPTC_CC: ${{ matrix.scriptc_cc }}
+          SCRIPTC_TARGET: ${{ matrix.scriptc_target }}
+        run: |
+          for g in examples/*/; do
+            [ -f "$g/main.ts" ] || continue
+            echo "== $g"
+            ./scripts/build.sh "$g" "${{ matrix.target }}"
+          done
+
+      # The WebGL2 parity gate needs the Node reference stack. Linux only:
+      # it renders through surfaceless EGL with the software rasteriser,
+      # which is the lane native-gles's own CI uses.
+      - name: Install the WebGL reference
+        if: startsWith(matrix.target, 'linux')
+        shell: bash
+        run: |
+          git clone --depth 1 https://github.com/monteslu/webgl-node "$GITHUB_WORKSPACE/webgl-node"
+          cd test/webgl-parity
+          # The committed package.json points at a SIBLING checkout, which is
+          # the local layout; CI clones inside the workspace instead. Install
+          # from the real path rather than editing the committed file.
+          npm install --no-audit --no-fund "$GITHUB_WORKSPACE/webgl-node" \
+            || echo "reference unavailable; the parity gate will SKIP"
+
+      - name: Test suite
+        shell: bash
+        env:
+          SCRIPTC_BIN: ${{ github.workspace }}/scriptc/packages/cli/dist/main.js
+          SG_TARGET: ${{ matrix.target }}
+          SCRIPTC_CC: ${{ matrix.scriptc_cc }}
+          SCRIPTC_TARGET: ${{ matrix.scriptc_target }}
+        run: |
+          # Headless: SDL's dummy drivers, and xvfb on Linux for the browser
+          # proof (Firefox headless still wants a display on some runners).
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            # surfaceless + software GL so the WebGL lane needs no GPU.
+            export EGL_PLATFORM=surfaceless
+            export LIBGL_ALWAYS_SOFTWARE=1
+            xvfb-run -a ./scripts/test.sh
+          else
+            ./scripts/test.sh
+          fi
+
+      # ---- size and startup, tracked over time ----
+      #
+      # The deployment shape IS the product here: a binary that quietly grows
+      # 40MB or takes a second to open a window is a regression even when
+      # every test still passes.
+
+      - name: Size and startup report
+        shell: bash
+        run: |
+          echo "### ${{ matrix.target }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| example | size | cold start |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| --- | --- | --- |" >> "$GITHUB_STEP_SUMMARY"
+          for b in build/*; do
+            [ -f "$b" ] && [ -x "$b" ] || continue
+            name="$(basename "$b")"
+            size="$(du -h "$b" | cut -f1)"
+            start="n/a"
+            if [ "${{ runner.os }}" != "Windows" ]; then
+              s=$( { TIMEFORMAT=%R; time ( SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+                     SG_MAX_FRAMES=1 SG_NO_VSYNC=1 "$b" >/dev/null 2>&1 ); } 2>&1 )
+              start="${s}s"
+            fi
+            echo "| $name | $size | $start |" >> "$GITHUB_STEP_SUMMARY"
+          done
+
+      - name: Upload binaries
+        uses: actions/upload-artifact@v7
+        with:
+          name: scriptc-game-${{ matrix.target }}
+          path: build/*
+          if-no-files-found: error

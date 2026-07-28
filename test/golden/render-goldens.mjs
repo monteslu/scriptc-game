@@ -18,7 +18,10 @@ const root = join(here, "../..");
 const outDir = process.argv[2] ?? join(here, "png");
 
 // The pin that makes "byte-identical" a meaningful claim.
-const expected = readFileSync(join(root, "vendor/linux-x86_64/CANVAS_VERSION"), "utf8").trim();
+/* The archives actually linked, which is not always x86_64: CI builds each
+ * target on its own runner and sets SG_TARGET from the matrix. */
+const target = process.env.SG_TARGET ?? "linux-x86_64";
+const expected = readFileSync(join(root, `vendor/${target}/CANVAS_VERSION`), "utf8").trim();
 const actual = JSON.parse(
   readFileSync(join(here, "node_modules/@napi-rs/canvas/package.json"), "utf8"),
 ).version;

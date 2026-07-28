@@ -1,0 +1,8 @@
+{
+  "name": "webgl-parity",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "webgl-node": "file:../../../webgl-node"
+  }
+}

@@ -11,6 +11,43 @@ the webaudio-node core) to scriptc FFI format 1, whose entire vocabulary is:
   retain them
 - no callbacks, no varargs, no struct-by-value, no pointer returns, no
   dlopen, no unwinding across the boundary
+- **no `f32`.** There is no 32-bit float class, so any C function taking a
+  `float` needs a `double`-taking wrapper that narrows (see below)
+
+### There is no f32: float APIs need a narrowing wrapper
+
+`f64` is the only float class. Declaring a `float`-taking C function with
+`f64` params is **not** an approximation, it is silently wrong: the two
+types occupy XMM registers differently, so the callee reinterprets the bits
+and reads garbage. Measured, calling a `float`-taking symbol through an
+`f64` declaration with `(0.1, 0.2, 0.3, 1.0)`:
+
+```
+callee saw: -0.000000 -0.000000 0.000000 0.000000
+```
+
+The manifest rejects `f32` outright (`SC5001: must be one of
+f64/bool/u8/u32/i32/string/bytes`), so this is caught at build time for
+anything declared honestly. The failure mode above only appears if a
+`float` API is declared as `f64` to get around that.
+
+The fix is a wrapper that takes doubles and narrows at the boundary:
+
+```c
+void sg_gl_clear_color(double r, double g, double b, double a) {
+  glClearColor((GLfloat)r, (GLfloat)g, (GLfloat)b, (GLfloat)a);
+}
+```
+
+**This costs nothing measurable.** A double-to-float narrow is one
+`cvtsd2ss`, and over 200M non-inlined calls the wrapper measured 0.82
+ns/call against 0.85 ns/call for a direct `float` call, which is a
+difference below measurement noise. Do not contort an API to avoid it.
+
+It is only a nuisance of code volume: the GLES3 surface has 18 float-taking
+entry points that need wrappers purely for this. An upstream `f32` class
+would delete that layer, and is worth having if the compiler ever grows
+one; it is not worth working around in the meantime.
 
 ## Ground rules (all shim code)
 
@@ -230,7 +267,9 @@ the allowlist (~150 functions for v1 canvas).
   pessimistic 100ns/call that is 55µs of boundary cost against a 16.6ms
   frame: 0.3%. This is why no command buffer exists in v1.
 - The present memcpy is the only per-frame bulk cost (see ARCHITECTURE.md).
-- `f64` params for what Skia wants as `float` cost one cvtsd2ss each; noise.
+- `f64` params for what Skia wants as `float` cost one cvtsd2ss each; noise
+  (measured, and the reason narrowing wrappers are the right answer rather
+  than a workaround: see "There is no f32" above).
 - Handle-table lookups are an array index + gen compare; noise.
 
 ## Security/robustness stance

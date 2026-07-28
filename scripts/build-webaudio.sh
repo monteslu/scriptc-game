@@ -26,6 +26,18 @@ mkdir -p "$OBJ"
 # -I$ROOT/shim FIRST so our emscripten.h wins over any real one on the box.
 INCLUDES="-I$ROOT/shim -I$SRC -I$SRC/src/vendor"
 
+# audio_graph_simple.cpp uses std::string without including <string>; it
+# compiles anyway wherever <map> happens to pull the definition in
+# transitively, and fails where it does not (libstdc++ 12 on the CI
+# runners). Forced in from the command line rather than patched, so the
+# upstream source stays byte-identical -- see the note at the top.
+INCLUDES="$INCLUDES -include string"
+
+# M_PI and friends are NOT in the C++ standard; they come from POSIX, and
+# MSVC's headers only expose them when _USE_MATH_DEFINES is set before
+# <cmath>. Harmless everywhere else, and iir_filter_node.cpp needs it.
+INCLUDES="$INCLUDES -D_USE_MATH_DEFINES"
+
 # Matches the shim's own flags: libc++ for ABI compatibility with Skia, and
 # no exceptions (the engine uses none -- verified, zero try/throw/catch).
 CXXFLAGS="-O2 -std=c++17 -stdlib=libc++ -fno-exceptions -fvisibility=hidden -DNDEBUG"
@@ -71,7 +83,7 @@ for rel in $SOURCES; do
   out="$OBJ/$(echo "$rel" | tr '/' '_' | sed 's/\.cpp$/.o/')"
   if [ ! -f "$out" ] || [ "$SRC/$rel" -nt "$out" ]; then
     echo "  cc $rel"
-    clang++ $CXXFLAGS $INCLUDES -c "$SRC/$rel" -o "$out"
+    "${SG_CXX:-clang++}" $CXXFLAGS $INCLUDES -c "$SRC/$rel" -o "$out"
   fi
   OBJS="$OBJS $out"
 done
@@ -79,4 +91,10 @@ done
 rm -f "$DEST/libwebaudio.a"
 ar rcs "$DEST/libwebaudio.a" $OBJS
 echo "built $DEST/libwebaudio.a"
-nm --defined-only "$DEST/libwebaudio.a" 2>/dev/null | grep -c ' T ' | sed 's/^/  exported symbols: /'
+# Informational only, and must not fail the build: BSD nm (macOS) rejects
+# --defined-only, after which grep -c matches nothing and `set -e` kills a
+# progress message. Same trap as build-shim.sh and fetch-archives.sh.
+echo "  exported symbols: $(
+  { nm --defined-only "$DEST/libwebaudio.a" 2>/dev/null \
+    || nm -U "$DEST/libwebaudio.a" 2>/dev/null \
+    || nm "$DEST/libwebaudio.a" 2>/dev/null; } | grep -c ' T ' || true)"

@@ -57,7 +57,7 @@ function main(): void {
 
   const surface = ffi.surfaceCreate(W, H);
   const ctx = new Context2D(sk.surfaceGetCanvas(surface), surface);
-  ctx.clear("#12161c");
+  ctx.__clearToColor("#12161c");
   ctx.textAlign = "left";
   ctx.textBaseline = "alphabetic";
 

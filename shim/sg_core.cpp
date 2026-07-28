@@ -10,6 +10,29 @@
  *   - nothing unwinds; every fallible call returns a status
  *   - strings come back through the mailbox, never as a return value
  */
+/* macOS frameworks, declared where they cannot be dropped.
+ *
+ * Skia's font stack (fontmgr_mac_ct) references CoreText and
+ * CoreFoundation, which link as `-framework Foo`. scriptc's FFI manifest
+ * cannot say that: system_libraries is validated against
+ * /^[A-Za-z0-9_+.-]+$/ and every entry becomes -l<name>.
+ *
+ * Mach-O objects can carry their own requirements as LC_LINKER_OPTION load
+ * commands, which the linker reads out of the archive. The catch is that a
+ * member with no referenced symbols is never pulled in, and its load
+ * commands go with it -- which is exactly what happened when these lived in
+ * their own TU. sg_init is in THIS file and every program calls it, so the
+ * member is always linked and the directives always apply.
+ *
+ * Same mechanism as Rust's #[link(kind = "framework")]. */
+#if defined(__APPLE__)
+__asm__(".linker_option \"-framework\", \"CoreText\"");
+__asm__(".linker_option \"-framework\", \"CoreGraphics\"");
+__asm__(".linker_option \"-framework\", \"CoreFoundation\"");
+__asm__(".linker_option \"-framework\", \"CoreServices\"");
+__asm__(".linker_option \"-framework\", \"AppKit\"");
+#endif
+
 #include <SDL2/SDL.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -181,6 +204,48 @@ extern "C" uint32_t sg_is_fullscreen(int32_t unused) {
   if (!g_window) return 0;
   Uint32 f = SDL_GetWindowFlags(g_window);
   return (f & (SDL_WINDOW_FULLSCREEN | SDL_WINDOW_FULLSCREEN_DESKTOP)) ? 1u : 0u;
+}
+
+/* ---- WebGL2: a GL context on the SAME window ----
+ *
+ * Verified in the 8.2 spike: SDL_GL_CreateContext succeeds on a
+ * renderer-backed window (the renderer's own backend is already opengl),
+ * and raw GL interleaves with SDL_RenderPresent across SDL_RenderFlush. So
+ * a game can use Canvas 2D, WebGL2, or both, in one window.
+ *
+ * The ES profile must be requested EXPLICITLY. Without it SDL hands back
+ * desktop GL 4.6 Compatibility, and WebGL2 maps to GLES 3.
+ */
+static SDL_GLContext g_gl_context = NULL;
+
+extern "C" int32_t sg_gl_init_window(int32_t unused) {
+  (void)unused;
+  if (g_gl_context) return SG_OK;                 /* idempotent */
+  if (!g_window) { mail_set("GL context before init"); return SG_ESDL; }
+
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
+  SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+  SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
+
+  g_gl_context = SDL_GL_CreateContext(g_window);
+  if (!g_gl_context) { mail_set(SDL_GetError()); return SG_ESDL; }
+  SDL_GL_MakeCurrent(g_window, g_gl_context);
+  return SG_OK;
+}
+
+/* Present a GL frame: swap the window's buffers directly.
+ *
+ * The 2D present path blits a Skia raster surface through an SDL texture;
+ * a GL frame is already in the window's back buffer, so it only needs the
+ * swap. A game using both would present through the 2D path, which SDL
+ * flushes around. */
+extern "C" int32_t sg_gl_present(int32_t unused) {
+  (void)unused;
+  if (!g_gl_context) { mail_set("GL present before context"); return SG_ESDL; }
+  SDL_GL_SwapWindow(g_window);
+  return SG_OK;
 }
 
 /* ---- present ----

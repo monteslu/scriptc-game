@@ -18,7 +18,7 @@ function main(): void {
   const surface = ffi.surfaceCreate(300, 120);
   if (surface === 0) { console.log("surface failed"); process.exit(1); }
   const ctx = new Context2D(sk.surfaceGetCanvas(surface), surface);
-  ctx.clear("#ffffff");
+  ctx.__clearToColor("#ffffff");
 
   ctx.fillStyle = "#000000";
   ctx.font = "24px DejaVu Sans";

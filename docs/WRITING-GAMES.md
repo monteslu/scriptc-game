@@ -305,6 +305,17 @@ A short, honest list.
 ./build/dodge
 ```
 
+While working on a game, `dev.sh` rebuilds and relaunches on every save:
+
+```sh
+./scripts/dev.sh examples/dodge
+```
+
+There is no hot reload to be had: scriptc compiles ahead of time, so a change
+means a new binary. What this removes is the manual rebuild-relaunch cycle.
+A build failure prints the compiler error and keeps watching; the previous
+binary is not relaunched, so a green window always reflects current source.
+
 The entry file is found by convention, mirroring jsgamelauncher: `main.ts`,
 `src/main.ts`, `index.ts`, `src/index.ts`, `game.ts`, `src/game.ts`.
 `index.html` is not parsed, and canvas size comes from `game.json`.

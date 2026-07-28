@@ -35,6 +35,7 @@
  */
 import * as ffi from "../host/ffi.js";
 import { Context2D } from "./canvas/context.js";
+import { WebGL2RenderingContext } from "./webgl/context.js";
 import { Image } from "./canvas/image.js";
 import { Input } from "./input/input.js";
 import { Gamepad, gamepads as sparseGamepads } from "./input/gamepad.js";
@@ -48,6 +49,7 @@ import { queueTask } from "../host/tasks.js";
  * image load) can import it without importing this file -- globals imports
  * THEM, and a cycle is a hard compiler error (SC1016). */
 export { queueTask, drainTasks as __drainTasks, hasTasks as __hasTasks } from "../host/tasks.js";
+import { setGLPresent } from "../host/tasks.js";
 
 /* ---- requestAnimationFrame ----
  *
@@ -111,6 +113,7 @@ export const performance = new Performance();
  */
 export class HTMLCanvasElement {
   private ctx: Context2D | null = null;
+  private gl: WebGL2RenderingContext | null = null;
   /** Surface handle; 0 is the screen. */
   private surface = 0;
   private canvasHandle = 0;
@@ -127,11 +130,33 @@ export class HTMLCanvasElement {
   get width(): number { return this.w; }
   get height(): number { return this.h; }
 
-  /** "2d" is the only context this build provides; WebGL is a later phase. */
+  /** The 2D context. `getContext("webgl2")` is getContextGL below. */
   getContext(kind: string): Context2D | null {
     if (kind !== "2d") return null;
     if (this.ctx === null) this.ctx = new Context2D(this.canvasHandle, this.surface);
     return this.ctx;
+  }
+
+  /* WebGL2, spelled getContextGL rather than getContext("webgl2").
+   *
+   * The web returns a union from one method and the caller narrows on the
+   * string. The dialect cannot: a union return does not resolve members
+   * ("Property 'fillRect' does not exist on type 'Context2D |
+   * WebGL2RenderingContext'"), so a single getContext would break every 2D
+   * game in the tree. Two methods, each with a concrete type, is the
+   * honest shape.
+   *
+   * In a browser the shim maps this to getContext("webgl2"), so game source
+   * still runs there unchanged. */
+  getContextGL(): WebGL2RenderingContext | null {
+    if (this.gl === null) {
+      // A real GL context on this window; without it every GL call is a
+      // no-op against nothing and the canvas stays blank.
+      if (ffi.glInitWindow() !== 0) return null;
+      this.gl = new WebGL2RenderingContext(this.w, this.h);
+      setGLPresent();
+    }
+    return this.gl;
   }
 
   /** Style is accepted and ignored, as in a launcher with no CSS. */

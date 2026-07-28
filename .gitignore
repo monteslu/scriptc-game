@@ -14,6 +14,9 @@ build/
 spike/*
 !spike/*.ts
 !spike/*.json
+# Spike WRITE-UPS are the point of the spikes: the measurements and the
+# decisions they settled outlive the throwaway code that produced them.
+!spike/*.md
 !spike/ffi/
 spike/ffi/*
 !spike/ffi/*.c
@@ -33,3 +36,8 @@ test/fixtures/images/
 # Generated per-build entry modules: gen-entry.js writes these, and they
 # bake in an absolute game directory. Never committed.
 .sg-build/
+
+# The browser proof's build output and captures: both regenerate from
+# browser/build.sh, and the shots are large PNGs of the same two frames.
+browser/out/
+browser/shots/

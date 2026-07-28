@@ -270,7 +270,12 @@ export class Context2D {
 
   /* ---- rects ---- */
 
-  clear(css: string): void {
+  /* NOT a web API. Canvas 2D has clearRect and fillRect; there is no
+   * `clear(css)`, and game code that calls it will not run in a browser.
+   * Kept because the conformance harness uses it to prime a surface to a
+   * known colour in one native call, which is faster than a fill and is
+   * never part of a golden. Game code uses fillStyle + fillRect. */
+  __clearToColor(css: string): void {
     const c = parseColor(css);
     // skiac_canvas_clear takes a packed ARGB color.
     const packed = ((c.a & 255) << 24) | ((c.r & 255) << 16) | ((c.g & 255) << 8) | (c.b & 255);
@@ -554,19 +559,30 @@ export class Context2D {
 
   /* ---- images ---- */
 
-  /** drawImage's 3-argument form: natural size at (dx, dy). */
-  drawImage(img: Image, dx: number, dy: number): void {
-    this.drawImageRect(img, 0, 0, img.width, img.height, dx, dy, img.width, img.height);
+  /* drawImage, with the spec's three overloads in ONE signature.
+   *
+   *   drawImage(img, dx, dy)
+   *   drawImage(img, dx, dy, dw, dh)
+   *   drawImage(img, sx, sy, sw, sh, dx, dy, dw, dh)
+   *
+   * The dialect has no overload declarations, but it does support rest
+   * parameters, and JS dispatches on argument count at runtime exactly as a
+   * browser does. Game code therefore writes the real spec call in both
+   * worlds. (An earlier drawImageScaled/drawImageRect pair worked natively
+   * and threw "not a function" in a page.) */
+  drawImage(img: Image, ...a: number[]): void {
+    if (a.length === 2) {
+      this.blit(img, 0, 0, img.width, img.height, a[0], a[1], img.width, img.height);
+    } else if (a.length === 4) {
+      this.blit(img, 0, 0, img.width, img.height, a[0], a[1], a[2], a[3]);
+    } else if (a.length === 8) {
+      this.blit(img, a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7]);
+    }
+    // Any other arity is a TypeError on the web; here it draws nothing.
   }
 
-  /** 5-argument form: scaled to (dw, dh). */
-  drawImageScaled(img: Image, dx: number, dy: number, dw: number, dh: number): void {
-    this.drawImageRect(img, 0, 0, img.width, img.height, dx, dy, dw, dh);
-  }
-
-  /** 9-argument form: source rect to destination rect. */
-  drawImageRect(img: Image, sx: number, sy: number, sw: number, sh: number,
-                dx: number, dy: number, dw: number, dh: number): void {
+  private blit(img: Image, sx: number, sy: number, sw: number, sh: number,
+               dx: number, dy: number, dw: number, dh: number): void {
     this.applyCommon();
     sk.paintSetStyle(this.paint, STYLE_FILL);
     // drawImage sets the paint alpha straight from globalAlpha: ONE rounding,
