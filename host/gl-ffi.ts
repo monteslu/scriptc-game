@@ -159,6 +159,7 @@ declare function sg_gl_buffer_sub_data(a0: number, a1: number, a2: Buffer): void
 declare function sg_gl_tex_image_2d(a0: number, a1: number, a2: number, a3: number, a4: number, a5: number, a6: number, a7: number, a8: Buffer): void;
 declare function sg_gl_tex_sub_image_2d(a0: number, a1: number, a2: number, a3: number, a4: number, a5: number, a6: number, a7: number, a8: Buffer): void;
 declare function sg_gl_tex_image_from_bitmap(a0: number, a1: number, a2: number): number;
+declare function sg_gl_tex_image_from_surface(a0: number, a1: number, a2: number): number;
 declare function sg_gl_get_integer(a0: number): number;
 declare function sg_gl_get_integer_i(a0: number, a1: number): number;
 declare function sg_gl_get_float(a0: number): number;
@@ -323,6 +324,7 @@ export function bufferSubData(a0: number, a1: number, a2: Buffer): void { sg_gl_
 export function texImage2d(a0: number, a1: number, a2: number, a3: number, a4: number, a5: number, a6: number, a7: number, a8: Buffer): void { sg_gl_tex_image_2d(a0, a1, a2, a3, a4, a5, a6, a7, a8); }
 export function texSubImage2d(a0: number, a1: number, a2: number, a3: number, a4: number, a5: number, a6: number, a7: number, a8: Buffer): void { sg_gl_tex_sub_image_2d(a0, a1, a2, a3, a4, a5, a6, a7, a8); }
 export function texImageFromBitmap(a0: number, a1: number, a2: number): number { return sg_gl_tex_image_from_bitmap(a0, a1, a2); }
+export function texImageFromSurface(a0: number, a1: number, a2: number): number { return sg_gl_tex_image_from_surface(a0, a1, a2); }
 export function getInteger(a0: number): number { return sg_gl_get_integer(a0); }
 export function getIntegerI(a0: number, a1: number): number { return sg_gl_get_integer_i(a0, a1); }
 export function getFloat(a0: number): number { return sg_gl_get_float(a0); }

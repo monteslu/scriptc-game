@@ -32,6 +32,14 @@ export interface Matrix4Like {
   elements: number[];
 }
 
+/** Likewise for Quaternion, which imports Vector3 for setFromAxisAngle. */
+export interface QuaternionLike {
+  x: number;
+  y: number;
+  z: number;
+  w: number;
+}
+
 export class Vector3 {
   x = 0;
   y = 0;
@@ -182,6 +190,22 @@ export class Vector3 {
     this.x = e[12];
     this.y = e[13];
     this.z = e[14];
+    return this;
+  }
+
+  /* Rotate by a quaternion: v' = q * v * q^-1, expanded to avoid building
+   * intermediate quaternions. three uses the same expansion. */
+  applyQuaternion(q: QuaternionLike): Vector3 {
+    const vx = this.x; const vy = this.y; const vz = this.z;
+    const qx = q.x; const qy = q.y; const qz = q.z; const qw = q.w;
+
+    const tx = 2 * (qy * vz - qz * vy);
+    const ty = 2 * (qz * vx - qx * vz);
+    const tz = 2 * (qx * vy - qy * vx);
+
+    this.x = vx + qw * tx + qy * tz - qz * ty;
+    this.y = vy + qw * ty + qz * tx - qx * tz;
+    this.z = vz + qw * tz + qx * ty - qy * tx;
     return this;
   }
 

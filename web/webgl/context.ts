@@ -23,6 +23,7 @@
 import * as gl from "../../host/gl-ffi.js";
 import { readMailbox } from "../../host/mailbox.js";
 import { Image } from "../canvas/image.js";
+import { Context2D } from "../canvas/context.js";
 import {
   WebGLBuffer, WebGLTexture, WebGLFramebuffer, WebGLRenderbuffer,
   WebGLProgram, WebGLShader, WebGLVertexArrayObject, WebGLSampler,
@@ -461,6 +462,17 @@ export class WebGL2RenderingContext {
    * The internal format is RGBA8, which is what the decoder produces. */
   texImage2DFromImage(target: number, level: number, image: Image): void {
     gl.texImageFromBitmap(target, level, image.handle);
+  }
+
+  /* texImage2D from an OFFSCREEN 2D CANVAS.
+   *
+   * The web spells this as the same 6-argument overload, passing the canvas
+   * element. Here it takes the Context2D, and like the Image path the
+   * pixels stay native: Skia surface straight to GL texture.
+   *
+   * This is what makes a Canvas-drawn HUD usable as a texture in 3D. */
+  texImage2DFromCanvas(target: number, level: number, ctx: Context2D): void {
+    gl.texImageFromSurface(target, level, ctx.surfaceHandle());
   }
 
   /* ---- framebuffers and renderbuffers ---- */
