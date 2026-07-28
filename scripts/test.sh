@@ -35,7 +35,7 @@ run() {
 }
 
 echo "==> building test programs"
-for entry in test/conformance.ts test/readbackprobe.ts test/inputtest.ts test/padvisual.ts test/audiotest.ts test/decodetest.ts test/imagetest.ts test/spritetest.ts test/asynctest.ts test/missileprobe.ts test/websurface.ts test/webgltest.ts; do
+for entry in test/conformance.ts test/readbackprobe.ts test/inputtest.ts test/padvisual.ts test/audiotest.ts test/decodetest.ts test/imagetest.ts test/spritetest.ts test/asynctest.ts test/missileprobe.ts test/websurface.ts test/webgltest.ts test/threetest.ts; do
   ./scripts/build.sh "$entry" "$TARGET" >/dev/null || { echo "build failed: $entry"; exit 1; }
 done
 
@@ -46,11 +46,20 @@ run "pad visual"         env SDL_VIDEODRIVER=dummy ./build/padvisual test/out/pa
 run "sprite sheets"      env SDL_VIDEODRIVER=dummy ./build/spritetest test/out
 # The WebGL2 tier, on the headless EGL lane (no display server). Skips
 # loudly when the box has no EGL device rather than failing.
+# threeTS-lite's math against REAL three.js values. The library is
+# API-compatible so a project can swap it for three; that only means
+# something if the numbers agree.
+run "three math"         env ./build/threetest
+
 run "webgl2"             env ./build/webgltest
 # The acceptance gate: identical framebuffer hashes from this build and from
 # Node + webgl-node rendering the same scenes. Skips when the reference is
 # not installed or the box has no EGL device.
 run "webgl2 parity"      ./scripts/webgl-parity.sh
+# InstancedMesh must draw the same pixels as the same transforms drawn one
+# mesh at a time. Carries its own control: a deliberately wrong cube must be
+# detected, or the comparison is not evidence.
+run "instancing parity"  ./scripts/instancing-parity.sh
 
 # Event-loop ordering: async-shaped APIs must settle on a LATER turn. Guards
 # the class of bug where a promise chain silently never runs.

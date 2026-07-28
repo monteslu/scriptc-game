@@ -184,7 +184,11 @@ if (existsSync(extraPath)) {
   const extra = readFileSync(extraPath, "utf8");
   const re = /^(uint32_t|int32_t|double|void)\s+(sg_gl_\w+)\(([^)]*)\)\s*\{/gm;
   let em;
-  const seen = new Set();
+  /* Declared by hand in host/ffi.ts, which is where the host-side GL
+   * lifecycle lives (window context, present, screenshot). Emitting them
+   * here too would declare the same native symbol twice, which the manifest
+   * rejects outright. */
+  const seen = new Set(["sg_gl_init_window", "sg_gl_present", "sg_gl_save_png"]);
   tsLines.push("");
   tsLines.push("/* Hand-written shim (shim/sg_gl_extra.cpp): pointers, out-params,");
   tsLines.push(" * strings and bulk uploads -- everything FFI format 1 cannot express");

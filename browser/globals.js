@@ -118,6 +118,27 @@ if (typeof WebGL2RenderingContext !== "undefined") {
                       this.UNSIGNED_BYTE, image);
     };
   }
+
+  if (!proto.texImage2DFromCanvas) {
+    /* Uploads a 2D canvas as a texture. The native signature takes the
+     * CONTEXT rather than the canvas, because on that side the pixels live
+     * in a Skia surface the context owns and never cross the FFI. A browser
+     * takes either, and `ctx.canvas` is the spec-guaranteed back-reference
+     * from a context to its element, so the two tiers stay call-compatible.
+     *
+     * TEXTURE SOURCES ARE TOP-DOWN and GL is bottom-up, so the native shim
+     * flips rows on upload; UNPACK_FLIP_Y_WEBGL is how a browser does the
+     * same. Without it HUD text renders mirrored vertically. The flag is
+     * saved and restored so this cannot leak into unrelated uploads. */
+    proto.texImage2DFromCanvas = function (target, level, ctx) {
+      const source = ctx && ctx.canvas ? ctx.canvas : ctx;
+      const prev = this.getParameter(this.UNPACK_FLIP_Y_WEBGL);
+      this.pixelStorei(this.UNPACK_FLIP_Y_WEBGL, true);
+      this.texImage2D(target, level, this.RGBA, this.RGBA,
+                      this.UNSIGNED_BYTE, source);
+      this.pixelStorei(this.UNPACK_FLIP_Y_WEBGL, prev);
+    };
+  }
 }
 
 /* Buffer, minimally.

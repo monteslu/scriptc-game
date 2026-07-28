@@ -130,6 +130,38 @@ export class HTMLCanvasElement {
   get width(): number { return this.w; }
   get height(): number { return this.h; }
 
+  /* Assigning width or height REALLOCATES the backing surface and resets
+   * the drawing state, exactly as the HTML spec says: "the bitmap is
+   * cleared to transparent black" whenever either is set, even to the same
+   * value. Games rely on that as an idiomatic clear.
+   *
+   * Without these setters `document.createElement("canvas")` was frozen at
+   * the browser default 300x150, so a game that sized its own offscreen
+   * canvas drew into a surface half the size it asked for and silently
+   * clipped. The screen canvas (surface 0) is owned by the window, so it
+   * only records the new size rather than reallocating. */
+  set width(value: number) { this.resize(value | 0, this.h); }
+  set height(value: number) { this.resize(this.w, value | 0); }
+
+  private resize(w: number, h: number): void {
+    if (w < 0) w = 0;
+    if (h < 0) h = 0;
+    if (this.surface === 0) {          // the screen: the window owns the size
+      this.w = w;
+      this.h = h;
+      return;
+    }
+    const next = ffi.surfaceCreate(w, h);
+    if (next === 0) return;            // allocation failed: keep the old one
+    __skSurfaceDestroy(this.surface);
+    this.surface = next;
+    this.canvasHandle = __surfaceCanvas(next);
+    this.w = w;
+    this.h = h;
+    // Contexts point at the old surface; drop them so getContext rebuilds.
+    this.ctx = null;
+  }
+
   /** The 2D context. `getContext("webgl2")` is getContextGL below. */
   getContext(kind: string): Context2D | null {
     if (kind !== "2d") return null;
@@ -547,7 +579,7 @@ export function __surfaceCanvas(surface: number): number {
 }
 
 /* Imported lazily to keep the skia FFI out of the game-facing surface. */
-import { surfaceGetCanvas as __skSurfaceGetCanvas } from "../host/skia-ffi.js";
+import { surfaceGetCanvas as __skSurfaceGetCanvas, surfaceDestroy as __skSurfaceDestroy } from "../host/skia-ffi.js";
 
 /* ---- the screen ----
  *

@@ -80,6 +80,12 @@ for gamedir in "$ROOT"/examples/*/; do
 
   if OUTPUT=$(python3 "$ROOT/browser/drive.py" "http://127.0.0.1:$PORT/harness.html" 45 2>&1); then
     echo "ok"
+    # SG_PROOF_VERBOSE=1 shows the in-page report (frame count, distinct
+    # colours) for a PASSING run, which is how you tell "rendered a real
+    # scene" from "merely threw no exceptions".
+    if [ -n "${SG_PROOF_VERBOSE:-}" ]; then
+      echo "$OUTPUT" | sed "s/^/      /"
+    fi
   else
     echo "FAIL"
     echo "$OUTPUT"

@@ -23,6 +23,7 @@
 import * as gl from "../../host/gl-ffi.js";
 import { readMailbox } from "../../host/mailbox.js";
 import { Image } from "../canvas/image.js";
+import { Context2D } from "../canvas/context.js";
 import {
   WebGLBuffer, WebGLTexture, WebGLFramebuffer, WebGLRenderbuffer,
   WebGLProgram, WebGLShader, WebGLVertexArrayObject, WebGLSampler,
@@ -379,6 +380,21 @@ export class WebGL2RenderingContext {
   enableVertexAttribArray(index: number): void { gl.EnableVertexAttribArray(index); }
   disableVertexAttribArray(index: number): void { gl.DisableVertexAttribArray(index); }
 
+  /* Constant (non-array) attribute values, used when an attribute is
+   * DISABLED. A disabled attribute otherwise reads as (0,0,0,1), so a
+   * shader that multiplies by an optional per-instance colour would render
+   * everything black rather than untinted. */
+  vertexAttrib1f(index: number, x: number): void { gl.vertexAttrib1f(index, x); }
+  vertexAttrib2f(index: number, x: number, y: number): void {
+    gl.vertexAttrib2f(index, x, y);
+  }
+  vertexAttrib3f(index: number, x: number, y: number, z: number): void {
+    gl.vertexAttrib3f(index, x, y, z);
+  }
+  vertexAttrib4f(index: number, x: number, y: number, z: number, w: number): void {
+    gl.vertexAttrib4f(index, x, y, z, w);
+  }
+
   /* `offset` is a byte offset into the bound ARRAY_BUFFER in ES3, never a
    * client pointer, which is why it crosses as a number. */
   vertexAttribPointer(index: number, size: number, type: number,
@@ -461,6 +477,17 @@ export class WebGL2RenderingContext {
    * The internal format is RGBA8, which is what the decoder produces. */
   texImage2DFromImage(target: number, level: number, image: Image): void {
     gl.texImageFromBitmap(target, level, image.handle);
+  }
+
+  /* texImage2D from an OFFSCREEN 2D CANVAS.
+   *
+   * The web spells this as the same 6-argument overload, passing the canvas
+   * element. Here it takes the Context2D, and like the Image path the
+   * pixels stay native: Skia surface straight to GL texture.
+   *
+   * This is what makes a Canvas-drawn HUD usable as a texture in 3D. */
+  texImage2DFromCanvas(target: number, level: number, ctx: Context2D): void {
+    gl.texImageFromSurface(target, level, ctx.surfaceHandle());
   }
 
   /* ---- framebuffers and renderbuffers ---- */
