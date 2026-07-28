@@ -26,22 +26,19 @@ jobs:
             runner: ubuntu-24.04
           - target: linux-aarch64
             runner: ubuntu-24.04-arm
-          # macos-aarch64 and windows-x86_64 are NOT here yet, deliberately
-          # rather than quietly:
-          #
-          # macOS needs Skia's platform frameworks (Metal, OpenGL, CoreText
-          # are all referenced by libskia.a), and scriptc's FFI manifest
-          # cannot express them: system_libraries matches /^[A-Za-z0-9_+.-]+$/
-          # and every entry becomes -l<name>, so there is no -framework path.
-          # Making it work needs an upstream change to scriptc, not a matrix
-          # entry.
-          #
-          # windows-x86_64 is NOT here yet, deliberately rather than
-          # quietly: build-libcanvas ships that platform as MSVC .lib
-          # archives with a libcanvas.lib, while fetch-archives.sh and the
-          # FFI manifest both assume Unix .a naming and `ar`. Wiring it up
-          # is a real change to the vendor step, not a matrix entry, and
-          # pretending otherwise would leave a lane that fails forever.
+          - target: macos-aarch64
+            runner: macos-14
+          - target: macos-x86_64
+            runner: macos-15-intel
+          - target: windows-x86_64
+            runner: windows-2022
+          - target: android-aarch64
+            runner: ubuntu-24.04
+            # Cross-compiled with the NDK: the archives and the toolchain
+            # exist, but nothing here can RUN an arm64 Android binary, so
+            # this lane builds and stops. A build failure is still the thing
+            # worth catching, since it is what a bad link looks like.
+            build_only: true
 
     steps:
       - uses: actions/checkout@v5
@@ -107,13 +104,54 @@ jobs:
 
       - name: macOS deps
         if: startsWith(matrix.target, 'macos')
-        run: brew install sdl2 pkg-config ffmpeg
+        run: |
+          brew install sdl2 pkg-config ffmpeg
+          brew install llvm || true
+
+      - name: Windows deps
+        if: startsWith(matrix.target, 'windows')
+        shell: bash
+        run: |
+          choco install -y llvm ninja
+          # SDL2 development libraries: the official release zip is the
+          # dependable route; the chocolatey package ships runtime DLLs only.
+          curl -fsSL -o /tmp/sdl.zip \
+            https://github.com/libsdl-org/SDL/releases/download/release-2.32.10/SDL2-devel-2.32.10-VC.zip
+          mkdir -p "$GITHUB_WORKSPACE/sdl2"
+          unzip -q /tmp/sdl.zip -d "$GITHUB_WORKSPACE/sdl2"
+          SDLDIR="$(find "$GITHUB_WORKSPACE/sdl2" -maxdepth 1 -type d -name 'SDL2-*' | head -1)"
+          echo "SDL2_DIR=$SDLDIR" >> "$GITHUB_ENV"
+          echo "SDL2_INCLUDE=$SDLDIR/include" >> "$GITHUB_ENV"
+          echo "SDL2_LIB=$SDLDIR/lib/x64" >> "$GITHUB_ENV"
+
+      - name: Android deps
+        if: startsWith(matrix.target, 'android')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang-18 ninja-build
+          echo "ANDROID_NDK_ROOT=$ANDROID_NDK_LATEST_HOME" >> "$GITHUB_ENV"
 
       # ---- vendored archives ----
 
       - name: Fetch Skia archives
         shell: bash
         run: ./scripts/fetch-archives.sh ${{ matrix.target }}
+
+      # The NDK's clang knows the Android sysroot; nothing else does.
+      - name: Select the Android toolchain
+        if: startsWith(matrix.target, 'android')
+        shell: bash
+        run: |
+          TC="$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          echo "SG_CC=$TC/aarch64-linux-android24-clang" >> "$GITHUB_ENV"
+          echo "SG_CXX=$TC/aarch64-linux-android24-clang++" >> "$GITHUB_ENV"
+          # SDL2 is not packaged for the NDK; its headers come from the
+          # source release, which is all the shim needs to compile.
+          curl -fsSL -o /tmp/sdl.tar.gz \
+            https://github.com/libsdl-org/SDL/releases/download/release-2.32.10/SDL2-2.32.10.tar.gz
+          mkdir -p "$GITHUB_WORKSPACE/sdl2-src"
+          tar -xzf /tmp/sdl.tar.gz -C "$GITHUB_WORKSPACE/sdl2-src" --strip-components=1
+          echo "SDL2_INCLUDE=$GITHUB_WORKSPACE/sdl2-src/include" >> "$GITHUB_ENV"
 
       - name: Build the webaudio graph
         shell: bash
@@ -142,6 +180,7 @@ jobs:
           done
 
       - name: Test suite
+        if: ${{ !matrix.build_only }}
         shell: bash
         env:
           SCRIPTC_BIN: ${{ github.workspace }}/scriptc/packages/cli/dist/main.js
@@ -162,6 +201,7 @@ jobs:
       # every test still passes.
 
       - name: Size and startup report
+        if: ${{ !matrix.build_only }}
         shell: bash
         run: |
           echo "### ${{ matrix.target }}" >> "$GITHUB_STEP_SUMMARY"

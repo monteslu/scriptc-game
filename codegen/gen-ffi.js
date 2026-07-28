@@ -190,41 +190,38 @@ const vendor = `../vendor/${target}`;
  * symbols at link time, not as a clean error. */
 function systemLibraries(t) {
   if (t.startsWith("macos")) {
-    /* NOT WIRED UP YET, and this list is a placeholder.
+    /* Frameworks are NOT here, and cannot be: system_libraries is validated
+     * against /^[A-Za-z0-9_+.-]+$/ and every entry becomes -l<name>, so
+     * "-framework CoreText" has no spelling in this manifest.
      *
-     * Skia's macOS archives need CoreText (SkFontMgr_New_CoreText is a real
-     * symbol in libskia.a), which is a FRAMEWORK: it links with
-     * -framework CoreText, not -lCoreText. scriptc's manifest cannot say
-     * that -- system_libraries is validated against /^[A-Za-z0-9_+.-]+$/
-     * and every entry becomes -l<name> -- so a macOS build stops at
-     * "SC5001: 'system_libraries[4]' is not a library name".
-     *
-     * The fix does NOT need an upstream compiler change. Mach-O objects can
-     * carry their own framework requirements as LC_LINKER_OPTION load
-     * commands:
-     *
-     *   __asm__(".linker_option \"-framework\", \"CoreText\"");
-     *
-     * in a macOS-only shim TU puts the requirement inside libsggfx.a, where
-     * the linker finds it and the -l-only manifest never has to know. This
-     * is what Rust's #[link(kind = "framework")] emits, and how
-     * @napi-rs/canvas links the same Skia without the caller passing
-     * framework flags.
-     *
-     * GL is separate and already solved by prior art: native-gles links
-     * ANGLE as plain -lEGL -lGLESv2 on macOS, with no frameworks at all.
-     *
-     * Untested: the directive is Mach-O-only and cannot be compiled, let
-     * alone linked, from the Linux box this was written on. */
-    return ["SDL2", "m", "pthread", "c++"];
+     * shim/sg_macos_frameworks.c carries them instead, as Mach-O
+     * LC_LINKER_OPTION load commands compiled into libsggfx.a. The linker
+     * reads them straight out of the archive, which is the same mechanism
+     * Rust's #[link(kind = "framework")] uses. */
+    return [
+      "SDL2", "m", "pthread",
+      // libc++ is the system default; c++abi lives inside it on Darwin.
+      "c++",
+    ];
   }
   if (t.startsWith("windows")) {
+    /* Skia on Windows uses GDI for fonts and opengl32 for the GL surface;
+     * the rest are the usual Win32 support libraries its codecs and
+     * threading pull in. No libc++: the MSVC toolchain supplies its own. */
     return [
       "SDL2", "m",
-      "c++",
-      // Skia on Windows: GDI for fonts, OpenGL32 for the GL surface, plus
-      // the usual Win32 support libraries.
       "gdi32", "user32", "opengl32", "ole32", "oleaut32", "uuid",
+      "advapi32", "shell32", "winmm", "imm32", "setupapi", "version",
+    ];
+  }
+  if (t.startsWith("android")) {
+    /* Android is GLES, not desktop GL (SKIA_GL_STANDARD is "gles" in the
+     * build-libcanvas output), and log is what Skia's own logging needs.
+     * There is no fontconfig: Skia falls back to its bundled FreeType. */
+    return [
+      "SDL2", "m",
+      "c++", "c++abi",
+      "GLESv3", "EGL", "log", "android",
     ];
   }
   // Linux (x86_64 and aarch64).

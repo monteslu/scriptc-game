@@ -78,7 +78,7 @@ for rel in $SOURCES; do
   out="$OBJ/$(echo "$rel" | tr '/' '_' | sed 's/\.cpp$/.o/')"
   if [ ! -f "$out" ] || [ "$SRC/$rel" -nt "$out" ]; then
     echo "  cc $rel"
-    clang++ $CXXFLAGS $INCLUDES -c "$SRC/$rel" -o "$out"
+    "${SG_CXX:-clang++}" $CXXFLAGS $INCLUDES -c "$SRC/$rel" -o "$out"
   fi
   OBJS="$OBJS $out"
 done

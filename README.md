@@ -79,18 +79,26 @@ real URLs rather than filenames.
 
 Not yet: WebGL and 3D.
 
-Builds on linux-x86_64 and linux-aarch64, each on its own CI runner.
-Cross-compiling is not used: scriptc can, but Skia, SDL2 and the audio graph
-are per-platform binaries, so only a native runner links a real result.
+| Target | Runner | Notes |
+| --- | --- | --- |
+| linux-x86_64 | ubuntu-24.04 | |
+| linux-aarch64 | ubuntu-24.04-arm | |
+| macos-aarch64 | macos-14 | frameworks via Mach-O linker options |
+| macos-x86_64 | macos-15-intel | |
+| windows-x86_64 | windows-2022 | |
+| android-aarch64 | ubuntu-24.04 (NDK) | cross-compiled, build only |
 
-Two targets are not wired up yet, both blocked on something real rather than
-unfinished:
+Each target builds on its own runner rather than cross-compiling, except
+Android. scriptc can cross-compile, but Skia, SDL2 and the audio graph are
+per-platform binaries, so only a native runner links a real result. The
+Android lane builds and stops, since nothing in CI can run an arm64 Android
+binary.
 
-- **macOS** needs Skia's platform frameworks (Metal, OpenGL, CoreText). Those
-  link with `-framework Foo`, and scriptc's FFI manifest only emits `-l<name>`,
-  so this needs an upstream compiler change.
-- **Windows** is published by build-libcanvas as MSVC `.lib` archives, while
-  the vendor step and the manifest both assume Unix `.a` naming and `ar`.
+macOS needs Skia's platform frameworks (CoreText for fonts), which link with
+`-framework Foo` while scriptc's manifest only emits `-l<name>`.
+`shim/sg_macos_frameworks.c` carries them as Mach-O `LC_LINKER_OPTION` load
+commands inside `libsggfx.a`, so the linker finds them without the manifest
+knowing. Same mechanism as Rust's `#[link(kind = "framework")]`.
 
 ### Verified
 

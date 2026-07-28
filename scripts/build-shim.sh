@@ -16,7 +16,22 @@ DEST="$ROOT/vendor/$TARGET"
 OBJ="$DEST/obj"
 mkdir -p "$OBJ"
 
-SDL_CFLAGS="$(pkg-config --cflags sdl2)"
+# SDL2 headers. pkg-config is the norm on Linux and macOS; the Windows
+# runner unpacks the official VC release, and the Android NDK sysroot has
+# no pkg-config at all, so both pass a directory instead.
+if [ -n "${SDL2_INCLUDE:-}" ]; then
+  SDL_CFLAGS="-I$SDL2_INCLUDE"
+elif pkg-config --exists sdl2 2>/dev/null; then
+  SDL_CFLAGS="$(pkg-config --cflags sdl2)"
+else
+  echo "SDL2 not found: install libsdl2-dev, brew install sdl2, or set SDL2_INCLUDE" >&2
+  exit 1
+fi
+
+# Cross-compiling to Android goes through the NDK's clang, which already
+# knows its own sysroot; everything else uses the host compiler.
+CC_BIN="${SG_CC:-clang}"
+CXX_BIN="${SG_CXX:-clang++}"
 INC="-I$DEST/include -I$ROOT/shim -I${WEBAUDIO_SRC:-$HOME/code/cliemu/webaudio-node}/src/vendor"
 
 # sg_core is C++ (skiac is a C ABI over a C++ library and the shim uses
@@ -50,13 +65,20 @@ needs_build() {
 }
 
 if needs_build "$OBJ/sg_tables.o"; then
-  clang -O2 -std=c11 -MMD -c "$ROOT/shim/sg_tables.c" -o "$OBJ/sg_tables.o" $INC
+  "$CC_BIN" -O2 -std=c11 -MMD -c "$ROOT/shim/sg_tables.c" -o "$OBJ/sg_tables.o" $INC
 fi
 
-SHIM_OBJS="$OBJ/sg_tables.o"
+# Carries the macOS -framework requirements as Mach-O load commands; a no-op
+# TU everywhere else. See the file for why this cannot go in the manifest.
+if needs_build "$OBJ/sg_macos_frameworks.o"; then
+  "$CC_BIN" -O2 -std=c11 -MMD -c "$ROOT/shim/sg_macos_frameworks.c" \
+        -o "$OBJ/sg_macos_frameworks.o" $INC
+fi
+
+SHIM_OBJS="$OBJ/sg_tables.o $OBJ/sg_macos_frameworks.o"
 for cpp in sg_core sg_input sg_audio sg_audio_decode sg_skia_gen sg_skia_extra; do
   if needs_build "$OBJ/$cpp.o"; then
-    clang++ -O2 -std=c++17 -stdlib=libc++ -fno-exceptions -MMD \
+    "$CXX_BIN" -O2 -std=c++17 -stdlib=libc++ -fno-exceptions -MMD \
             -c "$ROOT/shim/$cpp.cpp" -o "$OBJ/$cpp.o" $INC $SDL_CFLAGS
   fi
   SHIM_OBJS="$SHIM_OBJS $OBJ/$cpp.o"
