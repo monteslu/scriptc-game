@@ -136,3 +136,50 @@ path that keeps the readback lane honest about being GPU work.
 
 Readback-hash parity (the 8.4 gate) runs on the pbuffer lane, which needs
 no display, so it fits CI as-is.
+
+## 8.3 progress: the shapes compile, the shim works
+
+### The dialect can express the WebGL2 API
+
+Four patterns `webgl2-context.mjs` leans on, all verified by building and
+running (`spike/webgl-shapes.ts`, `spike/webgl-poly.ts`):
+
+| Pattern | Result |
+| --- | --- |
+| wrapper objects (`WebGLBuffer` with a name field), `null` to unbind | works |
+| constants as module consts | works |
+| `bufferData(target, number \| Uint8Array \| null, usage)` | dispatches correctly on all three |
+| `texImage2D(..., ...rest)` for the 6-arg and 9-arg forms | both arities dispatch |
+
+The last two mattered most: the upstream context is polymorphic throughout,
+and if the dialect could not express that, the port would have needed a
+different API shape rather than a transcription.
+
+### The hand-written shim covers the pointer surface
+
+`shim/sg_gl_extra.cpp` handles what the generator refuses, in four shapes:
+single-object generators/deleters (`glGenBuffers(1, &n)` becomes
+`sg_gl_gen_buffer() -> u32`), bulk uploads (pointer+size is exactly the
+`bytes` class), out-param getters (`glGetIntegerv(pname, &v)` becomes a
+return), and strings through the existing mailbox.
+
+Verified against a live ES3 context on the headless EGL lane, not just
+compiled:
+
+```
+gen_buffer -> 1, gen_texture -> 1
+buffer_data err=0x0
+get_integer(MAX_TEXTURE_SIZE) = 16384
+viewport via get_integer_i = 0,0,64,64
+hash red=c40abdc5 green=c38d1dc5 differ=YES
+```
+
+That last line is the 8.4 gate's mechanism working: `sg_gl_hash_pixels`
+digests the framebuffer natively (FFI format 1 has no out-bytes class, so
+pixels cannot cross), and it distinguishes two clear colours.
+
+### Still to do in 8.3
+
+The context class itself: 227 methods over the generated bindings. The
+shapes are proven and the shim is in place, so this is transcription
+against a known-good reference rather than design.

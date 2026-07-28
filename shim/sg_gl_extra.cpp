@@ -1,0 +1,299 @@
+/* Hand-written GL shim: the entry points the generator refuses.
+ *
+ * codegen/gen-gl.js emits everything that is scalars-only (straight
+ * passthrough) or float-taking (a narrowing wrapper). What is left takes
+ * POINTERS, which FFI format 1 cannot express, and each needs a decision
+ * about what crosses the boundary instead. Those decisions live here.
+ *
+ * Four shapes cover almost all of it:
+ *
+ *   1. SINGLE-OBJECT GENERATORS. glGenBuffers(1, &name) is really "return a
+ *      name". WebGL's createBuffer() only ever asks for one, so the wrapper
+ *      returns it: `uint32_t sg_gl_gen_buffer(void)`. The n>1 form is not
+ *      exposed, because the WebGL API has no way to ask for it.
+ *
+ *   2. SINGLE-OBJECT DELETERS. Same, mirrored.
+ *
+ *   3. BULK UPLOADS. glBufferData/glTexImage2D take a pointer plus a size,
+ *      which is exactly the `bytes` param class: a borrowed span, valid for
+ *      the call only. No copy, no lifetime question.
+ *
+ *   4. OUT-PARAM GETTERS. glGetIntegerv(pname, &out) becomes
+ *      `int32_t sg_gl_get_integer(uint32_t pname)`. The multi-value forms
+ *      (viewport, scissor) return one component per call, indexed, which
+ *      costs four boundary crossings for a value read once a frame at most.
+ *
+ * Strings (shader source, info logs) go through the existing string mailbox
+ * rather than inventing a second protocol.
+ */
+#include <GLES3/gl3.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "sg_skia.h"   /* sg_mail_set, SG_OK and friends */
+
+extern "C" {
+
+/* ---- 1. single-object generators ------------------------------------- */
+
+uint32_t sg_gl_gen_buffer(void) { GLuint n = 0; glGenBuffers(1, &n); return n; }
+uint32_t sg_gl_gen_texture(void) { GLuint n = 0; glGenTextures(1, &n); return n; }
+uint32_t sg_gl_gen_framebuffer(void) { GLuint n = 0; glGenFramebuffers(1, &n); return n; }
+uint32_t sg_gl_gen_renderbuffer(void) { GLuint n = 0; glGenRenderbuffers(1, &n); return n; }
+uint32_t sg_gl_gen_vertex_array(void) { GLuint n = 0; glGenVertexArrays(1, &n); return n; }
+uint32_t sg_gl_gen_sampler(void) { GLuint n = 0; glGenSamplers(1, &n); return n; }
+uint32_t sg_gl_gen_query(void) { GLuint n = 0; glGenQueries(1, &n); return n; }
+uint32_t sg_gl_gen_transform_feedback(void) {
+  GLuint n = 0; glGenTransformFeedbacks(1, &n); return n;
+}
+
+/* ---- 2. single-object deleters --------------------------------------- */
+
+void sg_gl_delete_buffer(uint32_t n) { GLuint v = n; glDeleteBuffers(1, &v); }
+void sg_gl_delete_texture(uint32_t n) { GLuint v = n; glDeleteTextures(1, &v); }
+void sg_gl_delete_framebuffer(uint32_t n) { GLuint v = n; glDeleteFramebuffers(1, &v); }
+void sg_gl_delete_renderbuffer(uint32_t n) { GLuint v = n; glDeleteRenderbuffers(1, &v); }
+void sg_gl_delete_vertex_array(uint32_t n) { GLuint v = n; glDeleteVertexArrays(1, &v); }
+void sg_gl_delete_sampler(uint32_t n) { GLuint v = n; glDeleteSamplers(1, &v); }
+void sg_gl_delete_query(uint32_t n) { GLuint v = n; glDeleteQueries(1, &v); }
+void sg_gl_delete_transform_feedback(uint32_t n) {
+  GLuint v = n; glDeleteTransformFeedbacks(1, &v);
+}
+
+/* ---- 3. bulk uploads -------------------------------------------------- */
+
+/* `data` is a borrowed span for the duration of the call, which is exactly
+ * what GL wants: it copies into the buffer object before returning. */
+void sg_gl_buffer_data(uint32_t target, const uint8_t* data, size_t len,
+                       uint32_t usage) {
+  glBufferData(target, (GLsizeiptr)len, data, usage);
+}
+
+/* A size-only bufferData: glBufferData(target, size, NULL, usage) allocates
+ * without initialising, which the `bytes` class cannot express (a zero-length
+ * span is not a null pointer). */
+void sg_gl_buffer_data_size(uint32_t target, double size, uint32_t usage) {
+  glBufferData(target, (GLsizeiptr)size, nullptr, usage);
+}
+
+void sg_gl_buffer_sub_data(uint32_t target, double offset,
+                           const uint8_t* data, size_t len) {
+  glBufferSubData(target, (GLintptr)offset, (GLsizeiptr)len, data);
+}
+
+void sg_gl_tex_image_2d(uint32_t target, int32_t level, int32_t internalformat,
+                        int32_t width, int32_t height, int32_t border,
+                        uint32_t format, uint32_t type,
+                        const uint8_t* pixels, size_t len) {
+  /* A zero-length span means "allocate, do not upload", which is the
+   * texImage2D(..., null) form. */
+  glTexImage2D(target, level, internalformat, width, height, border, format,
+               type, len == 0 ? nullptr : pixels);
+}
+
+void sg_gl_tex_sub_image_2d(uint32_t target, int32_t level, int32_t xoffset,
+                            int32_t yoffset, int32_t width, int32_t height,
+                            uint32_t format, uint32_t type,
+                            const uint8_t* pixels, size_t len) {
+  if (len == 0) return;
+  glTexSubImage2D(target, level, xoffset, yoffset, width, height, format, type,
+                  pixels);
+}
+
+/* ---- 4. out-param getters -------------------------------------------- */
+
+int32_t sg_gl_get_integer(uint32_t pname) {
+  GLint v = 0;
+  glGetIntegerv(pname, &v);
+  return v;
+}
+
+/* Multi-value parameters (VIEWPORT, SCISSOR_BOX, COLOR_WRITEMASK) one
+ * component at a time. Four crossings for something read at most once a
+ * frame is cheaper than inventing a return-array protocol. */
+int32_t sg_gl_get_integer_i(uint32_t pname, uint32_t index) {
+  GLint v[4] = {0, 0, 0, 0};
+  glGetIntegerv(pname, v);
+  return index < 4 ? v[index] : 0;
+}
+
+double sg_gl_get_float(uint32_t pname) {
+  GLfloat v = 0.0f;
+  glGetFloatv(pname, &v);
+  return (double)v;
+}
+
+uint32_t sg_gl_get_boolean(uint32_t pname) {
+  GLboolean v = GL_FALSE;
+  glGetBooleanv(pname, &v);
+  return v ? 1u : 0u;
+}
+
+/* ---- shaders and programs -------------------------------------------- */
+
+/* Shader source arrives as one borrowed span; GL wants an array of pointers
+ * plus lengths. One string is the only form WebGL's shaderSource can
+ * produce. */
+void sg_gl_shader_source(uint32_t shader, const uint8_t* src, size_t len) {
+  const GLchar* strings[1] = {(const GLchar*)src};
+  const GLint lengths[1] = {(GLint)len};
+  glShaderSource(shader, 1, strings, lengths);
+}
+
+int32_t sg_gl_get_shader_parameter(uint32_t shader, uint32_t pname) {
+  GLint v = 0;
+  glGetShaderiv(shader, pname, &v);
+  return v;
+}
+
+int32_t sg_gl_get_program_parameter(uint32_t program, uint32_t pname) {
+  GLint v = 0;
+  glGetProgramiv(program, pname, &v);
+  return v;
+}
+
+/* Info logs go to the string mailbox, the same channel every other shim
+ * error uses, rather than a second string protocol. Returns the length so
+ * TS knows whether to read it. */
+int32_t sg_gl_shader_info_log(uint32_t shader) {
+  GLint len = 0;
+  glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &len);
+  if (len <= 0) { sg_mail_set(""); return 0; }
+  char buf[4096];
+  GLsizei got = 0;
+  glGetShaderInfoLog(shader, (GLsizei)sizeof(buf), &got, buf);
+  buf[got < (GLsizei)sizeof(buf) ? got : (GLsizei)sizeof(buf) - 1] = 0;
+  sg_mail_set(buf);
+  return (int32_t)got;
+}
+
+int32_t sg_gl_program_info_log(uint32_t program) {
+  GLint len = 0;
+  glGetProgramiv(program, GL_INFO_LOG_LENGTH, &len);
+  if (len <= 0) { sg_mail_set(""); return 0; }
+  char buf[4096];
+  GLsizei got = 0;
+  glGetProgramInfoLog(program, (GLsizei)sizeof(buf), &got, buf);
+  buf[got < (GLsizei)sizeof(buf) ? got : (GLsizei)sizeof(buf) - 1] = 0;
+  sg_mail_set(buf);
+  return (int32_t)got;
+}
+
+/* getUniformLocation: -1 means "not an active uniform", which the WebGL
+ * layer turns into null. */
+int32_t sg_gl_get_uniform_location(uint32_t program, const uint8_t* name,
+                                   size_t len) {
+  char buf[256];
+  if (len >= sizeof(buf)) return -1;
+  memcpy(buf, name, len);
+  buf[len] = 0;
+  return glGetUniformLocation(program, buf);
+}
+
+int32_t sg_gl_get_attrib_location(uint32_t program, const uint8_t* name,
+                                  size_t len) {
+  char buf[256];
+  if (len >= sizeof(buf)) return -1;
+  memcpy(buf, name, len);
+  buf[len] = 0;
+  return glGetAttribLocation(program, buf);
+}
+
+/* ---- uniforms with array payloads ------------------------------------ */
+
+/* The *v forms take a float array. Bytes in, reinterpreted: the caller
+ * passes a Float32Array's bytes, so the count is len/4 divided by the
+ * component count. */
+void sg_gl_uniform_fv(int32_t location, uint32_t components,
+                      const uint8_t* data, size_t len) {
+  const GLfloat* f = (const GLfloat*)data;
+  GLsizei count = (GLsizei)(len / (4 * components));
+  switch (components) {
+    case 1: glUniform1fv(location, count, f); break;
+    case 2: glUniform2fv(location, count, f); break;
+    case 3: glUniform3fv(location, count, f); break;
+    case 4: glUniform4fv(location, count, f); break;
+    default: break;
+  }
+}
+
+void sg_gl_uniform_iv(int32_t location, uint32_t components,
+                      const uint8_t* data, size_t len) {
+  const GLint* v = (const GLint*)data;
+  GLsizei count = (GLsizei)(len / (4 * components));
+  switch (components) {
+    case 1: glUniform1iv(location, count, v); break;
+    case 2: glUniform2iv(location, count, v); break;
+    case 3: glUniform3iv(location, count, v); break;
+    case 4: glUniform4iv(location, count, v); break;
+    default: break;
+  }
+}
+
+/* Matrix uniforms: dim is 2, 3 or 4. */
+void sg_gl_uniform_matrix_fv(int32_t location, uint32_t dim, uint32_t transpose,
+                             const uint8_t* data, size_t len) {
+  const GLfloat* f = (const GLfloat*)data;
+  GLsizei count = (GLsizei)(len / (4 * dim * dim));
+  GLboolean t = transpose ? GL_TRUE : GL_FALSE;
+  switch (dim) {
+    case 2: glUniformMatrix2fv(location, count, t, f); break;
+    case 3: glUniformMatrix3fv(location, count, t, f); break;
+    case 4: glUniformMatrix4fv(location, count, t, f); break;
+    default: break;
+  }
+}
+
+/* ---- vertex attributes ------------------------------------------------ */
+
+/* The pointer argument is a BYTE OFFSET into the bound buffer in ES3, not a
+ * client pointer, so it crosses as a number. */
+void sg_gl_vertex_attrib_pointer(uint32_t index, int32_t size, uint32_t type,
+                                 uint32_t normalized, int32_t stride,
+                                 double offset) {
+  glVertexAttribPointer(index, size, type, normalized ? GL_TRUE : GL_FALSE,
+                        stride, (const void*)(intptr_t)offset);
+}
+
+void sg_gl_vertex_attrib_i_pointer(uint32_t index, int32_t size, uint32_t type,
+                                   int32_t stride, double offset) {
+  glVertexAttribIPointer(index, size, type, stride, (const void*)(intptr_t)offset);
+}
+
+/* Same story for indexed draws. */
+void sg_gl_draw_elements(uint32_t mode, int32_t count, uint32_t type,
+                         double offset) {
+  glDrawElements(mode, count, type, (const void*)(intptr_t)offset);
+}
+
+void sg_gl_draw_elements_instanced(uint32_t mode, int32_t count, uint32_t type,
+                                   double offset, int32_t instances) {
+  glDrawElementsInstanced(mode, count, type, (const void*)(intptr_t)offset,
+                          instances);
+}
+
+/* ---- readback --------------------------------------------------------- */
+
+/* readPixels into a caller-owned span. FFI format 1 has no out-bytes class,
+ * so this is the one place the WebGL layer cannot hand back pixels directly;
+ * the conformance harness hashes them natively instead (see sg_gl_hash_pixels).
+ */
+uint32_t sg_gl_hash_pixels(int32_t x, int32_t y, int32_t w, int32_t h) {
+  if (w <= 0 || h <= 0) return 0;
+  const size_t n = (size_t)w * (size_t)h * 4;
+  uint8_t* buf = (uint8_t*)malloc(n);
+  if (!buf) return 0;
+  glReadPixels(x, y, w, h, GL_RGBA, GL_UNSIGNED_BYTE, buf);
+  /* FNV-1a: the harness only needs a stable digest to compare against the
+   * Node+webgl-node run, not a cryptographic one. */
+  uint32_t hash = 2166136261u;
+  for (size_t i = 0; i < n; i++) {
+    hash ^= buf[i];
+    hash *= 16777619u;
+  }
+  free(buf);
+  return hash;
+}
+
+}  // extern "C"
