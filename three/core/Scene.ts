@@ -18,6 +18,8 @@
 import { Object3D } from "./Object3D.js";
 import { Color } from "../math/Color.js";
 import { Mesh } from "../objects/Mesh.js";
+import { InstancedMesh } from "../objects/InstancedMesh.js";
+import { Sprite, Line, Points } from "../objects/Sprite.js";
 import { Light } from "../lights/Light.js";
 
 export class Scene extends Object3D {
@@ -28,6 +30,14 @@ export class Scene extends Object3D {
   meshes: Mesh[] = [];
   /** Every light, whatever its type. */
   lights: Light[] = [];
+  /* One list per drawable KIND, for the same reason meshes is a list: the
+   * renderer needs a concrete type to call through, and the dialect will
+   * not narrow an Object3D back down (SC1090). Each list is drawn with its
+   * own GL primitive, so they could not share a loop regardless. */
+  instanced: InstancedMesh[] = [];
+  sprites: Sprite[] = [];
+  lines: Line[] = [];
+  points: Points[] = [];
 
   /** three's spelling; also registers so the renderer can find it. */
   addMesh(mesh: Mesh): Scene {
@@ -47,6 +57,44 @@ export class Scene extends Object3D {
   addMeshTo(parent: Object3D, mesh: Mesh): Scene {
     parent.add(mesh);
     this.meshes.push(mesh);
+    return this;
+  }
+
+  addInstancedMesh(mesh: InstancedMesh): Scene {
+    this.add(mesh);
+    this.instanced.push(mesh);
+    return this;
+  }
+
+  addSprite(sprite: Sprite): Scene {
+    this.add(sprite);
+    this.sprites.push(sprite);
+    return this;
+  }
+
+  addLine(line: Line): Scene {
+    this.add(line);
+    this.lines.push(line);
+    return this;
+  }
+
+  addPoints(points: Points): Scene {
+    this.add(points);
+    this.points.push(points);
+    return this;
+  }
+
+  removeSprite(sprite: Sprite): Scene {
+    const i = this.sprites.indexOf(sprite);
+    if (i >= 0) this.sprites.splice(i, 1);
+    this.remove(sprite);
+    return this;
+  }
+
+  removeInstancedMesh(mesh: InstancedMesh): Scene {
+    const i = this.instanced.indexOf(mesh);
+    if (i >= 0) this.instanced.splice(i, 1);
+    this.remove(mesh);
     return this;
   }
 

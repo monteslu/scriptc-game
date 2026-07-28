@@ -56,6 +56,10 @@ run "webgl2"             env ./build/webgltest
 # Node + webgl-node rendering the same scenes. Skips when the reference is
 # not installed or the box has no EGL device.
 run "webgl2 parity"      ./scripts/webgl-parity.sh
+# InstancedMesh must draw the same pixels as the same transforms drawn one
+# mesh at a time. Carries its own control: a deliberately wrong cube must be
+# detected, or the comparison is not evidence.
+run "instancing parity"  ./scripts/instancing-parity.sh
 
 # Event-loop ordering: async-shaped APIs must settle on a LATER turn. Guards
 # the class of bug where a promise chain silently never runs.

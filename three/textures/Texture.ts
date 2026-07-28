@@ -25,6 +25,32 @@ export class Texture {
   minFilter: number = LinearFilter;
   flipY = true;
 
+  /* UV transform, three's `texture.offset` / `texture.repeat`.
+   *
+   * The sampled coordinate is `uv * repeat + offset`, which is how a SPRITE
+   * SHEET is addressed: a 4-frame strip is repeat=(0.25,1) with offset
+   * stepping 0, 0.25, 0.5, 0.75. Without it a sheet renders as every frame
+   * squeezed onto one quad, which looks like a squashed sprite rather than
+   * an obvious mistake. */
+  offsetX = 0;
+  offsetY = 0;
+  repeatX = 1;
+  repeatY = 1;
+
+  /** three spells this `texture.offset.set(x, y)`. */
+  setOffset(x: number, y: number): Texture {
+    this.offsetX = x;
+    this.offsetY = y;
+    return this;
+  }
+
+  /** three spells this `texture.repeat.set(x, y)`. */
+  setRepeat(x: number, y: number): Texture {
+    this.repeatX = x;
+    this.repeatY = y;
+    return this;
+  }
+
   /** Re-upload on the next draw. Set this after redrawing a canvas source. */
   needsUpdate = true;
 

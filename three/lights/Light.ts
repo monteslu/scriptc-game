@@ -22,6 +22,16 @@ export class Light extends Object3D {
   intensity: number;
   lightType = 0;
 
+  /* Point-light falloff. These live on the BASE class, not on PointLight,
+   * because the renderer holds a Light[] and the dialect will not narrow it
+   * back to PointLight (SC1090) -- the same constraint that makes Scene
+   * keep typed registries. They are ignored for other light types.
+   *
+   * `distance` 0 means no cutoff; `decay` 2 is physically correct
+   * inverse-square. Both match three's defaults and meanings. */
+  distance = 0;
+  decay = 2;
+
   constructor(color: number = 0xffffff, intensity: number = 1) {
     super();
     this.isLight = true;
@@ -54,8 +64,6 @@ export class DirectionalLight extends Light {
 
 /** A light at a point, falling off with distance. */
 export class PointLight extends Light {
-  distance: number;
-  decay: number;
   readonly isPointLight = true;
 
   constructor(color: number = 0xffffff, intensity: number = 1,

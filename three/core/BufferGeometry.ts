@@ -25,6 +25,15 @@ export class BufferGeometry {
   /** Bounding sphere radius, for frustum culling. -1 until computed. */
   boundingRadius = -1;
 
+  /* Set this after rewriting `position.array` in place to have the renderer
+   * re-upload it. Geometry buffers are STATIC_DRAW and uploaded once, which
+   * is right for the common case, but dynamic geometry (a trail, a rope, a
+   * deforming mesh) rewrites vertices every frame and would otherwise keep
+   * drawing the first frame's data forever. three spells this
+   * `geometry.attributes.position.needsUpdate`; the attribute is a named
+   * field here (see the note above), so the flag lives on the geometry. */
+  positionNeedsUpdate = false;
+
   /* GL objects, created by the renderer on first draw. null = not uploaded.
    * These are the SPEC wrapper types, so the renderer hands them straight
    * to gl.bindVertexArray / gl.bindBuffer with no unwrapping. */
@@ -50,6 +59,12 @@ export class BufferGeometry {
     if (name === "uv") return this.uv;
     if (name === "color") return this.color;
     return null;
+  }
+
+  /** Re-upload `position` on the next draw. three: attribute.needsUpdate. */
+  updatePosition(): BufferGeometry {
+    this.positionNeedsUpdate = true;
+    return this;
   }
 
   setIndex(attribute: BufferAttribute): BufferGeometry {

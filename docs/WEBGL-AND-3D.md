@@ -233,6 +233,95 @@ including binary size.
   binary stays static), plus runtime OBJ for simplicity. Direct runtime
   glTF: D.
 
+## What shipped, and where it differs from three
+
+Everything below is implemented and exercised by `examples/spinfield` and
+`examples/orbits`. The API is three's; the differences are all forced by
+the dialect and are listed here rather than left to be discovered.
+
+| three | here | why |
+| --- | --- | --- |
+| `scene.add(anything)` | `addMesh` / `addInstancedMesh` / `addSprite` / `addLine` / `addPoints` / `addLight` | the renderer needs a concrete type per drawable kind; the dialect will not narrow `Object3D` back down (SC1090). `add()` still works for transform parenting. |
+| `geometry.attributes.position` | `geometry.position` | no dynamic property access; `setAttribute("position", ...)` still works |
+| `attribute.needsUpdate = true` | `geometry.updatePosition()` | the attribute is a named field, so the flag lives on the geometry |
+| `texture.offset.set(x, y)` | `texture.setOffset(x, y)` | same for `repeat`; no Vector2 property objects with setters |
+| `material.rotation` on a Sprite | same | screen-space spin, as in three |
+| `mesh.instanceMatrix.needsUpdate` | same | works exactly as three's |
+
+### InstancedMesh
+
+One draw call for N transforms. `setMatrixAt(i, matrix)` /
+`getMatrixAt(i, target)` / `setColorAt(i, color)` match three, including
+`count` being lowerable below the allocated capacity for pooling.
+
+The renderer uploads only the **drawn prefix** (`count` instances), not the
+whole allocation. This matters: uploading all 10000 slots while drawing 250
+cost 2.27 ms/frame against 0.72 ms for the same 250 as individual meshes,
+which made instancing look like a pessimisation at small counts. With the
+prefix upload it is 0.121 ms. Measured numbers are in the spinfield table
+below.
+
+`scripts/instancing-parity.sh` renders the same field both ways and requires
+the two to be **pixel-identical**, with a control that deliberately breaks
+one cube and must be detected.
+
+### Sprite
+
+A camera-facing textured quad. The billboard is built in the vertex shader
+from the translation column of `modelViewMatrix`, deliberately NOT by
+transforming the origin through it: the matrix carries the object's scale,
+and applying that to the position as well as the quad offset turned every
+sprite into a sliver.
+
+Sprite sheets work through `texture.setRepeat` / `setOffset` (a 4-frame
+strip is `repeat=(0.25, 1)` with the offset stepping by 0.25). Without that,
+a sheet renders as every frame squeezed onto one quad, which reads as a
+squashed sprite rather than an obvious error.
+
+### Points and Line
+
+`PointsMaterial.size` is in pixels and `sizeAttenuation` decides whether it
+shrinks with distance. Point sprites have no `uv` attribute, so a mapped
+PointsMaterial samples `gl_PointCoord`.
+
+`LineBasicMaterial.linewidth` exists for API compatibility but **does
+nothing**: WebGL ignores widths above 1 on essentially every desktop
+driver. Thick lines need quad geometry.
+
+### PointLight falloff
+
+`distance` and `decay` are honoured, matching three's formula
+(`1/d^decay`, windowed to reach 0 at `distance`). They were previously
+ignored in favour of a fixed `1/(1 + 0.1*d^2)`, which attenuates to 0.008 at
+35 units: anything that far from a light rendered black no matter how it was
+configured.
+
+Worth knowing when tuning a scene: `decay = 2` is physically correct but
+assumes real-world distances. At game scale a light 35 units away needs an
+intensity in the hundreds to be visible, and anything near it then blows
+out. `examples/orbits` uses `decay = 1`, which is exactly what the parameter
+is exposed for.
+
+## Benchmark: spinfield
+
+Identical per-cube math both ways, so the only difference measured is how
+transforms reach the GPU. `SG_NO_VSYNC=1 ./build/spinfield`:
+
+```
+  instanced n=  250  mean    0.121 ms   p95    0.146   8268 fps
+  per-mesh  n=  250  mean    0.700 ms   p95    0.760   1429 fps
+  instanced n= 1000  mean    0.604 ms   p95    0.655   1655 fps
+  per-mesh  n= 1000  mean    3.465 ms   p95    3.686    289 fps
+  instanced n= 2500  mean    2.199 ms   p95    2.787    455 fps
+  per-mesh  n= 2500  mean   12.872 ms   p95   18.587     78 fps
+  instanced n=10000  mean    9.147 ms   p95   13.137    109 fps
+  per-mesh  n=10000  mean  125.158 ms   p95  146.503      8 fps
+```
+
+Instancing wins at every count, by 5.8x at 250 and 13.7x at 10000. The
+per-mesh path is not a strawman: it is the same renderer, the same
+geometry and the same material, drawn one object at a time.
+
 **D (post-v0):** shadow maps (directional first), fog, skinning + 
 animation clips, IBL/environment, post-processing chain, GLTFLoader at
 runtime, LOD, morph targets.

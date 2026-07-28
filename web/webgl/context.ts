@@ -380,6 +380,21 @@ export class WebGL2RenderingContext {
   enableVertexAttribArray(index: number): void { gl.EnableVertexAttribArray(index); }
   disableVertexAttribArray(index: number): void { gl.DisableVertexAttribArray(index); }
 
+  /* Constant (non-array) attribute values, used when an attribute is
+   * DISABLED. A disabled attribute otherwise reads as (0,0,0,1), so a
+   * shader that multiplies by an optional per-instance colour would render
+   * everything black rather than untinted. */
+  vertexAttrib1f(index: number, x: number): void { gl.vertexAttrib1f(index, x); }
+  vertexAttrib2f(index: number, x: number, y: number): void {
+    gl.vertexAttrib2f(index, x, y);
+  }
+  vertexAttrib3f(index: number, x: number, y: number, z: number): void {
+    gl.vertexAttrib3f(index, x, y, z);
+  }
+  vertexAttrib4f(index: number, x: number, y: number, z: number, w: number): void {
+    gl.vertexAttrib4f(index, x, y, z, w);
+  }
+
   /* `offset` is a byte offset into the bound ARRAY_BUFFER in ES3, never a
    * client pointer, which is why it crosses as a number. */
   vertexAttribPointer(index: number, size: number, type: number,

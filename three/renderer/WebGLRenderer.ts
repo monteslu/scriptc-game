@@ -29,6 +29,7 @@ import {
   RGBA, UNSIGNED_BYTE, TEXTURE_MIN_FILTER, TEXTURE_MAG_FILTER, LINEAR,
   CLAMP_TO_EDGE, REPEAT, TEXTURE_WRAP_S, TEXTURE_WRAP_T, COMPILE_STATUS,
   LINK_STATUS, BLEND, SRC_ALPHA, ONE_MINUS_SRC_ALPHA, LEQUAL, DEPTH_FUNC,
+  POINTS as GL_POINTS, LINES, LINE_LOOP, LINE_STRIP, DYNAMIC_DRAW,
 } from "../../web/webgl/constants.js";
 import { Scene } from "../core/Scene.js";
 import { PerspectiveCamera } from "../core/PerspectiveCamera.js";
@@ -38,8 +39,11 @@ import { Mesh } from "../objects/Mesh.js";
 import { BufferGeometry } from "../core/BufferGeometry.js";
 import {
   Material, MeshLambertMaterial, FEAT_MAP, FEAT_VERTEX_COLORS, FEAT_LAMBERT,
-  FEAT_EMISSIVE, DoubleSide, BackSide,
+  FEAT_EMISSIVE, FEAT_INSTANCED, FEAT_POINTS, FEAT_SPRITE,
+  PointsMaterial, SpriteMaterial, DoubleSide, BackSide,
 } from "../materials/Material.js";
+import { InstancedMesh } from "../objects/InstancedMesh.js";
+import { Sprite, Line, LineSegments, LineLoop, Points } from "../objects/Sprite.js";
 import {
   Light, AmbientLight, DirectionalLight, PointLight,
   LIGHT_AMBIENT, LIGHT_DIRECTIONAL, LIGHT_POINT,
@@ -69,6 +73,7 @@ class Program {
   uColor: WebGLUniformLocation | null = null;
   uOpacity: WebGLUniformLocation | null = null;
   uMap: WebGLUniformLocation | null = null;
+  uMapTransform: WebGLUniformLocation | null = null;
   uEmissive: WebGLUniformLocation | null = null;
   uAmbient: WebGLUniformLocation | null = null;
   uDirCount: WebGLUniformLocation | null = null;
@@ -77,6 +82,12 @@ class Program {
   uPointCount: WebGLUniformLocation | null = null;
   uPointPositions: WebGLUniformLocation | null = null;
   uPointColors: WebGLUniformLocation | null = null;
+  uPointFalloff: WebGLUniformLocation | null = null;
+  uPointSize: WebGLUniformLocation | null = null;
+  uSizeAttenuation: WebGLUniformLocation | null = null;
+  uSpriteCenter: WebGLUniformLocation | null = null;
+  uSpriteRotation: WebGLUniformLocation | null = null;
+  uSpriteScale: WebGLUniformLocation | null = null;
 }
 
 export class WebGLRenderer {
@@ -94,6 +105,7 @@ export class WebGLRenderer {
   private mat3Buf: Buffer = Buffer.alloc(36);
   private vec3Buf: Buffer = Buffer.alloc(MAX_POINT_LIGHTS * 12);
   private colorBuf: Buffer = Buffer.alloc(MAX_POINT_LIGHTS * 12);
+  private falloffBuf: Buffer = Buffer.alloc(MAX_POINT_LIGHTS * 8);
 
   /* Collected per frame by walking the scene once. */
   private opaque: Mesh[] = [];
@@ -130,20 +142,72 @@ export class WebGLRenderer {
     s += "in vec3 normal;\n";
     if ((features & FEAT_MAP) !== 0) s += "in vec2 uv;\n";
     if ((features & FEAT_VERTEX_COLORS) !== 0) s += "in vec3 color;\n";
+    /* A mat4 attribute occupies four consecutive locations (4..7), one per
+     * column, each with a divisor of 1 so it advances per INSTANCE. */
+    if ((features & FEAT_INSTANCED) !== 0) s += "in mat4 instanceMatrix;\n";
+    if ((features & FEAT_INSTANCED) !== 0) s += "in vec3 instanceColor;\n";
     s += "uniform mat4 modelViewMatrix;\n";
     s += "uniform mat4 projectionMatrix;\n";
     s += "uniform mat3 normalMatrix;\n";
+    if ((features & FEAT_POINTS) !== 0) {
+      s += "uniform float pointSize;\n";
+      s += "uniform float sizeAttenuation;\n";
+    }
+    if ((features & FEAT_SPRITE) !== 0) {
+      s += "uniform vec2 spriteCenter;\n";
+      s += "uniform float spriteRotation;\n";
+      s += "uniform vec2 spriteScale;\n";
+    }
     s += "out vec3 vNormal;\n";
     s += "out vec3 vViewPosition;\n";
     if ((features & FEAT_MAP) !== 0) s += "out vec2 vUv;\n";
     if ((features & FEAT_VERTEX_COLORS) !== 0) s += "out vec3 vColor;\n";
+    if ((features & FEAT_INSTANCED) !== 0) s += "out vec3 vInstanceColor;\n";
     s += "void main() {\n";
-    s += "  vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);\n";
+
+    if ((features & FEAT_SPRITE) !== 0) {
+      /* Billboard: take the sprite's world POSITION from the model-view
+       * matrix but drop its rotation, so the quad is built in view space
+       * and always faces the camera. `center` shifts the anchor within the
+       * quad; `rotation` spins it in screen space. */
+      /* The sprite's view-space POSITION is the translation column of
+       * modelViewMatrix. Reading it directly rather than transforming the
+       * origin keeps the object's scale out of it: the scale belongs on
+       * the quad offset below, and applying it to the position too made
+       * every sprite a sliver. */
+      s += "  vec4 mvPosition = vec4(modelViewMatrix[3].xyz, 1.0);\n";
+      s += "  vec2 offset = position.xy - (spriteCenter - vec2(0.5));\n";
+      s += "  offset *= spriteScale;\n";
+      s += "  float sr = sin(spriteRotation);\n";
+      s += "  float cr = cos(spriteRotation);\n";
+      s += "  offset = vec2(offset.x * cr - offset.y * sr,\n";
+      s += "                offset.x * sr + offset.y * cr);\n";
+      s += "  mvPosition.xy += offset;\n";
+      s += "  vNormal = vec3(0.0, 0.0, 1.0);\n";
+    } else if ((features & FEAT_INSTANCED) !== 0) {
+      s += "  vec4 mvPosition = modelViewMatrix * instanceMatrix * vec4(position, 1.0);\n";
+      /* The instance matrix rotates the normal too. Using its 3x3 directly
+       * is correct for the rigid + uniform-scale transforms instancing is
+       * used for; non-uniform per-instance scale would need a per-instance
+       * inverse-transpose, which is not worth the bandwidth here. */
+      s += "  vNormal = normalize(normalMatrix * mat3(instanceMatrix) * normal);\n";
+    } else {
+      s += "  vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);\n";
+      s += "  vNormal = normalize(normalMatrix * normal);\n";
+    }
+
     s += "  vViewPosition = -mvPosition.xyz;\n";
-    s += "  vNormal = normalize(normalMatrix * normal);\n";
     if ((features & FEAT_MAP) !== 0) s += "  vUv = uv;\n";
     if ((features & FEAT_VERTEX_COLORS) !== 0) s += "  vColor = color;\n";
+    if ((features & FEAT_INSTANCED) !== 0) s += "  vInstanceColor = instanceColor;\n";
     s += "  gl_Position = projectionMatrix * mvPosition;\n";
+    if ((features & FEAT_POINTS) !== 0) {
+      /* With attenuation the pixel size falls off as 1/distance, matching
+       * three's PointsMaterial; without it the size is constant on screen. */
+      s += "  gl_PointSize = mix(pointSize,\n";
+      s += "                     pointSize / max(0.0001, -mvPosition.z),\n";
+      s += "                     sizeAttenuation);\n";
+    }
     s += "}\n";
     return s;
   }
@@ -155,9 +219,13 @@ export class WebGLRenderer {
     s += "in vec3 vViewPosition;\n";
     if ((features & FEAT_MAP) !== 0) s += "in vec2 vUv;\n";
     if ((features & FEAT_VERTEX_COLORS) !== 0) s += "in vec3 vColor;\n";
+    if ((features & FEAT_INSTANCED) !== 0) s += "in vec3 vInstanceColor;\n";
     s += "uniform vec3 diffuse;\n";
     s += "uniform float opacity;\n";
-    if ((features & FEAT_MAP) !== 0) s += "uniform sampler2D map;\n";
+    if ((features & FEAT_MAP) !== 0) {
+      s += "uniform sampler2D map;\n";
+      s += "uniform vec4 mapTransform;\n";   // xy = repeat, zw = offset
+    }
     if ((features & FEAT_EMISSIVE) !== 0) s += "uniform vec3 emissive;\n";
     if ((features & FEAT_LAMBERT) !== 0) {
       s += "uniform vec3 ambientLightColor;\n";
@@ -167,12 +235,22 @@ export class WebGLRenderer {
       s += `uniform int pointLightCount;\n`;
       s += `uniform vec3 pointLightPositions[${MAX_POINT_LIGHTS}];\n`;
       s += `uniform vec3 pointLightColors[${MAX_POINT_LIGHTS}];\n`;
+      /* x = distance (0 = no cutoff), y = decay exponent. */
+      s += `uniform vec2 pointLightFalloff[${MAX_POINT_LIGHTS}];\n`;
     }
     s += "out vec4 fragColor;\n";
     s += "void main() {\n";
     s += "  vec4 base = vec4(diffuse, opacity);\n";
-    if ((features & FEAT_MAP) !== 0) s += "  base *= texture(map, vUv);\n";
+    /* A point sprite has no uv attribute: gl_PointCoord gives the position
+     * within the point, which is the only sensible texture coordinate. It
+     * runs top-down like a texture source, so v is flipped to match. */
+    if ((features & FEAT_MAP) !== 0 && (features & FEAT_POINTS) !== 0) {
+      s += "  base *= texture(map, vec2(gl_PointCoord.x, 1.0 - gl_PointCoord.y) * mapTransform.xy + mapTransform.zw);\n";
+    } else if ((features & FEAT_MAP) !== 0) {
+      s += "  base *= texture(map, vUv * mapTransform.xy + mapTransform.zw);\n";
+    }
     if ((features & FEAT_VERTEX_COLORS) !== 0) s += "  base.rgb *= vColor;\n";
+    if ((features & FEAT_INSTANCED) !== 0) s += "  base.rgb *= vInstanceColor;\n";
 
     if ((features & FEAT_LAMBERT) !== 0) {
       s += "  vec3 n = normalize(vNormal);\n";
@@ -185,9 +263,25 @@ export class WebGLRenderer {
       s += "    if (i >= pointLightCount) break;\n";
       s += "    vec3 toLight = pointLightPositions[i] + vViewPosition;\n";
       s += "    float dist = length(toLight);\n";
-      // Inverse-square falloff with a 1.0 floor so a light at the surface
-      // does not blow out to infinity.
-      s += "    float atten = 1.0 / (1.0 + dist * dist * 0.1);\n";
+      /* three's falloff, so a PointLight's `distance` and `decay` mean what
+       * the three docs say rather than being ignored.
+       *
+       * The previous formula was a fixed 1/(1 + 0.1*d^2), which reaches
+       * 0.008 at d=35 -- an object 35 units from a light rendered
+       * essentially black however the light was configured. That is why the
+       * asteroid belt in examples/orbits was unlit.
+       *
+       *   atten = 1/max(d,eps)^decay, windowed to reach exactly 0 at
+       *   `distance` so a light has a bounded region of influence.
+       *
+       * distance == 0 means no cutoff, matching three. */
+      s += "    float lightDist = pointLightFalloff[i].x;\n";
+      s += "    float lightDecay = pointLightFalloff[i].y;\n";
+      s += "    float atten = 1.0 / max(pow(max(dist, 0.01), lightDecay), 0.0001);\n";
+      s += "    if (lightDist > 0.0) {\n";
+      s += "      float w = clamp(1.0 - pow(dist / lightDist, 4.0), 0.0, 1.0);\n";
+      s += "      atten *= w * w;\n";
+      s += "    }\n";
       s += "    lit += pointLightColors[i] * max(dot(n, toLight / dist), 0.0) * atten;\n";
       s += "  }\n";
       s += "  base.rgb *= lit;\n";
@@ -232,6 +326,11 @@ export class WebGLRenderer {
     gl.bindAttribLocation(prog, 1, "normal");
     gl.bindAttribLocation(prog, 2, "uv");
     gl.bindAttribLocation(prog, 3, "color");
+    /* A mat4 attribute consumes locations 4,5,6,7 -- one per column -- so
+     * instanceColor cannot start before 8. Binding these unconditionally
+     * keeps every program's layout identical whether or not it instances. */
+    gl.bindAttribLocation(prog, 4, "instanceMatrix");
+    gl.bindAttribLocation(prog, 8, "instanceColor");
     gl.linkProgram(prog);
     if (gl.getProgramParameter(prog, LINK_STATUS) === 0) {
       console.log(`three: program link failed: ${gl.getProgramInfoLog(prog)}`);
@@ -248,6 +347,7 @@ export class WebGLRenderer {
     p.uColor = loc("diffuse");
     p.uOpacity = loc("opacity");
     p.uMap = loc("map");
+    p.uMapTransform = loc("mapTransform");
     p.uEmissive = loc("emissive");
     p.uAmbient = loc("ambientLightColor");
     p.uDirCount = loc("dirLightCount");
@@ -256,13 +356,30 @@ export class WebGLRenderer {
     p.uPointCount = loc("pointLightCount");
     p.uPointPositions = loc("pointLightPositions[0]");
     p.uPointColors = loc("pointLightColors[0]");
+    p.uPointFalloff = loc("pointLightFalloff[0]");
+    p.uPointSize = loc("pointSize");
+    p.uSizeAttenuation = loc("sizeAttenuation");
+    p.uSpriteCenter = loc("spriteCenter");
+    p.uSpriteRotation = loc("spriteRotation");
+    p.uSpriteScale = loc("spriteScale");
     this.programs.push(p);
     return p;
   }
 
   /** Upload a geometry's buffers once, then reuse its VAO. */
   private prepareGeometry(geo: BufferGeometry): void {
-    if (geo.glVAO !== null) return;
+    if (geo.glVAO !== null) {
+      /* Already uploaded. Dynamic geometry re-uploads just the positions;
+       * everything else stays as it was. */
+      if (geo.positionNeedsUpdate && geo.position !== null &&
+          geo.glPositionBuffer !== null) {
+        const g = this.gl;
+        g.bindBuffer(ARRAY_BUFFER, geo.glPositionBuffer);
+        g.bufferData(ARRAY_BUFFER, geo.position.toFloat32Buffer(), DYNAMIC_DRAW);
+        geo.positionNeedsUpdate = false;
+      }
+      return;
+    }
     const gl = this.gl;
 
     const vao = gl.createVertexArray();
@@ -391,9 +508,46 @@ export class WebGLRenderer {
     gl.clear(COLOR_BUFFER_BIT | DEPTH_BUFFER_BIT);
 
     this.renderList(this.opaque, camera, false);
+
+    /* Instanced, lines and points draw with depth writes ON, between the
+     * opaque and transparent passes: they are opaque geometry that simply
+     * uses a different primitive or a different transform source. */
+    gl.disable(BLEND);
+    gl.depthMask(true);
+    for (let i = 0; i < scene.instanced.length; i++) {
+      const im = scene.instanced[i];
+      if (!im.visible || !im.material.visible) continue;
+      this.renderInstanced(im, camera);
+    }
+    for (let i = 0; i < scene.lines.length; i++) {
+      const ln = scene.lines[i];
+      if (!ln.visible || !ln.material.visible) continue;
+      this.renderLine(ln, camera);
+    }
+    for (let i = 0; i < scene.points.length; i++) {
+      const pt = scene.points[i];
+      if (!pt.visible || !pt.material.visible) continue;
+      this.renderPoints(pt, camera);
+    }
+
     /* Transparent after opaque, with depth WRITES off so overlapping
      * surfaces blend rather than occluding each other. */
     this.renderList(this.transparent, camera, true);
+
+    /* Sprites last and blended: they are billboarded quads, almost always
+     * with a cut-out texture, so they must composite over the finished
+     * scene. Depth TEST stays on so a sprite behind geometry is hidden. */
+    if (scene.sprites.length > 0) {
+      gl.enable(BLEND);
+      gl.blendFunc(SRC_ALPHA, ONE_MINUS_SRC_ALPHA);
+      gl.depthMask(false);
+      for (let i = 0; i < scene.sprites.length; i++) {
+        const sp = scene.sprites[i];
+        if (!sp.visible || !sp.material.visible) continue;
+        this.renderSprite(sp, camera);
+      }
+      gl.depthMask(true);
+    }
   }
 
   private renderList(list: Mesh[], camera: PerspectiveCamera,
@@ -419,16 +573,32 @@ export class WebGLRenderer {
 
   private renderMesh(mesh: Mesh, camera: PerspectiveCamera): void {
     const gl = this.gl;
-    const material = mesh.material;
-    const program = this.getProgram(material.featureBits());
+    const program = this.getProgram(mesh.material.featureBits());
     if (program === null) return;
 
     this.prepareGeometry(mesh.geometry);
     gl.useProgram(program.glProgram);
     gl.bindVertexArray(mesh.geometry.glVAO);
+    this.bindCommon(program, mesh.material, mesh.matrixWorld, camera);
+
+    const count = mesh.geometry.getDrawCount();
+    if (mesh.geometry.index !== null) {
+      gl.drawElements(TRIANGLES, count, UNSIGNED_SHORT, 0);
+    } else {
+      gl.drawArrays(TRIANGLES, 0, count);
+    }
+  }
+
+  /* Everything a draw needs that does not depend on the primitive: the
+   * three matrices, the material uniforms, lights and face culling.
+   * Factored out so instanced/sprite/line/point draws cannot drift from
+   * the mesh path. */
+  private bindCommon(program: Program, material: Material,
+                     worldMatrix: Matrix4, camera: PerspectiveCamera): void {
+    const gl = this.gl;
 
     // modelView = view * world
-    this.modelView.multiplyMatrices(camera.matrixWorldInverse, mesh.matrixWorld);
+    this.modelView.multiplyMatrices(camera.matrixWorldInverse, worldMatrix);
     this.modelView.toBuffer(this.mat4Buf, 0);
     gl.uniformMatrix4fv(program.uModelViewMatrix, false, this.mat4Buf);
 
@@ -449,6 +619,9 @@ export class WebGLRenderer {
       gl.activeTexture(TEXTURE0);
       gl.bindTexture(TEXTURE_2D, material.map.glTexture);
       gl.uniform1i(program.uMap, 0);
+      gl.uniform4f(program.uMapTransform, material.map.repeatX,
+                   material.map.repeatY, material.map.offsetX,
+                   material.map.offsetY);
     }
 
     if ((program.features & FEAT_LAMBERT) !== 0) {
@@ -464,13 +637,225 @@ export class WebGLRenderer {
       gl.enable(CULL_FACE);
       gl.cullFace(material.side === BackSide ? FRONT : BACK);
     }
+  }
+
+  /* ---- instanced ----
+   *
+   * One draw call for N transforms. The instance matrix lives in a buffer
+   * bound to attribute locations 4..7 (one column each) with a divisor of
+   * 1, so it advances per instance while position/normal/uv advance per
+   * vertex.
+   *
+   * The VAO is per-INSTANCEDMESH rather than per-geometry: two
+   * InstancedMeshes may share a geometry but never share instance buffers,
+   * so binding geometry.glVAO would give the second one the first one's
+   * transforms. */
+  private renderInstanced(mesh: InstancedMesh, camera: PerspectiveCamera): void {
+    const gl = this.gl;
+    if (mesh.count === 0) return;
+    const program = this.getProgram(mesh.material.featureBits() | FEAT_INSTANCED);
+    if (program === null) return;
+
+    this.prepareGeometry(mesh.geometry);
+    this.prepareInstanceBuffers(mesh);
+
+    gl.useProgram(program.glProgram);
+    gl.bindVertexArray(mesh.glInstancedVAO);
+    this.bindCommon(program, mesh.material, mesh.matrixWorld, camera);
 
     const count = mesh.geometry.getDrawCount();
     if (mesh.geometry.index !== null) {
+      gl.drawElementsInstanced(TRIANGLES, count, UNSIGNED_SHORT, 0, mesh.count);
+    } else {
+      gl.drawArraysInstanced(TRIANGLES, 0, count, mesh.count);
+    }
+  }
+
+  /* Builds (once) the VAO that combines the shared geometry attributes with
+   * this mesh's per-instance buffers, and re-uploads whenever the game sets
+   * needsUpdate. */
+  private prepareInstanceBuffers(mesh: InstancedMesh): void {
+    const gl = this.gl;
+    const geo = mesh.geometry;
+
+    if (mesh.glInstancedVAO === null) {
+      mesh.glInstancedVAO = gl.createVertexArray();
+      gl.bindVertexArray(mesh.glInstancedVAO);
+
+      /* Re-point this VAO at the geometry's EXISTING buffers. The buffers
+       * are shared (uploaded once by prepareGeometry); only the attribute
+       * bindings are per-VAO, so nothing is uploaded twice here. */
+      if (geo.glPositionBuffer !== null) {
+        gl.bindBuffer(ARRAY_BUFFER, geo.glPositionBuffer);
+        gl.enableVertexAttribArray(0);
+        gl.vertexAttribPointer(0, 3, FLOAT, false, 0, 0);
+      }
+      if (geo.glNormalBuffer !== null) {
+        gl.bindBuffer(ARRAY_BUFFER, geo.glNormalBuffer);
+        gl.enableVertexAttribArray(1);
+        gl.vertexAttribPointer(1, 3, FLOAT, false, 0, 0);
+      }
+      if (geo.glUVBuffer !== null) {
+        gl.bindBuffer(ARRAY_BUFFER, geo.glUVBuffer);
+        gl.enableVertexAttribArray(2);
+        gl.vertexAttribPointer(2, 2, FLOAT, false, 0, 0);
+      }
+      if (geo.glColorBuffer !== null) {
+        gl.bindBuffer(ARRAY_BUFFER, geo.glColorBuffer);
+        gl.enableVertexAttribArray(3);
+        gl.vertexAttribPointer(3, 3, FLOAT, false, 0, 0);
+      }
+      if (geo.glIndexBuffer !== null) {
+        gl.bindBuffer(ELEMENT_ARRAY_BUFFER, geo.glIndexBuffer);
+      }
+
+      mesh.glMatrixBuffer = gl.createBuffer();
+      gl.bindBuffer(ARRAY_BUFFER, mesh.glMatrixBuffer);
+      gl.bufferData(ARRAY_BUFFER, mesh.instanceMatrix.prefixFloat32Buffer(mesh.count), DYNAMIC_DRAW);
+      /* Four columns at locations 4,5,6,7. Stride is the whole matrix (16
+       * floats = 64 bytes); each column starts one vec4 further in. */
+      for (let c = 0; c < 4; c++) {
+        gl.enableVertexAttribArray(4 + c);
+        gl.vertexAttribPointer(4 + c, 4, FLOAT, false, 64, c * 16);
+        gl.vertexAttribDivisor(4 + c, 1);
+      }
+
+      if (mesh.instanceColor !== null) {
+        mesh.glColorBuffer = gl.createBuffer();
+        gl.bindBuffer(ARRAY_BUFFER, mesh.glColorBuffer);
+        gl.bufferData(ARRAY_BUFFER, mesh.instanceColor.prefixFloat32Buffer(mesh.count), DYNAMIC_DRAW);
+        gl.enableVertexAttribArray(8);
+        gl.vertexAttribPointer(8, 3, FLOAT, false, 0, 0);
+        gl.vertexAttribDivisor(8, 1);
+      } else {
+        /* No per-instance tint: supply a constant white so the shader's
+         * multiply is a no-op. A disabled attribute reads as (0,0,0,1),
+         * which would render every instance black. */
+        gl.disableVertexAttribArray(8);
+        gl.vertexAttrib3f(8, 1, 1, 1);
+      }
+
+      mesh.instanceMatrix.needsUpdate = false;
+      mesh.uploadedCount = mesh.count;
+      if (mesh.instanceColor !== null) {
+        mesh.instanceColor.needsUpdate = false;
+        mesh.uploadedColorCount = mesh.count;
+      }
+      return;
+    }
+
+    /* The prefix upload sizes the GL buffer to `count`, so a LATER increase
+     * in count would read past the end. Re-upload whenever the drawn count
+     * differs from what is currently in the buffer, not only when the game
+     * sets needsUpdate. */
+    if (mesh.instanceMatrix.needsUpdate || mesh.uploadedCount !== mesh.count) {
+      gl.bindBuffer(ARRAY_BUFFER, mesh.glMatrixBuffer);
+      gl.bufferData(ARRAY_BUFFER, mesh.instanceMatrix.prefixFloat32Buffer(mesh.count), DYNAMIC_DRAW);
+      mesh.instanceMatrix.needsUpdate = false;
+      mesh.uploadedCount = mesh.count;
+    }
+    if (mesh.instanceColor !== null &&
+        (mesh.instanceColor.needsUpdate || mesh.uploadedColorCount !== mesh.count)) {
+      /* setColorAt allocates the colour array lazily, so the buffer and its
+       * attribute may not exist yet even though the VAO does. */
+      if (mesh.glColorBuffer === null) {
+        gl.bindVertexArray(mesh.glInstancedVAO);
+        mesh.glColorBuffer = gl.createBuffer();
+        gl.bindBuffer(ARRAY_BUFFER, mesh.glColorBuffer);
+        gl.bufferData(ARRAY_BUFFER, mesh.instanceColor.prefixFloat32Buffer(mesh.count), DYNAMIC_DRAW);
+        gl.enableVertexAttribArray(8);
+        gl.vertexAttribPointer(8, 3, FLOAT, false, 0, 0);
+        gl.vertexAttribDivisor(8, 1);
+      } else {
+        gl.bindBuffer(ARRAY_BUFFER, mesh.glColorBuffer);
+        gl.bufferData(ARRAY_BUFFER, mesh.instanceColor.prefixFloat32Buffer(mesh.count), DYNAMIC_DRAW);
+      }
+      mesh.instanceColor.needsUpdate = false;
+      mesh.uploadedColorCount = mesh.count;
+    }
+  }
+
+  /* ---- sprites ---- */
+  private renderSprite(sprite: Sprite, camera: PerspectiveCamera): void {
+    const gl = this.gl;
+    const material = sprite.material;
+    const program = this.getProgram(material.featureBits());
+    if (program === null) return;
+
+    this.prepareGeometry(sprite.geometry);
+    gl.useProgram(program.glProgram);
+    gl.bindVertexArray(sprite.geometry.glVAO);
+    this.bindCommon(program, material, sprite.matrixWorld, camera);
+
+    gl.uniform2f(program.uSpriteCenter, sprite.center.x, sprite.center.y);
+    /* Scale comes from the object transform, but the billboard is built in
+     * VIEW space from a unit quad, so the world matrix's scale has to be
+     * passed separately rather than multiplied into the position. */
+    gl.uniform2f(program.uSpriteScale, sprite.scale.x, sprite.scale.y);
+    let rotation = 0;
+    if (material instanceof SpriteMaterial) rotation = material.rotation;
+    gl.uniform1f(program.uSpriteRotation, rotation);
+
+    const count = sprite.geometry.getDrawCount();
+    if (sprite.geometry.index !== null) {
       gl.drawElements(TRIANGLES, count, UNSIGNED_SHORT, 0);
     } else {
       gl.drawArrays(TRIANGLES, 0, count);
     }
+  }
+
+  /* ---- lines ---- */
+  private renderLine(line: Line, camera: PerspectiveCamera): void {
+    const gl = this.gl;
+    const program = this.getProgram(line.material.featureBits());
+    if (program === null) return;
+
+    this.prepareGeometry(line.geometry);
+    gl.useProgram(program.glProgram);
+    gl.bindVertexArray(line.geometry.glVAO);
+    this.bindCommon(program, line.material, line.matrixWorld, camera);
+
+    /* LineSegments is disconnected pairs, LineLoop closes back to the
+     * start, plain Line is an open strip. */
+    let mode = LINE_STRIP;
+    if (line instanceof LineSegments) mode = LINES;
+    else if (line instanceof LineLoop) mode = LINE_LOOP;
+
+    const count = line.geometry.getDrawCount();
+    if (line.geometry.index !== null) {
+      gl.drawElements(mode, count, UNSIGNED_SHORT, 0);
+    } else {
+      gl.drawArrays(mode, 0, count);
+    }
+  }
+
+  /* ---- points ---- */
+  private renderPoints(points: Points, camera: PerspectiveCamera): void {
+    const gl = this.gl;
+    const material = points.material;
+    const program = this.getProgram(material.featureBits());
+    if (program === null) return;
+
+    this.prepareGeometry(points.geometry);
+    gl.useProgram(program.glProgram);
+    gl.bindVertexArray(points.geometry.glVAO);
+    this.bindCommon(program, material, points.matrixWorld, camera);
+
+    let size = 1;
+    let attenuate = 1;
+    if (material instanceof PointsMaterial) {
+      size = material.size;
+      attenuate = material.sizeAttenuation ? 1 : 0;
+    }
+    /* gl_PointSize is in PIXELS, and the attenuation branch divides by view
+     * depth, so the uniform is scaled by the viewport height to keep a
+     * given world size looking the same at any resolution. */
+    gl.uniform1f(program.uPointSize,
+                 attenuate === 1 ? size * this.height * 0.5 : size);
+    gl.uniform1f(program.uSizeAttenuation, attenuate);
+
+    const count = points.geometry.getDrawCount();
+    gl.drawArrays(GL_POINTS, 0, count);
   }
 
   /* Lights are uploaded in VIEW space, so the shader needs no world-space
@@ -507,10 +892,13 @@ export class WebGLRenderer {
       this.colorBuf.writeFloatLE(l.color.r * l.intensity, i * 12);
       this.colorBuf.writeFloatLE(l.color.g * l.intensity, i * 12 + 4);
       this.colorBuf.writeFloatLE(l.color.b * l.intensity, i * 12 + 8);
+      this.falloffBuf.writeFloatLE(l.distance, i * 8);
+      this.falloffBuf.writeFloatLE(l.decay, i * 8 + 4);
     }
     if (this.pointLights.length > 0) {
       gl.uniform3fv(program.uPointPositions, this.vec3Buf);
       gl.uniform3fv(program.uPointColors, this.colorBuf);
+      gl.uniform2fv(program.uPointFalloff, this.falloffBuf);
     }
   }
 }

@@ -2,766 +2,6 @@
   "ffi_format": 1,
   "functions": [
     {
-      "name": "sgCanvasClear",
-      "symbol": "sg_canvas_clear",
-      "params": [
-        "u32",
-        "u32"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgCanvasSave",
-      "symbol": "sg_canvas_save",
-      "params": [
-        "u32"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgCanvasRestore",
-      "symbol": "sg_canvas_restore",
-      "params": [
-        "u32"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgCanvasReset",
-      "symbol": "sg_canvas_reset",
-      "params": [
-        "u32"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgCanvasTranslate",
-      "symbol": "sg_canvas_translate",
-      "params": [
-        "u32",
-        "f64",
-        "f64"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgCanvasScale",
-      "symbol": "sg_canvas_scale",
-      "params": [
-        "u32",
-        "f64",
-        "f64"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgCanvasRotate",
-      "symbol": "sg_canvas_rotate",
-      "params": [
-        "u32",
-        "f64"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgCanvasResetTransform",
-      "symbol": "sg_canvas_reset_transform",
-      "params": [
-        "u32"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgCanvasConcat",
-      "symbol": "sg_canvas_concat",
-      "params": [
-        "u32",
-        "u32"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgCanvasSetTransform",
-      "symbol": "sg_canvas_set_transform",
-      "params": [
-        "u32",
-        "u32"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgCanvasDrawRect",
-      "symbol": "sg_canvas_draw_rect",
-      "params": [
-        "u32",
-        "f64",
-        "f64",
-        "f64",
-        "f64",
-        "u32"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgCanvasDrawPath",
-      "symbol": "sg_canvas_draw_path",
-      "params": [
-        "u32",
-        "u32",
-        "u32"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgCanvasDrawColor",
-      "symbol": "sg_canvas_draw_color",
-      "params": [
-        "u32",
-        "f64",
-        "f64",
-        "f64",
-        "f64"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgCanvasClipRect",
-      "symbol": "sg_canvas_clip_rect",
-      "params": [
-        "u32",
-        "f64",
-        "f64",
-        "f64",
-        "f64"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgCanvasClipPath",
-      "symbol": "sg_canvas_clip_path",
-      "params": [
-        "u32",
-        "u32"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgCanvasDrawSurface",
-      "symbol": "sg_canvas_draw_surface",
-      "params": [
-        "u32",
-        "u32",
-        "f64",
-        "f64",
-        "u32",
-        "i32",
-        "i32"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgCanvasDrawSurfaceRect",
-      "symbol": "sg_canvas_draw_surface_rect",
-      "params": [
-        "u32",
-        "u32",
-        "f64",
-        "f64",
-        "f64",
-        "f64",
-        "f64",
-        "f64",
-        "f64",
-        "f64",
-        "i32"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgPaintCreate",
-      "symbol": "sg_paint_create",
-      "params": [
-        "i32"
-      ],
-      "returns": "u32"
-    },
-    {
-      "name": "sgPaintDestroy",
-      "symbol": "sg_paint_destroy",
-      "params": [
-        "u32"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgPaintClone",
-      "symbol": "sg_paint_clone",
-      "params": [
-        "u32"
-      ],
-      "returns": "u32"
-    },
-    {
-      "name": "sgPaintSetStyle",
-      "symbol": "sg_paint_set_style",
-      "params": [
-        "u32",
-        "i32"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgPaintSetColor",
-      "symbol": "sg_paint_set_color",
-      "params": [
-        "u32",
-        "u32",
-        "u32",
-        "u32",
-        "u32"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgPaintSetAlpha",
-      "symbol": "sg_paint_set_alpha",
-      "params": [
-        "u32",
-        "u32"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgPaintGetAlpha",
-      "symbol": "sg_paint_get_alpha",
-      "params": [
-        "u32"
-      ],
-      "returns": "u32"
-    },
-    {
-      "name": "sgPaintSetAntiAlias",
-      "symbol": "sg_paint_set_anti_alias",
-      "params": [
-        "u32",
-        "u32"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgPaintSetBlendMode",
-      "symbol": "sg_paint_set_blend_mode",
-      "params": [
-        "u32",
-        "i32"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgPaintGetBlendMode",
-      "symbol": "sg_paint_get_blend_mode",
-      "params": [
-        "u32"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgPaintSetStrokeWidth",
-      "symbol": "sg_paint_set_stroke_width",
-      "params": [
-        "u32",
-        "f64"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgPaintGetStrokeWidth",
-      "symbol": "sg_paint_get_stroke_width",
-      "params": [
-        "u32"
-      ],
-      "returns": "f64"
-    },
-    {
-      "name": "sgPaintSetStrokeCap",
-      "symbol": "sg_paint_set_stroke_cap",
-      "params": [
-        "u32",
-        "i32"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgPaintGetStrokeCap",
-      "symbol": "sg_paint_get_stroke_cap",
-      "params": [
-        "u32"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgPaintSetStrokeJoin",
-      "symbol": "sg_paint_set_stroke_join",
-      "params": [
-        "u32",
-        "u32"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgPaintGetStrokeJoin",
-      "symbol": "sg_paint_get_stroke_join",
-      "params": [
-        "u32"
-      ],
-      "returns": "u32"
-    },
-    {
-      "name": "sgPaintSetStrokeMiter",
-      "symbol": "sg_paint_set_stroke_miter",
-      "params": [
-        "u32",
-        "f64"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgPaintGetStrokeMiter",
-      "symbol": "sg_paint_get_stroke_miter",
-      "params": [
-        "u32"
-      ],
-      "returns": "f64"
-    },
-    {
-      "name": "sgPaintSetImageFilter",
-      "symbol": "sg_paint_set_image_filter",
-      "params": [
-        "u32",
-        "u32"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgPathCreate",
-      "symbol": "sg_path_create",
-      "params": [
-        "i32"
-      ],
-      "returns": "u32"
-    },
-    {
-      "name": "sgPathDestroy",
-      "symbol": "sg_path_destroy",
-      "params": [
-        "u32"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgPathClone",
-      "symbol": "sg_path_clone",
-      "params": [
-        "u32"
-      ],
-      "returns": "u32"
-    },
-    {
-      "name": "sgPathMoveTo",
-      "symbol": "sg_path_move_to",
-      "params": [
-        "u32",
-        "f64",
-        "f64"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgPathLineTo",
-      "symbol": "sg_path_line_to",
-      "params": [
-        "u32",
-        "f64",
-        "f64"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgPathCubicTo",
-      "symbol": "sg_path_cubic_to",
-      "params": [
-        "u32",
-        "f64",
-        "f64",
-        "f64",
-        "f64",
-        "f64",
-        "f64"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgPathQuadTo",
-      "symbol": "sg_path_quad_to",
-      "params": [
-        "u32",
-        "f64",
-        "f64",
-        "f64",
-        "f64"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgPathClose",
-      "symbol": "sg_path_close",
-      "params": [
-        "u32"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgPathAddRect",
-      "symbol": "sg_path_add_rect",
-      "params": [
-        "u32",
-        "f64",
-        "f64",
-        "f64",
-        "f64"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgPathAddCircle",
-      "symbol": "sg_path_add_circle",
-      "params": [
-        "u32",
-        "f64",
-        "f64",
-        "f64"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgPathArcTo",
-      "symbol": "sg_path_arc_to",
-      "params": [
-        "u32",
-        "f64",
-        "f64",
-        "f64",
-        "f64",
-        "f64",
-        "f64",
-        "u32"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgPathArcToTangent",
-      "symbol": "sg_path_arc_to_tangent",
-      "params": [
-        "u32",
-        "f64",
-        "f64",
-        "f64",
-        "f64",
-        "f64"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgPathSetFillType",
-      "symbol": "sg_path_set_fill_type",
-      "params": [
-        "u32",
-        "i32"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgPathGetFillType",
-      "symbol": "sg_path_get_fill_type",
-      "params": [
-        "u32"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgPathIsEmpty",
-      "symbol": "sg_path_is_empty",
-      "params": [
-        "u32"
-      ],
-      "returns": "u32"
-    },
-    {
-      "name": "sgPathHitTest",
-      "symbol": "sg_path_hit_test",
-      "params": [
-        "u32",
-        "f64",
-        "f64",
-        "i32"
-      ],
-      "returns": "u32"
-    },
-    {
-      "name": "sgPathStrokeHitTest",
-      "symbol": "sg_path_stroke_hit_test",
-      "params": [
-        "u32",
-        "f64",
-        "f64",
-        "f64"
-      ],
-      "returns": "u32"
-    },
-    {
-      "name": "sgPathTransformSelf",
-      "symbol": "sg_path_transform_self",
-      "params": [
-        "u32",
-        "u32"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgPathOp",
-      "symbol": "sg_path_op",
-      "params": [
-        "u32",
-        "u32",
-        "i32"
-      ],
-      "returns": "u32"
-    },
-    {
-      "name": "sgPathSimplify",
-      "symbol": "sg_path_simplify",
-      "params": [
-        "u32"
-      ],
-      "returns": "u32"
-    },
-    {
-      "name": "sgPathEquals",
-      "symbol": "sg_path_equals",
-      "params": [
-        "u32",
-        "u32"
-      ],
-      "returns": "u32"
-    },
-    {
-      "name": "sgPathEffectDestroy",
-      "symbol": "sg_path_effect_destroy",
-      "params": [
-        "u32"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgMatrixCreate",
-      "symbol": "sg_matrix_create",
-      "params": [
-        "i32"
-      ],
-      "returns": "u32"
-    },
-    {
-      "name": "sgMatrixNew",
-      "symbol": "sg_matrix_new",
-      "params": [
-        "f64",
-        "f64",
-        "f64",
-        "f64",
-        "f64",
-        "f64"
-      ],
-      "returns": "u32"
-    },
-    {
-      "name": "sgMatrixClone",
-      "symbol": "sg_matrix_clone",
-      "params": [
-        "u32"
-      ],
-      "returns": "u32"
-    },
-    {
-      "name": "sgMatrixDestroy",
-      "symbol": "sg_matrix_destroy",
-      "params": [
-        "u32"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgMatrixPreTranslate",
-      "symbol": "sg_matrix_pre_translate",
-      "params": [
-        "u32",
-        "f64",
-        "f64"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgMatrixPreScale",
-      "symbol": "sg_matrix_pre_scale",
-      "params": [
-        "u32",
-        "f64",
-        "f64"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgMatrixPreRotate",
-      "symbol": "sg_matrix_pre_rotate",
-      "params": [
-        "u32",
-        "f64"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgMatrixPreConcat",
-      "symbol": "sg_matrix_pre_concat",
-      "params": [
-        "u32",
-        "u32"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgShaderDestroy",
-      "symbol": "sg_shader_destroy",
-      "params": [
-        "u32"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgSurfaceCreateRgbaPremultiplied",
-      "symbol": "sg_surface_create_rgba_premultiplied",
-      "params": [
-        "i32",
-        "i32",
-        "u32"
-      ],
-      "returns": "u32"
-    },
-    {
-      "name": "sgSurfaceCreateRgba",
-      "symbol": "sg_surface_create_rgba",
-      "params": [
-        "i32",
-        "i32",
-        "u32"
-      ],
-      "returns": "u32"
-    },
-    {
-      "name": "sgSurfaceDestroy",
-      "symbol": "sg_surface_destroy",
-      "params": [
-        "u32"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgSurfaceGetCanvas",
-      "symbol": "sg_surface_get_canvas",
-      "params": [
-        "u32"
-      ],
-      "returns": "u32"
-    },
-    {
-      "name": "sgSurfaceGetWidth",
-      "symbol": "sg_surface_get_width",
-      "params": [
-        "u32"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgSurfaceGetHeight",
-      "symbol": "sg_surface_get_height",
-      "params": [
-        "u32"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgSurfaceMakeImageSnapshot",
-      "symbol": "sg_surface_make_image_snapshot",
-      "params": [
-        "u32"
-      ],
-      "returns": "u32"
-    },
-    {
-      "name": "sgImageDestroy",
-      "symbol": "sg_image_destroy",
-      "params": [
-        "u32"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgImageGetWidth",
-      "symbol": "sg_image_get_width",
-      "params": [
-        "u32"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgImageGetHeight",
-      "symbol": "sg_image_get_height",
-      "params": [
-        "u32"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgBitmapDestroy",
-      "symbol": "sg_bitmap_destroy",
-      "params": [
-        "u32"
-      ],
-      "returns": "i32"
-    },
-    {
-      "name": "sgBitmapGetWidth",
-      "symbol": "sg_bitmap_get_width",
-      "params": [
-        "u32"
-      ],
-      "returns": "u32"
-    },
-    {
-      "name": "sgBitmapGetHeight",
-      "symbol": "sg_bitmap_get_height",
-      "params": [
-        "u32"
-      ],
-      "returns": "u32"
-    },
-    {
-      "name": "sgImageFilterDestroy",
-      "symbol": "sg_image_filter_destroy",
-      "params": [
-        "u32"
-      ],
-      "returns": "i32"
-    },
-    {
       "name": "sgInit",
       "symbol": "sg_init",
       "params": [
@@ -1755,9 +995,2285 @@
         "u32"
       ],
       "returns": "u32"
+    },
+    {
+      "name": "sgCanvasClear",
+      "symbol": "sg_canvas_clear",
+      "params": [
+        "u32",
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgCanvasSave",
+      "symbol": "sg_canvas_save",
+      "params": [
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgCanvasRestore",
+      "symbol": "sg_canvas_restore",
+      "params": [
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgCanvasReset",
+      "symbol": "sg_canvas_reset",
+      "params": [
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgCanvasTranslate",
+      "symbol": "sg_canvas_translate",
+      "params": [
+        "u32",
+        "f64",
+        "f64"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgCanvasScale",
+      "symbol": "sg_canvas_scale",
+      "params": [
+        "u32",
+        "f64",
+        "f64"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgCanvasRotate",
+      "symbol": "sg_canvas_rotate",
+      "params": [
+        "u32",
+        "f64"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgCanvasResetTransform",
+      "symbol": "sg_canvas_reset_transform",
+      "params": [
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgCanvasConcat",
+      "symbol": "sg_canvas_concat",
+      "params": [
+        "u32",
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgCanvasSetTransform",
+      "symbol": "sg_canvas_set_transform",
+      "params": [
+        "u32",
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgCanvasDrawRect",
+      "symbol": "sg_canvas_draw_rect",
+      "params": [
+        "u32",
+        "f64",
+        "f64",
+        "f64",
+        "f64",
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgCanvasDrawPath",
+      "symbol": "sg_canvas_draw_path",
+      "params": [
+        "u32",
+        "u32",
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgCanvasDrawColor",
+      "symbol": "sg_canvas_draw_color",
+      "params": [
+        "u32",
+        "f64",
+        "f64",
+        "f64",
+        "f64"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgCanvasClipRect",
+      "symbol": "sg_canvas_clip_rect",
+      "params": [
+        "u32",
+        "f64",
+        "f64",
+        "f64",
+        "f64"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgCanvasClipPath",
+      "symbol": "sg_canvas_clip_path",
+      "params": [
+        "u32",
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgCanvasDrawSurface",
+      "symbol": "sg_canvas_draw_surface",
+      "params": [
+        "u32",
+        "u32",
+        "f64",
+        "f64",
+        "u32",
+        "i32",
+        "i32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgCanvasDrawSurfaceRect",
+      "symbol": "sg_canvas_draw_surface_rect",
+      "params": [
+        "u32",
+        "u32",
+        "f64",
+        "f64",
+        "f64",
+        "f64",
+        "f64",
+        "f64",
+        "f64",
+        "f64",
+        "i32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgPaintCreate",
+      "symbol": "sg_paint_create",
+      "params": [
+        "i32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "sgPaintDestroy",
+      "symbol": "sg_paint_destroy",
+      "params": [
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgPaintClone",
+      "symbol": "sg_paint_clone",
+      "params": [
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "sgPaintSetStyle",
+      "symbol": "sg_paint_set_style",
+      "params": [
+        "u32",
+        "i32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgPaintSetColor",
+      "symbol": "sg_paint_set_color",
+      "params": [
+        "u32",
+        "u32",
+        "u32",
+        "u32",
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgPaintSetAlpha",
+      "symbol": "sg_paint_set_alpha",
+      "params": [
+        "u32",
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgPaintGetAlpha",
+      "symbol": "sg_paint_get_alpha",
+      "params": [
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "sgPaintSetAntiAlias",
+      "symbol": "sg_paint_set_anti_alias",
+      "params": [
+        "u32",
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgPaintSetBlendMode",
+      "symbol": "sg_paint_set_blend_mode",
+      "params": [
+        "u32",
+        "i32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgPaintGetBlendMode",
+      "symbol": "sg_paint_get_blend_mode",
+      "params": [
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgPaintSetStrokeWidth",
+      "symbol": "sg_paint_set_stroke_width",
+      "params": [
+        "u32",
+        "f64"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgPaintGetStrokeWidth",
+      "symbol": "sg_paint_get_stroke_width",
+      "params": [
+        "u32"
+      ],
+      "returns": "f64"
+    },
+    {
+      "name": "sgPaintSetStrokeCap",
+      "symbol": "sg_paint_set_stroke_cap",
+      "params": [
+        "u32",
+        "i32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgPaintGetStrokeCap",
+      "symbol": "sg_paint_get_stroke_cap",
+      "params": [
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgPaintSetStrokeJoin",
+      "symbol": "sg_paint_set_stroke_join",
+      "params": [
+        "u32",
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgPaintGetStrokeJoin",
+      "symbol": "sg_paint_get_stroke_join",
+      "params": [
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "sgPaintSetStrokeMiter",
+      "symbol": "sg_paint_set_stroke_miter",
+      "params": [
+        "u32",
+        "f64"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgPaintGetStrokeMiter",
+      "symbol": "sg_paint_get_stroke_miter",
+      "params": [
+        "u32"
+      ],
+      "returns": "f64"
+    },
+    {
+      "name": "sgPaintSetImageFilter",
+      "symbol": "sg_paint_set_image_filter",
+      "params": [
+        "u32",
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgPathCreate",
+      "symbol": "sg_path_create",
+      "params": [
+        "i32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "sgPathDestroy",
+      "symbol": "sg_path_destroy",
+      "params": [
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgPathClone",
+      "symbol": "sg_path_clone",
+      "params": [
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "sgPathMoveTo",
+      "symbol": "sg_path_move_to",
+      "params": [
+        "u32",
+        "f64",
+        "f64"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgPathLineTo",
+      "symbol": "sg_path_line_to",
+      "params": [
+        "u32",
+        "f64",
+        "f64"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgPathCubicTo",
+      "symbol": "sg_path_cubic_to",
+      "params": [
+        "u32",
+        "f64",
+        "f64",
+        "f64",
+        "f64",
+        "f64",
+        "f64"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgPathQuadTo",
+      "symbol": "sg_path_quad_to",
+      "params": [
+        "u32",
+        "f64",
+        "f64",
+        "f64",
+        "f64"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgPathClose",
+      "symbol": "sg_path_close",
+      "params": [
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgPathAddRect",
+      "symbol": "sg_path_add_rect",
+      "params": [
+        "u32",
+        "f64",
+        "f64",
+        "f64",
+        "f64"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgPathAddCircle",
+      "symbol": "sg_path_add_circle",
+      "params": [
+        "u32",
+        "f64",
+        "f64",
+        "f64"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgPathArcTo",
+      "symbol": "sg_path_arc_to",
+      "params": [
+        "u32",
+        "f64",
+        "f64",
+        "f64",
+        "f64",
+        "f64",
+        "f64",
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgPathArcToTangent",
+      "symbol": "sg_path_arc_to_tangent",
+      "params": [
+        "u32",
+        "f64",
+        "f64",
+        "f64",
+        "f64",
+        "f64"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgPathSetFillType",
+      "symbol": "sg_path_set_fill_type",
+      "params": [
+        "u32",
+        "i32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgPathGetFillType",
+      "symbol": "sg_path_get_fill_type",
+      "params": [
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgPathIsEmpty",
+      "symbol": "sg_path_is_empty",
+      "params": [
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "sgPathHitTest",
+      "symbol": "sg_path_hit_test",
+      "params": [
+        "u32",
+        "f64",
+        "f64",
+        "i32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "sgPathStrokeHitTest",
+      "symbol": "sg_path_stroke_hit_test",
+      "params": [
+        "u32",
+        "f64",
+        "f64",
+        "f64"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "sgPathTransformSelf",
+      "symbol": "sg_path_transform_self",
+      "params": [
+        "u32",
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgPathOp",
+      "symbol": "sg_path_op",
+      "params": [
+        "u32",
+        "u32",
+        "i32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "sgPathSimplify",
+      "symbol": "sg_path_simplify",
+      "params": [
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "sgPathEquals",
+      "symbol": "sg_path_equals",
+      "params": [
+        "u32",
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "sgPathEffectDestroy",
+      "symbol": "sg_path_effect_destroy",
+      "params": [
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgMatrixCreate",
+      "symbol": "sg_matrix_create",
+      "params": [
+        "i32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "sgMatrixNew",
+      "symbol": "sg_matrix_new",
+      "params": [
+        "f64",
+        "f64",
+        "f64",
+        "f64",
+        "f64",
+        "f64"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "sgMatrixClone",
+      "symbol": "sg_matrix_clone",
+      "params": [
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "sgMatrixDestroy",
+      "symbol": "sg_matrix_destroy",
+      "params": [
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgMatrixPreTranslate",
+      "symbol": "sg_matrix_pre_translate",
+      "params": [
+        "u32",
+        "f64",
+        "f64"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgMatrixPreScale",
+      "symbol": "sg_matrix_pre_scale",
+      "params": [
+        "u32",
+        "f64",
+        "f64"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgMatrixPreRotate",
+      "symbol": "sg_matrix_pre_rotate",
+      "params": [
+        "u32",
+        "f64"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgMatrixPreConcat",
+      "symbol": "sg_matrix_pre_concat",
+      "params": [
+        "u32",
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgShaderDestroy",
+      "symbol": "sg_shader_destroy",
+      "params": [
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgSurfaceCreateRgbaPremultiplied",
+      "symbol": "sg_surface_create_rgba_premultiplied",
+      "params": [
+        "i32",
+        "i32",
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "sgSurfaceCreateRgba",
+      "symbol": "sg_surface_create_rgba",
+      "params": [
+        "i32",
+        "i32",
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "sgSurfaceDestroy",
+      "symbol": "sg_surface_destroy",
+      "params": [
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgSurfaceGetCanvas",
+      "symbol": "sg_surface_get_canvas",
+      "params": [
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "sgSurfaceGetWidth",
+      "symbol": "sg_surface_get_width",
+      "params": [
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgSurfaceGetHeight",
+      "symbol": "sg_surface_get_height",
+      "params": [
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgSurfaceMakeImageSnapshot",
+      "symbol": "sg_surface_make_image_snapshot",
+      "params": [
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "sgImageDestroy",
+      "symbol": "sg_image_destroy",
+      "params": [
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgImageGetWidth",
+      "symbol": "sg_image_get_width",
+      "params": [
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgImageGetHeight",
+      "symbol": "sg_image_get_height",
+      "params": [
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgBitmapDestroy",
+      "symbol": "sg_bitmap_destroy",
+      "params": [
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sgBitmapGetWidth",
+      "symbol": "sg_bitmap_get_width",
+      "params": [
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "sgBitmapGetHeight",
+      "symbol": "sg_bitmap_get_height",
+      "params": [
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "sgImageFilterDestroy",
+      "symbol": "sg_image_filter_destroy",
+      "params": [
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "glActiveTexture",
+      "symbol": "glActiveTexture",
+      "params": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glAttachShader",
+      "symbol": "glAttachShader",
+      "params": [
+        "u32",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glBindBuffer",
+      "symbol": "glBindBuffer",
+      "params": [
+        "u32",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glBindFramebuffer",
+      "symbol": "glBindFramebuffer",
+      "params": [
+        "u32",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glBindRenderbuffer",
+      "symbol": "glBindRenderbuffer",
+      "params": [
+        "u32",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glBindTexture",
+      "symbol": "glBindTexture",
+      "params": [
+        "u32",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glBlendEquation",
+      "symbol": "glBlendEquation",
+      "params": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glBlendEquationSeparate",
+      "symbol": "glBlendEquationSeparate",
+      "params": [
+        "u32",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glBlendFunc",
+      "symbol": "glBlendFunc",
+      "params": [
+        "u32",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glBlendFuncSeparate",
+      "symbol": "glBlendFuncSeparate",
+      "params": [
+        "u32",
+        "u32",
+        "u32",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glCheckFramebufferStatus",
+      "symbol": "glCheckFramebufferStatus",
+      "params": [
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "glClear",
+      "symbol": "glClear",
+      "params": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glClearStencil",
+      "symbol": "glClearStencil",
+      "params": [
+        "i32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glColorMask",
+      "symbol": "glColorMask",
+      "params": [
+        "u8",
+        "u8",
+        "u8",
+        "u8"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glCompileShader",
+      "symbol": "glCompileShader",
+      "params": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glCopyTexImage2D",
+      "symbol": "glCopyTexImage2D",
+      "params": [
+        "u32",
+        "i32",
+        "u32",
+        "i32",
+        "i32",
+        "i32",
+        "i32",
+        "i32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glCopyTexSubImage2D",
+      "symbol": "glCopyTexSubImage2D",
+      "params": [
+        "u32",
+        "i32",
+        "i32",
+        "i32",
+        "i32",
+        "i32",
+        "i32",
+        "i32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glCreateProgram",
+      "symbol": "glCreateProgram",
+      "params": [],
+      "returns": "u32"
+    },
+    {
+      "name": "glCreateShader",
+      "symbol": "glCreateShader",
+      "params": [
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "glCullFace",
+      "symbol": "glCullFace",
+      "params": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glDeleteProgram",
+      "symbol": "glDeleteProgram",
+      "params": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glDeleteShader",
+      "symbol": "glDeleteShader",
+      "params": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glDepthFunc",
+      "symbol": "glDepthFunc",
+      "params": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glDepthMask",
+      "symbol": "glDepthMask",
+      "params": [
+        "u8"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glDetachShader",
+      "symbol": "glDetachShader",
+      "params": [
+        "u32",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glDisable",
+      "symbol": "glDisable",
+      "params": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glDisableVertexAttribArray",
+      "symbol": "glDisableVertexAttribArray",
+      "params": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glDrawArrays",
+      "symbol": "glDrawArrays",
+      "params": [
+        "u32",
+        "i32",
+        "i32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glEnable",
+      "symbol": "glEnable",
+      "params": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glEnableVertexAttribArray",
+      "symbol": "glEnableVertexAttribArray",
+      "params": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glFinish",
+      "symbol": "glFinish",
+      "params": [],
+      "returns": "void"
+    },
+    {
+      "name": "glFlush",
+      "symbol": "glFlush",
+      "params": [],
+      "returns": "void"
+    },
+    {
+      "name": "glFramebufferRenderbuffer",
+      "symbol": "glFramebufferRenderbuffer",
+      "params": [
+        "u32",
+        "u32",
+        "u32",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glFramebufferTexture2D",
+      "symbol": "glFramebufferTexture2D",
+      "params": [
+        "u32",
+        "u32",
+        "u32",
+        "u32",
+        "i32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glFrontFace",
+      "symbol": "glFrontFace",
+      "params": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glGenerateMipmap",
+      "symbol": "glGenerateMipmap",
+      "params": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glGetError",
+      "symbol": "glGetError",
+      "params": [],
+      "returns": "u32"
+    },
+    {
+      "name": "glHint",
+      "symbol": "glHint",
+      "params": [
+        "u32",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glIsBuffer",
+      "symbol": "glIsBuffer",
+      "params": [
+        "u32"
+      ],
+      "returns": "u8"
+    },
+    {
+      "name": "glIsEnabled",
+      "symbol": "glIsEnabled",
+      "params": [
+        "u32"
+      ],
+      "returns": "u8"
+    },
+    {
+      "name": "glIsFramebuffer",
+      "symbol": "glIsFramebuffer",
+      "params": [
+        "u32"
+      ],
+      "returns": "u8"
+    },
+    {
+      "name": "glIsProgram",
+      "symbol": "glIsProgram",
+      "params": [
+        "u32"
+      ],
+      "returns": "u8"
+    },
+    {
+      "name": "glIsRenderbuffer",
+      "symbol": "glIsRenderbuffer",
+      "params": [
+        "u32"
+      ],
+      "returns": "u8"
+    },
+    {
+      "name": "glIsShader",
+      "symbol": "glIsShader",
+      "params": [
+        "u32"
+      ],
+      "returns": "u8"
+    },
+    {
+      "name": "glIsTexture",
+      "symbol": "glIsTexture",
+      "params": [
+        "u32"
+      ],
+      "returns": "u8"
+    },
+    {
+      "name": "glLinkProgram",
+      "symbol": "glLinkProgram",
+      "params": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glPixelStorei",
+      "symbol": "glPixelStorei",
+      "params": [
+        "u32",
+        "i32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glReleaseShaderCompiler",
+      "symbol": "glReleaseShaderCompiler",
+      "params": [],
+      "returns": "void"
+    },
+    {
+      "name": "glRenderbufferStorage",
+      "symbol": "glRenderbufferStorage",
+      "params": [
+        "u32",
+        "u32",
+        "i32",
+        "i32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glScissor",
+      "symbol": "glScissor",
+      "params": [
+        "i32",
+        "i32",
+        "i32",
+        "i32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glStencilFunc",
+      "symbol": "glStencilFunc",
+      "params": [
+        "u32",
+        "i32",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glStencilFuncSeparate",
+      "symbol": "glStencilFuncSeparate",
+      "params": [
+        "u32",
+        "u32",
+        "i32",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glStencilMask",
+      "symbol": "glStencilMask",
+      "params": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glStencilMaskSeparate",
+      "symbol": "glStencilMaskSeparate",
+      "params": [
+        "u32",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glStencilOp",
+      "symbol": "glStencilOp",
+      "params": [
+        "u32",
+        "u32",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glStencilOpSeparate",
+      "symbol": "glStencilOpSeparate",
+      "params": [
+        "u32",
+        "u32",
+        "u32",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glTexParameteri",
+      "symbol": "glTexParameteri",
+      "params": [
+        "u32",
+        "u32",
+        "i32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glUniform1i",
+      "symbol": "glUniform1i",
+      "params": [
+        "i32",
+        "i32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glUniform2i",
+      "symbol": "glUniform2i",
+      "params": [
+        "i32",
+        "i32",
+        "i32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glUniform3i",
+      "symbol": "glUniform3i",
+      "params": [
+        "i32",
+        "i32",
+        "i32",
+        "i32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glUniform4i",
+      "symbol": "glUniform4i",
+      "params": [
+        "i32",
+        "i32",
+        "i32",
+        "i32",
+        "i32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glUseProgram",
+      "symbol": "glUseProgram",
+      "params": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glValidateProgram",
+      "symbol": "glValidateProgram",
+      "params": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glViewport",
+      "symbol": "glViewport",
+      "params": [
+        "i32",
+        "i32",
+        "i32",
+        "i32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glReadBuffer",
+      "symbol": "glReadBuffer",
+      "params": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glCopyTexSubImage3D",
+      "symbol": "glCopyTexSubImage3D",
+      "params": [
+        "u32",
+        "i32",
+        "i32",
+        "i32",
+        "i32",
+        "i32",
+        "i32",
+        "i32",
+        "i32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glIsQuery",
+      "symbol": "glIsQuery",
+      "params": [
+        "u32"
+      ],
+      "returns": "u8"
+    },
+    {
+      "name": "glBeginQuery",
+      "symbol": "glBeginQuery",
+      "params": [
+        "u32",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glEndQuery",
+      "symbol": "glEndQuery",
+      "params": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glUnmapBuffer",
+      "symbol": "glUnmapBuffer",
+      "params": [
+        "u32"
+      ],
+      "returns": "u8"
+    },
+    {
+      "name": "glBlitFramebuffer",
+      "symbol": "glBlitFramebuffer",
+      "params": [
+        "i32",
+        "i32",
+        "i32",
+        "i32",
+        "i32",
+        "i32",
+        "i32",
+        "i32",
+        "u32",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glRenderbufferStorageMultisample",
+      "symbol": "glRenderbufferStorageMultisample",
+      "params": [
+        "u32",
+        "i32",
+        "u32",
+        "i32",
+        "i32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glFramebufferTextureLayer",
+      "symbol": "glFramebufferTextureLayer",
+      "params": [
+        "u32",
+        "u32",
+        "u32",
+        "i32",
+        "i32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glFlushMappedBufferRange",
+      "symbol": "glFlushMappedBufferRange",
+      "params": [
+        "u32",
+        "f64",
+        "f64"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glBindVertexArray",
+      "symbol": "glBindVertexArray",
+      "params": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glIsVertexArray",
+      "symbol": "glIsVertexArray",
+      "params": [
+        "u32"
+      ],
+      "returns": "u8"
+    },
+    {
+      "name": "glBeginTransformFeedback",
+      "symbol": "glBeginTransformFeedback",
+      "params": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glEndTransformFeedback",
+      "symbol": "glEndTransformFeedback",
+      "params": [],
+      "returns": "void"
+    },
+    {
+      "name": "glBindBufferRange",
+      "symbol": "glBindBufferRange",
+      "params": [
+        "u32",
+        "u32",
+        "u32",
+        "f64",
+        "f64"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glBindBufferBase",
+      "symbol": "glBindBufferBase",
+      "params": [
+        "u32",
+        "u32",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glVertexAttribI4i",
+      "symbol": "glVertexAttribI4i",
+      "params": [
+        "u32",
+        "i32",
+        "i32",
+        "i32",
+        "i32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glVertexAttribI4ui",
+      "symbol": "glVertexAttribI4ui",
+      "params": [
+        "u32",
+        "u32",
+        "u32",
+        "u32",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glUniform1ui",
+      "symbol": "glUniform1ui",
+      "params": [
+        "i32",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glUniform2ui",
+      "symbol": "glUniform2ui",
+      "params": [
+        "i32",
+        "u32",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glUniform3ui",
+      "symbol": "glUniform3ui",
+      "params": [
+        "i32",
+        "u32",
+        "u32",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glUniform4ui",
+      "symbol": "glUniform4ui",
+      "params": [
+        "i32",
+        "u32",
+        "u32",
+        "u32",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glCopyBufferSubData",
+      "symbol": "glCopyBufferSubData",
+      "params": [
+        "u32",
+        "u32",
+        "f64",
+        "f64",
+        "f64"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glUniformBlockBinding",
+      "symbol": "glUniformBlockBinding",
+      "params": [
+        "u32",
+        "u32",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glDrawArraysInstanced",
+      "symbol": "glDrawArraysInstanced",
+      "params": [
+        "u32",
+        "i32",
+        "i32",
+        "i32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glIsSampler",
+      "symbol": "glIsSampler",
+      "params": [
+        "u32"
+      ],
+      "returns": "u8"
+    },
+    {
+      "name": "glBindSampler",
+      "symbol": "glBindSampler",
+      "params": [
+        "u32",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glSamplerParameteri",
+      "symbol": "glSamplerParameteri",
+      "params": [
+        "u32",
+        "u32",
+        "i32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glVertexAttribDivisor",
+      "symbol": "glVertexAttribDivisor",
+      "params": [
+        "u32",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glBindTransformFeedback",
+      "symbol": "glBindTransformFeedback",
+      "params": [
+        "u32",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glIsTransformFeedback",
+      "symbol": "glIsTransformFeedback",
+      "params": [
+        "u32"
+      ],
+      "returns": "u8"
+    },
+    {
+      "name": "glPauseTransformFeedback",
+      "symbol": "glPauseTransformFeedback",
+      "params": [],
+      "returns": "void"
+    },
+    {
+      "name": "glResumeTransformFeedback",
+      "symbol": "glResumeTransformFeedback",
+      "params": [],
+      "returns": "void"
+    },
+    {
+      "name": "glProgramParameteri",
+      "symbol": "glProgramParameteri",
+      "params": [
+        "u32",
+        "u32",
+        "i32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glTexStorage2D",
+      "symbol": "glTexStorage2D",
+      "params": [
+        "u32",
+        "i32",
+        "u32",
+        "i32",
+        "i32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glTexStorage3D",
+      "symbol": "glTexStorage3D",
+      "params": [
+        "u32",
+        "i32",
+        "u32",
+        "i32",
+        "i32",
+        "i32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "sg_gl_blend_color",
+      "symbol": "sg_gl_blend_color",
+      "params": [
+        "f64",
+        "f64",
+        "f64",
+        "f64"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "sg_gl_clear_color",
+      "symbol": "sg_gl_clear_color",
+      "params": [
+        "f64",
+        "f64",
+        "f64",
+        "f64"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "sg_gl_clear_depthf",
+      "symbol": "sg_gl_clear_depthf",
+      "params": [
+        "f64"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "sg_gl_depth_rangef",
+      "symbol": "sg_gl_depth_rangef",
+      "params": [
+        "f64",
+        "f64"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "sg_gl_line_width",
+      "symbol": "sg_gl_line_width",
+      "params": [
+        "f64"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "sg_gl_polygon_offset",
+      "symbol": "sg_gl_polygon_offset",
+      "params": [
+        "f64",
+        "f64"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "sg_gl_sample_coverage",
+      "symbol": "sg_gl_sample_coverage",
+      "params": [
+        "f64",
+        "u8"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "sg_gl_tex_parameterf",
+      "symbol": "sg_gl_tex_parameterf",
+      "params": [
+        "u32",
+        "u32",
+        "f64"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "sg_gl_uniform1f",
+      "symbol": "sg_gl_uniform1f",
+      "params": [
+        "i32",
+        "f64"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "sg_gl_uniform2f",
+      "symbol": "sg_gl_uniform2f",
+      "params": [
+        "i32",
+        "f64",
+        "f64"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "sg_gl_uniform3f",
+      "symbol": "sg_gl_uniform3f",
+      "params": [
+        "i32",
+        "f64",
+        "f64",
+        "f64"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "sg_gl_uniform4f",
+      "symbol": "sg_gl_uniform4f",
+      "params": [
+        "i32",
+        "f64",
+        "f64",
+        "f64",
+        "f64"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "sg_gl_vertex_attrib1f",
+      "symbol": "sg_gl_vertex_attrib1f",
+      "params": [
+        "u32",
+        "f64"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "sg_gl_vertex_attrib2f",
+      "symbol": "sg_gl_vertex_attrib2f",
+      "params": [
+        "u32",
+        "f64",
+        "f64"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "sg_gl_vertex_attrib3f",
+      "symbol": "sg_gl_vertex_attrib3f",
+      "params": [
+        "u32",
+        "f64",
+        "f64",
+        "f64"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "sg_gl_vertex_attrib4f",
+      "symbol": "sg_gl_vertex_attrib4f",
+      "params": [
+        "u32",
+        "f64",
+        "f64",
+        "f64",
+        "f64"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "sg_gl_clear_bufferfi",
+      "symbol": "sg_gl_clear_bufferfi",
+      "params": [
+        "u32",
+        "i32",
+        "f64",
+        "i32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "sg_gl_sampler_parameterf",
+      "symbol": "sg_gl_sampler_parameterf",
+      "params": [
+        "u32",
+        "u32",
+        "f64"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "sg_gl_init_headless",
+      "symbol": "sg_gl_init_headless",
+      "params": [
+        "i32",
+        "i32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sg_gl_shutdown_headless",
+      "symbol": "sg_gl_shutdown_headless",
+      "params": [],
+      "returns": "void"
+    },
+    {
+      "name": "sg_gl_gen_buffer",
+      "symbol": "sg_gl_gen_buffer",
+      "params": [],
+      "returns": "u32"
+    },
+    {
+      "name": "sg_gl_gen_texture",
+      "symbol": "sg_gl_gen_texture",
+      "params": [],
+      "returns": "u32"
+    },
+    {
+      "name": "sg_gl_gen_framebuffer",
+      "symbol": "sg_gl_gen_framebuffer",
+      "params": [],
+      "returns": "u32"
+    },
+    {
+      "name": "sg_gl_gen_renderbuffer",
+      "symbol": "sg_gl_gen_renderbuffer",
+      "params": [],
+      "returns": "u32"
+    },
+    {
+      "name": "sg_gl_gen_vertex_array",
+      "symbol": "sg_gl_gen_vertex_array",
+      "params": [],
+      "returns": "u32"
+    },
+    {
+      "name": "sg_gl_gen_sampler",
+      "symbol": "sg_gl_gen_sampler",
+      "params": [],
+      "returns": "u32"
+    },
+    {
+      "name": "sg_gl_gen_query",
+      "symbol": "sg_gl_gen_query",
+      "params": [],
+      "returns": "u32"
+    },
+    {
+      "name": "sg_gl_gen_transform_feedback",
+      "symbol": "sg_gl_gen_transform_feedback",
+      "params": [],
+      "returns": "u32"
+    },
+    {
+      "name": "sg_gl_delete_buffer",
+      "symbol": "sg_gl_delete_buffer",
+      "params": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "sg_gl_delete_texture",
+      "symbol": "sg_gl_delete_texture",
+      "params": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "sg_gl_delete_framebuffer",
+      "symbol": "sg_gl_delete_framebuffer",
+      "params": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "sg_gl_delete_renderbuffer",
+      "symbol": "sg_gl_delete_renderbuffer",
+      "params": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "sg_gl_delete_vertex_array",
+      "symbol": "sg_gl_delete_vertex_array",
+      "params": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "sg_gl_delete_sampler",
+      "symbol": "sg_gl_delete_sampler",
+      "params": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "sg_gl_delete_query",
+      "symbol": "sg_gl_delete_query",
+      "params": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "sg_gl_delete_transform_feedback",
+      "symbol": "sg_gl_delete_transform_feedback",
+      "params": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "sg_gl_buffer_data",
+      "symbol": "sg_gl_buffer_data",
+      "params": [
+        "u32",
+        "bytes",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "sg_gl_buffer_data_size",
+      "symbol": "sg_gl_buffer_data_size",
+      "params": [
+        "u32",
+        "f64",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "sg_gl_buffer_sub_data",
+      "symbol": "sg_gl_buffer_sub_data",
+      "params": [
+        "u32",
+        "f64",
+        "bytes"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "sg_gl_tex_image_2d",
+      "symbol": "sg_gl_tex_image_2d",
+      "params": [
+        "u32",
+        "i32",
+        "i32",
+        "i32",
+        "i32",
+        "i32",
+        "u32",
+        "u32",
+        "bytes"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "sg_gl_tex_sub_image_2d",
+      "symbol": "sg_gl_tex_sub_image_2d",
+      "params": [
+        "u32",
+        "i32",
+        "i32",
+        "i32",
+        "i32",
+        "i32",
+        "u32",
+        "u32",
+        "bytes"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "sg_gl_tex_image_from_bitmap",
+      "symbol": "sg_gl_tex_image_from_bitmap",
+      "params": [
+        "u32",
+        "i32",
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sg_gl_tex_image_from_surface",
+      "symbol": "sg_gl_tex_image_from_surface",
+      "params": [
+        "u32",
+        "i32",
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sg_gl_get_integer",
+      "symbol": "sg_gl_get_integer",
+      "params": [
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sg_gl_get_integer_i",
+      "symbol": "sg_gl_get_integer_i",
+      "params": [
+        "u32",
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sg_gl_get_float",
+      "symbol": "sg_gl_get_float",
+      "params": [
+        "u32"
+      ],
+      "returns": "f64"
+    },
+    {
+      "name": "sg_gl_get_boolean",
+      "symbol": "sg_gl_get_boolean",
+      "params": [
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "sg_gl_shader_source",
+      "symbol": "sg_gl_shader_source",
+      "params": [
+        "u32",
+        "string"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "sg_gl_get_shader_parameter",
+      "symbol": "sg_gl_get_shader_parameter",
+      "params": [
+        "u32",
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sg_gl_get_program_parameter",
+      "symbol": "sg_gl_get_program_parameter",
+      "params": [
+        "u32",
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sg_gl_shader_info_log",
+      "symbol": "sg_gl_shader_info_log",
+      "params": [
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sg_gl_program_info_log",
+      "symbol": "sg_gl_program_info_log",
+      "params": [
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sg_gl_get_uniform_location",
+      "symbol": "sg_gl_get_uniform_location",
+      "params": [
+        "u32",
+        "string"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sg_gl_get_attrib_location",
+      "symbol": "sg_gl_get_attrib_location",
+      "params": [
+        "u32",
+        "string"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "sg_gl_bind_attrib_location",
+      "symbol": "sg_gl_bind_attrib_location",
+      "params": [
+        "u32",
+        "u32",
+        "string"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "sg_gl_uniform_fv",
+      "symbol": "sg_gl_uniform_fv",
+      "params": [
+        "i32",
+        "u32",
+        "bytes"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "sg_gl_uniform_iv",
+      "symbol": "sg_gl_uniform_iv",
+      "params": [
+        "i32",
+        "u32",
+        "bytes"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "sg_gl_uniform_matrix_fv",
+      "symbol": "sg_gl_uniform_matrix_fv",
+      "params": [
+        "i32",
+        "u32",
+        "u32",
+        "bytes"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "sg_gl_vertex_attrib_pointer",
+      "symbol": "sg_gl_vertex_attrib_pointer",
+      "params": [
+        "u32",
+        "i32",
+        "u32",
+        "u32",
+        "i32",
+        "f64"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "sg_gl_vertex_attrib_i_pointer",
+      "symbol": "sg_gl_vertex_attrib_i_pointer",
+      "params": [
+        "u32",
+        "i32",
+        "u32",
+        "i32",
+        "f64"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "sg_gl_draw_elements",
+      "symbol": "sg_gl_draw_elements",
+      "params": [
+        "u32",
+        "i32",
+        "u32",
+        "f64"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "sg_gl_draw_elements_instanced",
+      "symbol": "sg_gl_draw_elements_instanced",
+      "params": [
+        "u32",
+        "i32",
+        "u32",
+        "f64",
+        "i32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "sg_gl_hash_pixels",
+      "symbol": "sg_gl_hash_pixels",
+      "params": [
+        "i32",
+        "i32",
+        "i32",
+        "i32"
+      ],
+      "returns": "u32"
     }
   ],
   "libraries": [
+    "../vendor/linux-x86_64/libsggl.a",
     "../vendor/linux-x86_64/libsggfx.a",
     "../vendor/linux-x86_64/libwebaudio.a"
   ],
@@ -1770,6 +3286,8 @@
     "c++abi",
     "GL",
     "fontconfig",
-    "freetype"
+    "freetype",
+    "GLESv2",
+    "EGL"
   ]
 }
