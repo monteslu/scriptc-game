@@ -3,6 +3,56 @@
 **Status: both phases shipped.** This document is now the reference for the
 3D tier as built, and keeps the design reasoning that produced it.
 
+## Why threeTS-lite exists
+
+**It is a stopgap for three.js, not a replacement for it.**
+
+[three.js](https://threejs.org) is the reason 3D on the web is approachable
+at all. It is twenty years of accumulated work by
+[mrdoob](https://github.com/mrdoob) and hundreds of contributors, it is the
+library essentially every web 3D developer already knows, and its API is so
+well shaped that copying it is the highest-value thing a small library can
+do. Everything good about the ergonomics here was designed by them. We are
+borrowing a vocabulary that took a very long time to get right.
+
+The only reason this library exists is that **three.js cannot compile under
+scriptc today**. Not because of any deficiency in three: it is plain
+JavaScript written for a JIT, and it uses exactly the dynamic patterns a
+static AOT compiler cannot see through (`any` throughout, string-keyed
+uniform and material access, prototype extension points, sparse semantics).
+The dialect fences those. That is a limitation on our side of the fence,
+not theirs.
+
+So threeTS-lite implements the slice of three's API that games actually
+use, with the same names and the same composition, so that:
+
+- code written against it reads like three code, and a three developer is
+  productive immediately;
+- the same game source runs in a browser, where it can be pointed at real
+  three.js instead;
+- **when scriptc can compile three.js, this tier should be replaced by it.**
+  That is the intended end state, not a fallback. Every deliberate
+  divergence from three's API is a future migration cost, which is why the
+  compatibility bar is held as hard as it is and why layout changes that
+  would be faster but would break `mesh.position.set(...)` are refused.
+
+Where the benchmarks below show this tier ahead of three.js on some
+configurations, that is a narrow AOT-versus-JIT result on one scene, not a
+claim of superiority. three.js does vastly more than this library does:
+shadow maps, skinning and animation, post-processing, IBL, a loader
+ecosystem, WebGPU, and an editor. The comparison exists to size the gap and
+find our own bottlenecks, and the honest summary of the browser numbers
+further down is that the same source in a page is faster than we are.
+
+three.js is MIT licensed and credited in the README's Credits table. Its
+source plus `@types/three` are the behavioral reference this library is
+checked against: `test/threetest.ts` verifies our math against real three
+values, and `test/three-bench/reference.mjs` runs the benchmark scene
+through actual three.js rather than against remembered numbers.
+
+No three.js code is copied into this repository. What is borrowed is the
+API shape, deliberately and with credit.
+
 Two stacked phases, added after the v0.1 (2D) plan:
 
 - **Phase 8: WebGL2 tier.** A `WebGL2RenderingContext`-shaped TS class over
@@ -178,25 +228,29 @@ onto the FFI surface.
 
 ## threeTS-lite (Phase 9)
 
-**Positioning: three-shaped, not three-compatible** (the gtlua rule
-applied to 3D). Familiar names (`Scene`, `PerspectiveCamera`, `Mesh`,
-`BufferGeometry`, `MeshStandardMaterial`), familiar composition, but a
-from-scratch dialect-TS implementation sized for games, written against
-the WebGL2 tier. three.js remains MIT (attribution in NOTICE), and its
-source plus `@types/three` are the behavioral reference; as of this
-research three.js itself still ships plain JS (types live in
-DefinitelyTyped), so there is no upstream TS source to lean on, which is
-why this library exists.
+**Positioning: three-shaped, not three-complete.** Familiar names (`Scene`,
+`PerspectiveCamera`, `Mesh`, `BufferGeometry`, `MeshStandardMaterial`),
+familiar composition, but a from-scratch dialect-TS implementation sized
+for games, written against the WebGL2 tier. The names match on purpose: see
+"Why threeTS-lite exists" at the top of this document. Where behaviour
+differs from three, that is a gap to close or a documented cost, never a
+preference.
 
 ### Why not port three.js mechanically
 
-Re-stating the original research conclusion for this doc's readers:
-three.js hits every major fence: `any` throughout, string-keyed dynamic
-property access (uniforms, material props), generic-ish containers,
-optional class fields everywhere, prototype extension points, sparse
-semantics. A mechanical port fights the dialect line by line for ~150k
-lines. A shaped rewrite of the ~15% games use wins on every axis,
-including binary size.
+Re-stating the original research conclusion for this doc's readers. Under
+the dialect, three.js hits every major fence: `any` throughout,
+string-keyed dynamic property access (uniforms, material props),
+generic-ish containers, optional class fields everywhere, prototype
+extension points, sparse semantics.
+
+None of that is bad JavaScript. It is idiomatic, well-tested code written
+for a runtime with a JIT and dynamic property lookup, which is what the web
+has. The mismatch is entirely with our compiler: a mechanical port would
+fight the dialect line by line across ~150k lines and produce something
+neither three-compatible nor maintainable. A shaped rewrite of the ~15%
+games actually use is the smaller, more honest object, and it keeps the
+migration path open for when scriptc closes the gap.
 
 ### Scope tiers
 
@@ -291,6 +345,20 @@ modes, morph targets, envMaps, `Layers` -- plus a long tail of math
 conveniences (`Vector3.projectOnPlane`, `Color.setHSL`, `Matrix4.decompose`).
 What is present is the part a game touches every frame. Judge it by the
 example above rather than by the percentage.
+
+**Still unbuilt from the v0 scope above.** Listed because the scope tiers
+were written before the work and should not read as a completion claim:
+
+| Missing | Notes |
+| --- | --- |
+| `Vector4` | Not needed by anything shipped; trivial when something wants it. |
+| `Box3`, `Sphere` (math), `Plane` (math), `Frustum` | `Raycaster` carries its own `Ray`; the bounding types never got built. |
+| **Frustum culling** | Listed in the renderer scope and NOT implemented. Every mesh in the list is submitted. This is the single most valuable missing item: it is exactly what would cut the 10000-mesh scene walk that the benchmark section shows dominating the frame. |
+| `MathUtils` | Conveniences only (`degToRad`, `clamp`, `lerp`). |
+| `OrthographicCamera` | Only `PerspectiveCamera` exists. Blocks 2.5D and most UI-in-3D. |
+| `CubeTexture`, `DataTexture` | `Texture` and `WebGLRenderTarget` cover what the examples use. |
+
+`Group` exists. Everything else in the v0 list shipped.
 
 ### InstancedMesh
 

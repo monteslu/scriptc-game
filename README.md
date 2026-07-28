@@ -10,10 +10,16 @@ and WebGL2. It compiles ahead of time into one self-contained executable, with
 Skia, SDL2, GLES3 and the webaudio-node C++ graph statically linked behind a
 C-ABI shim.
 
-3D is a first-class target: **threeTS-lite** is a three.js-shaped renderer
-(`Scene`, `Mesh`, `PerspectiveCamera`, materials, lights, `InstancedMesh`,
-`Raycaster`) that runs the same source natively and in a page. See
-[docs/WEBGL-AND-3D.md](docs/WEBGL-AND-3D.md).
+3D is a first-class target: **threeTS-lite** is a [three.js](https://threejs.org)-shaped
+renderer (`Scene`, `Mesh`, `PerspectiveCamera`, materials, lights,
+`InstancedMesh`, `Raycaster`) that runs the same source natively and in a page.
+
+It is a **stopgap for three.js, not a replacement**. three.js is the reason
+web 3D is approachable and its API is the one everyone already knows, which
+is exactly why we copy it. It just cannot compile under a static AOT
+compiler yet, being plain JS written for a JIT. When scriptc can build real
+three.js, this tier should give way to it, and holding the API compatible is
+what keeps that path open. See [docs/WEBGL-AND-3D.md](docs/WEBGL-AND-3D.md).
 
 ```ts
 import { window, document, requestAnimationFrame } from "scriptc-game/web";
@@ -258,6 +264,7 @@ lifting for one part of the stack.
 | **[webaudio-node](https://github.com/monteslu/webaudio-node)** <br><sub>monteslu</sub> | A full Web Audio API for Node.js. Its C++ graph engine (15 node types, params, FFT, mixer, resampler) is compiled **natively** here and driven from an SDL audio thread. Used byte-identical to upstream. | ISC |
 | **[gamepad-node](https://github.com/monteslu/gamepad-node)** <br><sub>monteslu</sub> | The browser Gamepad API for Node.js over native SDL2. Reference for our Standard Gamepad mapping and the polling model behind `navigator.getGamepads()`. | ISC |
 | **[node-sdl](https://github.com/kmamal/node-sdl)** <br><sub>kmamal</sub> | SDL bindings for Node.js. Prior art for how a JS runtime drives SDL windows, events and audio. We bind SDL's C ABI directly, but the shape of the problem was mapped here first. | MIT |
+| **[three.js](https://threejs.org)** <br><sub>mrdoob and contributors</sub> | The library that made 3D on the web approachable, and **the API threeTS-lite borrows**: `Scene`, `Mesh`, `PerspectiveCamera`, materials, lights, the whole vocabulary. Twenty years of design work we are standing on. threeTS-lite exists only because three.js cannot compile under a static AOT compiler *yet*; it is a stopgap, and the intended end state is running real three.js here. Also our behavioral reference: `test/threetest.ts` checks our math against real three values. | MIT |
 | **[webgl-node](https://github.com/monteslu/webgl-node)** <br><sub>monteslu</sub> | A WebGL2 implementation for Node.js on top of native-gles. Its semantics layer is the owned, debugged reference our WebGL2 tier ports from. | MIT |
 | **[native-gles](https://github.com/monteslu/native-gles)** <br><sub>monteslu</sub> | OpenGL ES 3.0 bindings via EGL, native on Linux/ARM and ANGLE on macOS/Windows. Establishes the link shape (`-lEGL -lGLESv2`) the 3D tier uses, the pinned ANGLE build macOS needs, and the N-API-free EGL context our `SG_HEADLESS` path is modelled on. | MIT |
 | **[wasmcart](https://github.com/monteslu/wasmcart)** <br><sub>monteslu</sub> | A WASM cartridge host for sandboxed `.wasm` game carts. **A future compile target:** the same web-shaped source could emit a cart instead of a native binary. | MIT |
