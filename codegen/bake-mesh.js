@@ -38,8 +38,8 @@
  * in code and this is a geometry pipe. Multi-primitive meshes are merged,
  * with indices rebased, which is what you want for a static prop anyway.
  */
-import { readFileSync, writeFileSync } from "node:fs";
-import { basename, extname } from "node:path";
+import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { basename, extname, dirname, join } from "node:path";
 
 const MAGIC = 0x4d475300;
 const VERSION = 1;
@@ -182,21 +182,49 @@ function resolveBuffers(gltf, bin, dir) {
  * position, uv and normal by separate indices, so the same position appears
  * with several different normals. GPUs need one index per vertex, so this
  * de-duplicates on the v/vt/vn triple and builds a real index buffer. */
-function parseOBJ(text) {
+/* Parse a .mtl into name -> [r,g,b] from its Kd (diffuse) lines.
+ *
+ * Only Kd matters here: the runtime shades with Lambert, so specular and
+ * illumination models have nowhere to go, and a game mesh's colour IS its
+ * diffuse. */
+function parseMTL(text) {
+  const out = new Map();
+  let current = null;
+  for (const raw of text.split("\n")) {
+    const line = raw.trim();
+    if (line.startsWith("newmtl ")) {
+      current = line.slice(7).trim();
+      out.set(current, [1, 1, 1]);
+    } else if (line.startsWith("Kd ") && current !== null) {
+      const p = line.split(/\s+/);
+      out.set(current, [+p[1], +p[2], +p[3]]);
+    }
+  }
+  return out;
+}
+
+function parseOBJ(text, materials) {
   const positions = [];
   const uvs = [];
   const normals = [];
   const outPos = [];
   const outUV = [];
   const outNrm = [];
+  const outCol = [];
   const indices = [];
+  /* The dedup key includes the MATERIAL, so one shared position used by a
+   * red panel and a grey panel becomes two vertices with two colours.
+   * Without that the whole ship renders in whichever material happened to
+   * be active first. */
   const seen = new Map();
+  let activeColor = null;
 
   // OBJ indices are 1-based and may be NEGATIVE (relative to the end).
   const resolve = (i, len) => (i > 0 ? i - 1 : len + i);
 
   const emit = (token) => {
-    const cached = seen.get(token);
+    const key = activeColor === null ? token : `${token}|${activeColor.join(",")}`;
+    const cached = seen.get(key);
     if (cached !== undefined) return cached;
 
     const parts = token.split("/");
@@ -217,8 +245,10 @@ function parseOBJ(text) {
       outNrm.push(0, 0, 0);
     }
 
+    if (activeColor !== null) outCol.push(...activeColor);
+
     const id = outPos.length / 3 - 1;
-    seen.set(token, id);
+    seen.set(key, id);
     return id;
   };
 
@@ -233,6 +263,9 @@ function parseOBJ(text) {
       uvs.push(+parts[1], +parts[2]);
     } else if (kind === "vn") {
       normals.push(+parts[1], +parts[2], +parts[3]);
+    } else if (kind === "usemtl") {
+      const m = materials ? materials.get(parts[1]) : undefined;
+      activeColor = m === undefined ? null : m;
     } else if (kind === "f") {
       /* Fan-triangulate: an OBJ face may be a quad or an n-gon, and
        * every DCC tool emits them. */
@@ -247,7 +280,11 @@ function parseOBJ(text) {
     positions: outPos,
     normals: outNrm.length > 0 ? outNrm : null,
     uvs: outUV.length > 0 ? outUV : null,
-    colors: null,
+    /* Materials become VERTEX COLOURS. The runtime has no material library
+     * and a baked mesh is one draw call, so a multi-material model would
+     * otherwise flatten to a single colour -- losing exactly the panel
+     * detail that makes a model look like a model. */
+    colors: outCol.length > 0 ? outCol : null,
     indices,
   };
 }
@@ -263,6 +300,18 @@ function meshFromGLTF(gltf, buffers) {
   let sawUV = false;
   let sawColor = false;
 
+  /* Primitives that share a POSITION accessor share their VERTEX BUFFER
+   * and index different subsets of it -- which is exactly how a
+   * multi-material model is authored. Copying the buffer per primitive
+   * quadrupled a 410-vertex ship to 1640, with three quarters of it
+   * unreferenced. Keyed by accessor index, so a shared buffer is emitted
+   * once and later primitives just rebase onto it.
+   *
+   * The exception is a per-primitive MATERIAL colour: two primitives
+   * sharing positions but wearing different colours genuinely need their
+   * own vertices, so the key carries the colour too. */
+  const emitted = new Map();
+
   for (const mesh of gltf.meshes || []) {
     for (const prim of mesh.primitives || []) {
       // 4 = TRIANGLES. Strips/fans/lines are not what a baked prop is.
@@ -275,7 +324,36 @@ function meshFromGLTF(gltf, buffers) {
       const attrs = prim.attributes;
       if (attrs.POSITION === undefined) continue;
 
+      /* The colour this primitive will contribute, resolved up front so
+       * it can take part in the dedup key. */
+      let primColor = null;
+      if (attrs.COLOR_0 === undefined && prim.material !== undefined &&
+          gltf.materials) {
+        const m = gltf.materials[prim.material];
+        const f = (m && m.pbrMetallicRoughness &&
+                   m.pbrMetallicRoughness.baseColorFactor) || [1, 1, 1, 1];
+        primColor = `${f[0]},${f[1]},${f[2]}`;
+      }
+      const shareKey = `${attrs.POSITION}|${attrs.NORMAL}|${attrs.TEXCOORD_0}|` +
+                       `${attrs.COLOR_0}|${primColor}`;
+      const shared = emitted.get(shareKey);
+
+      if (shared !== undefined) {
+        /* Same buffer, same colour: reuse the vertices already emitted and
+         * only append this primitive's indices, rebased onto them. */
+        if (prim.indices !== undefined) {
+          for (const i of readAccessor(gltf, buffers, prim.indices)) {
+            indices.push(shared + i);
+          }
+        } else {
+          const n = gltf.accessors[attrs.POSITION].count;
+          for (let i = 0; i < n; i++) indices.push(shared + i);
+        }
+        continue;
+      }
+
       const base = positions.length / 3;
+      emitted.set(shareKey, base);
       const pos = readAccessor(gltf, buffers, attrs.POSITION);
       const count = pos.length / 3;
       for (const v of pos) positions.push(v);
@@ -306,6 +384,22 @@ function meshFromGLTF(gltf, buffers) {
         for (let i = 0; i < count; i++) {
           colors.push(c[i * stride], c[i * stride + 1], c[i * stride + 2]);
         }
+      } else if (prim.material !== undefined && gltf.materials) {
+        /* No per-vertex colours, but the PRIMITIVE names a material.
+         *
+         * This is how a flat-shaded kit is actually authored: one
+         * primitive per material, each with a baseColorFactor. Merging
+         * them without reading that factor collapses a four-tone model to
+         * a single colour and loses exactly the panel detail (dark
+         * cockpit, coloured trim) that makes it read as a model.
+         *
+         * baseColorFactor is linear; the renderer shades in the same
+         * space, so it is used as-is. */
+        const mat = gltf.materials[prim.material];
+        const f = (mat && mat.pbrMetallicRoughness &&
+                   mat.pbrMetallicRoughness.baseColorFactor) || [1, 1, 1, 1];
+        sawColor = true;
+        for (let i = 0; i < count; i++) colors.push(f[0], f[1], f[2]);
       } else {
         for (let i = 0; i < count * 3; i++) colors.push(1);
       }
@@ -326,6 +420,47 @@ function meshFromGLTF(gltf, buffers) {
     uvs: sawUV ? uvs : null,
     colors: sawColor ? colors : null,
     indices,
+  };
+}
+
+/* Drop vertices no index references, and renumber what remains.
+ *
+ * A multi-material glTF shares ONE vertex buffer across its primitives and
+ * indexes a subset per material. Since each material needs its own colour,
+ * the buffer is emitted once per primitive -- so a 410-vertex ship with 4
+ * materials carries 1640 vertices of which only the indexed ~840 are ever
+ * drawn. The rest is dead weight in the file, in the upload, and in the
+ * vertex shader.
+ *
+ * Non-indexed meshes are returned untouched: every vertex is referenced by
+ * definition. */
+function dropUnusedVertices(mesh) {
+  if (!mesh.indices || mesh.indices.length === 0) return mesh;
+
+  const used = new Map();
+  const order = [];
+  for (const i of mesh.indices) {
+    if (!used.has(i)) { used.set(i, order.length); order.push(i); }
+  }
+  const before = mesh.positions.length / 3;
+  if (order.length === before) return mesh;   // nothing to drop
+
+  const take = (src, size) => {
+    if (!src) return null;
+    const out = [];
+    for (const i of order) {
+      for (let k = 0; k < size; k++) out.push(src[i * size + k]);
+    }
+    return out;
+  };
+
+  return {
+    positions: take(mesh.positions, 3),
+    normals: take(mesh.normals, 3),
+    uvs: take(mesh.uvs, 2),
+    colors: take(mesh.colors, 3),
+    indices: mesh.indices.map((i) => used.get(i)),
+    dropped: before - order.length,
   };
 }
 
@@ -410,7 +545,22 @@ function main(argv) {
   let mesh;
 
   if (ext === ".obj") {
-    mesh = parseOBJ(readFileSync(inPath, "utf8"));
+    /* An OBJ names its .mtl with `mtllib`; resolve it beside the model.
+     * A missing file is not fatal -- the mesh just has no colours. */
+    const objText = readFileSync(inPath, "utf8");
+    let materials = null;
+    const lib = /^mtllib\s+(.+)$/m.exec(objText);
+    if (lib) {
+      const mtlPath = join(dirname(inPath), lib[1].trim());
+      if (existsSync(mtlPath)) {
+        materials = parseMTL(readFileSync(mtlPath, "utf8"));
+        console.log(`bake-mesh: ${basename(mtlPath)}: ${materials.size} materials`);
+      } else {
+        console.warn(`bake-mesh: ${lib[1].trim()} not found beside the model; ` +
+                     `baking without colours`);
+      }
+    }
+    mesh = parseOBJ(objText, materials);
   } else if (ext === ".glb") {
     const { gltf, bin } = parseGLB(readFileSync(inPath));
     mesh = meshFromGLTF(gltf, resolveBuffers(gltf, bin, new URL(`file://${process.cwd()}/`)));
@@ -423,7 +573,11 @@ function main(argv) {
     process.exit(2);
   }
 
-  const info = writeSGM(mesh, outPath, scale);
+  const trimmed = dropUnusedVertices(mesh);
+  if (trimmed.dropped) {
+    console.log(`bake-mesh: dropped ${trimmed.dropped} unreferenced vertices`);
+  }
+  const info = writeSGM(trimmed, outPath, scale);
   const parts = [];
   if (info.flags & F_NORMAL) parts.push("normals");
   if (info.flags & F_UV) parts.push("uvs");

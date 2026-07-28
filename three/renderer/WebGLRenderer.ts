@@ -691,7 +691,20 @@ export class WebGLRenderer {
     const gl = this.gl;
     const geo = mesh.geometry;
 
+    /* Rebuild when the GEOMETRY changed, not only when the VAO is absent.
+     * A VAO captures the buffers bound when it was made, so a mesh whose
+     * geometry is assigned later (a model loading over a placeholder) would
+     * otherwise keep drawing the placeholder's buffers. */
+    if (mesh.glInstancedVAO !== null && mesh.glVAOGeometry !== geo) {
+      mesh.glInstancedVAO = null;
+      mesh.glMatrixBuffer = null;
+      mesh.glColorBuffer = null;
+      mesh.uploadedCount = -1;
+      mesh.uploadedColorCount = -1;
+    }
+
     if (mesh.glInstancedVAO === null) {
+      mesh.glVAOGeometry = geo;
       mesh.glInstancedVAO = gl.createVertexArray();
       gl.bindVertexArray(mesh.glInstancedVAO);
 

@@ -33,3 +33,20 @@ git config --global core.symlinks true
 That needs Developer Mode, or an elevated shell. If assets fail to load on
 Windows with "unsupported or corrupt", this is why: check whether
 `examples/dodge/public/player.png` is 20 bytes of text rather than a PNG.
+
+## craft_speederA.obj / .mtl
+
+A spaceship model by **Kenney** (https://kenney.nl), from the Space Kit,
+released under **CC0 1.0 Universal** (public domain dedication): no
+attribution is required and it may be used commercially. The credit here is
+courtesy, not obligation.
+
+The `.obj` is the SOURCE. `scripts/mesh-fixtures.sh` and the orbits build
+bake it into a `.sgm` with `codegen/bake-mesh.js`; the baked file is
+gitignored because a stale one would keep passing against a loader that no
+longer matched the baker.
+
+The four materials in the `.mtl` become VERTEX COLOURS at bake time: the
+runtime has no material library and a baked mesh is one draw call, so a
+multi-material model would otherwise flatten to a single colour and lose
+the panel detail that makes it read as a ship.

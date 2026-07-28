@@ -64,6 +64,16 @@ if grep -q 'libsggl\.a' "$ROOT/ffi/core.ffi.json" 2>/dev/null; then
   rm -f "$GL_LOG"
 fi
 
+# Bake any shared models the game asks for. Sources are .glb in
+# examples/shared/models/; the .sgm output is gitignored, so a clean clone
+# must generate it or the game loads nothing and silently shows
+# placeholders.
+if [ -d "$INPUT/public" ] && ls "$INPUT"/*.ts >/dev/null 2>&1 &&
+   grep -qs '\.sgm' "$INPUT"/*.ts; then
+  "$ROOT/scripts/bake-models.sh" "$INPUT/public" >/dev/null || {
+    echo "bake-models.sh failed" >&2; exit 1; }
+fi
+
 OUT="$ROOT/build/$BASE"
 mkdir -p "$(dirname "$OUT")"
 node "$SCRIPTC" build "$ENTRY" --ffi "$ROOT/ffi/core.ffi.json" -o "$OUT"

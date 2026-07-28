@@ -44,6 +44,7 @@ import {
 import { AmbientLight, PointLight, DirectionalLight } from "../../three/lights/Light.js";
 import { WebGLRenderer } from "../../three/renderer/WebGLRenderer.js";
 import { Texture } from "../../three/textures/Texture.js";
+import { SGMLoader } from "../../three/loaders/SGMLoader.js";
 import { Matrix4 } from "../../three/math/Matrix4.js";
 import { Quaternion } from "../../three/math/Quaternion.js";
 import { Vector3 } from "../../three/math/Vector3.js";
@@ -186,7 +187,12 @@ window.addEventListener("load", () => {
    * belt is a single matrix rebuild per frame rather than 600 objects. */
   const rockMat = new MeshLambertMaterial();
   rockMat.color.setHex(0xffffff);
+  rockMat.vertexColors = true;   // the models carry their own material colours
   const belt = new InstancedMesh(new BoxGeometry(1, 1, 1), rockMat, ROCK_COUNT);
+  /* Half the rocks use the detailed model. Two instanced meshes is still
+   * two draw calls for 600 rocks. */
+  const belt2 = new InstancedMesh(new BoxGeometry(1, 1, 1), rockMat,
+                                  ROCK_COUNT);
   const rockAngle: number[] = [];
   const rockRadius: number[] = [];
   const rockY: number[] = [];
@@ -204,6 +210,11 @@ window.addEventListener("load", () => {
     belt.setColorAt(i, rockColor);
   }
   scene.addInstancedMesh(belt);
+  scene.add(belt2);
+  /* Both meshes draw the full pool; the unused half of each is collapsed
+   * to a zero-scale matrix per frame, which rasterises nothing. */
+  belt.count = ROCK_COUNT;
+  belt2.count = ROCK_COUNT;
 
   /* ---- sprites: ship, motes, mines ----
    *
@@ -221,12 +232,72 @@ window.addEventListener("load", () => {
    * of phase. */
   const MOTE_FRAMES = 4;
 
-  const shipMat = new SpriteMaterial();
-  shipMat.map = shipTex;
-  shipMat.transparent = true;
-  const ship = new Sprite(shipMat);
-  ship.scale.set(3.1, 3.1, 1);
-  scene.addSprite(ship);
+  /* The ship is a REAL MODEL, baked from an OBJ at build time.
+   *
+   * A billboard sprite cannot bank, cannot catch the star's light on one
+   * side, and looks identical from every angle -- all three are what make
+   * a ship read as a ship. The geometry loads asynchronously, so the mesh
+   * is created empty and filled when the load resolves; the game is
+   * playable either way. */
+  const shipMat = new MeshLambertMaterial(0xffffff);
+  shipMat.vertexColors = true;   // the .mtl's four materials, baked in
+  const ship = new Mesh(new BoxGeometry(0.001, 0.001, 0.001), shipMat);
+  /* The Kenney models are authored around 1-2 units; the arena is ~46
+   * across, so the hero ship is scaled up to read at the play camera. */
+  ship.scale.set(2.4, 2.4, 2.4);
+  scene.add(ship);
+
+  const loader = new SGMLoader();
+  loader.load("craft_racer.sgm")
+    .then((geo) => { ship.geometry = geo; })
+    .catch((e) => {
+      ship.geometry = new BoxGeometry(1.4, 0.5, 2.2);
+      console.log(`orbits: craft_racer.sgm did not load: ${e}`);
+    });
+
+  /* ---- the belt: real meteors, not boxes ----
+   *
+   * Two InstancedMeshes, one per meteor model, so the ring reads as
+   * varied rock rather than a repeated shape -- still only two draw calls
+   * for the whole belt. The geometry arrives asynchronously, so each
+   * starts on a placeholder box and swaps in when its model loads. */
+  loader.load("meteor.sgm")
+    .then((geo) => { belt.geometry = geo; })
+    .catch(() => { console.log("orbits: meteor.sgm did not load"); });
+  loader.load("meteor_detailed.sgm")
+    .then((geo) => { belt2.geometry = geo; })
+    .catch(() => { console.log("orbits: meteor_detailed.sgm did not load"); });
+
+  /* ---- station skyline ----
+   *
+   * Set dressing on the far side of the arena: it never moves and never
+   * collides, but it turns "a star with rocks round it" into a PLACE.
+   * Each is one draw call and they sit outside the play area, so they cost
+   * nothing that matters. */
+  const props: string[] = [
+    "satelliteDish_large", "machine_generator", "structure_detailed",
+    "hangar_roundA", "rocket_finsA", "gate_complex", "turret_double",
+    "rock_crystalsLargeA", "rock_crystals", "rock_largeA", "pipe_ring",
+  ];
+  for (let i = 0; i < props.length; i++) {
+    const angle = (i / props.length) * Math.PI * 2 + 0.4;
+    const radius = 58 + (i % 3) * 9;
+    const px = Math.cos(angle) * radius;
+    const py = Math.sin(angle) * radius;
+    const pz = -14 - (i % 4) * 7;
+    const s = 2.6 + (i % 3) * 1.1;
+
+    const propMat = new MeshLambertMaterial(0xffffff);
+    propMat.vertexColors = true;
+    const prop = new Mesh(new BoxGeometry(0.001, 0.001, 0.001), propMat);
+    prop.position.set(px, py, pz);
+    prop.scale.set(s, s, s);
+    prop.setRotationFromEuler(0, angle + Math.PI, 0);
+    scene.add(prop);
+    loader.load(`${props[i]}.sgm`)
+      .then((geo) => { prop.geometry = geo; })
+      .catch(() => { /* one missing prop must not disturb the rest */ });
+  }
 
   const motes: Mote[] = [];
   for (let i = 0; i < MOTE_COUNT; i++) {
@@ -364,6 +435,10 @@ window.addEventListener("load", () => {
   let boost = BOOST_MAX;
   let invuln = 0;
   let over = false;
+  /** Previous frame's heading, for deriving how hard the ship is turning. */
+  let lastHeading = 0;
+  /** Smoothed bank angle, radians. */
+  let bank = 0;
   /** Camera kick on impact; decays exponentially. */
   let shake = 0;
   let beltAngle = 0;
@@ -376,6 +451,12 @@ window.addEventListener("load", () => {
   const scl = new Vector3(1, 1, 1);
   const axis = new Vector3(0.3, 1, 0.2);
   const camTarget = new Vector3();
+  const _bankQ = new Quaternion();
+  /* A zero-scale matrix: an instance set to this rasterises nothing. */
+  const _hidden = new Matrix4().compose(
+    new Vector3(0, 0, 0), new Quaternion(), new Vector3(0, 0, 0));
+  /* The ship's own forward axis: bank is a roll about where it POINTS. */
+  const _fwdAxis = new Vector3(0, 0, 1);
 
   function keyDown(name: string): boolean { return keys.indexOf(name) >= 0; }
 
@@ -604,15 +685,43 @@ window.addEventListener("load", () => {
       const s = rockScale[i];
       scl.set(s, s, s);
       scratch.compose(pos, q, scl);
-      belt.setMatrixAt(i, scratch);
+      /* Alternate models, and COLLAPSE the slot in the other mesh: an
+       * instance left at identity would draw a second rock at the origin.
+       * Each mesh keeps the full count so the indices stay stable. */
+      if ((i & 1) === 0) {
+        belt.setMatrixAt(i, scratch);
+        belt2.setMatrixAt(i, _hidden);
+      } else {
+        belt2.setMatrixAt(i, scratch);
+        belt.setMatrixAt(i, _hidden);
+      }
     }
 
     /* ---- sprite placement ---- */
     ship.position.set(shipX, shipY, 0);
     ship.visible = over || invuln <= 0 || Math.floor(invuln / 110) % 2 === 0;
-    /* The sprite spins to face its velocity. `rotation` on a SpriteMaterial
-     * is a SCREEN-space spin, which is exactly right for a top-down ship. */
-    shipMat.rotation = Math.atan2(shipVY, shipVX) - Math.PI / 2;
+    /* Point the hull along its velocity, and BANK into the turn.
+     *
+     * The model's nose is +Z, so the heading is a rotation about Y. Bank
+     * comes from how fast the heading is changing: a ship that turns
+     * without rolling reads as a sprite being dragged around, and the roll
+     * is what sells it as flying. */
+    const heading = Math.atan2(shipVX, shipVY);
+    let dHead = heading - lastHeading;
+    // Unwrap: a heading crossing +/-PI must not read as a full-speed spin.
+    while (dHead > Math.PI) dHead -= Math.PI * 2;
+    while (dHead < -Math.PI) dHead += Math.PI * 2;
+    lastHeading = heading;
+    // Low-pass the bank so it leans in and out rather than snapping.
+    bank += (Math.max(-1, Math.min(1, dHead * 9)) * 0.85 - bank) *
+            Math.min(1, dt * 7);
+
+    /* Euler order matters: yaw to the heading FIRST, then roll about the
+     * ship's own forward axis. Rolling first would bank in world space and
+     * tilt the ship sideways relative to where it is pointing. */
+    ship.quaternion.setFromEuler(0, heading, 0);
+    _bankQ.setFromAxisAngle(_fwdAxis, -bank);
+    ship.quaternion.multiply(_bankQ);
 
     for (let i = 0; i < motes.length; i++) {
       const m = motes[i];

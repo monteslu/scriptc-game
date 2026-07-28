@@ -89,6 +89,15 @@ export class InstancedMesh extends Mesh {
   glColorBuffer: WebGLBuffer | null = null;
   /** The VAO the renderer built for THIS mesh's geometry+instance buffers. */
   glInstancedVAO: WebGLVertexArrayObject | null = null;
+  /* Which geometry the VAO's attribute bindings were built from.
+   *
+   * A VAO captures the BUFFERS bound at build time, so assigning a new
+   * geometry (loading a model over a placeholder, swapping an LOD) leaves
+   * the VAO pointing at the old one: the mesh keeps drawing the previous
+   * shape, or -- if the placeholder had no normals in the same layout --
+   * renders unlit black. Comparing this to `geometry` each frame catches
+   * the swap. */
+  glVAOGeometry: BufferGeometry | null = null;
   /* How many instances are actually IN the GL buffers. The renderer uploads
    * only the drawn prefix, so a later increase in `count` needs a re-upload
    * even when the game set no needsUpdate flag. -1 = nothing uploaded. */
