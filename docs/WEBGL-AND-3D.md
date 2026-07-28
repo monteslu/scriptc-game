@@ -1,4 +1,7 @@
-# WebGL Tier and threeTS-lite (3D Roadmap)
+# WebGL Tier and threeTS-lite
+
+**Status: both phases shipped.** This document is now the reference for the
+3D tier as built, and keeps the design reasoning that produced it.
 
 Two stacked phases, added after the v0.1 (2D) plan:
 
@@ -461,21 +464,21 @@ CPU submit time in milliseconds per frame.
 
 | path | n | threeTS-lite | three.js | ratio |
 | --- | ---: | ---: | ---: | ---: |
-| instanced | 250 | 0.172 | 0.232 | **0.74x** |
-| per-mesh | 250 | 0.752 | 1.164 | **0.65x** |
-| instanced | 1000 | 0.641 | 0.600 | 1.07x |
-| per-mesh | 1000 | 4.077 | 6.322 | **0.64x** |
-| instanced | 2500 | 2.294 | 1.772 | 1.29x |
-| per-mesh | 2500 | 13.750 | 18.380 | **0.75x** |
-| instanced | 10000 | 9.298 | 7.084 | 1.31x |
-| per-mesh | 10000 | 125.794 | 75.343 | 1.67x |
+| instanced | 250 | 0.124 | 0.235 | **0.53x** |
+| per-mesh | 250 | 0.305 | 1.115 | **0.27x** |
+| instanced | 1000 | 0.640 | 0.590 | 1.08x |
+| per-mesh | 1000 | 2.100 | 6.201 | **0.34x** |
+| instanced | 2500 | 2.303 | 1.683 | 1.37x |
+| per-mesh | 2500 | 9.749 | 18.206 | **0.54x** |
+| instanced | 10000 | 9.873 | 6.951 | 1.42x |
+| per-mesh | 10000 | 126.125 | 74.455 | 1.69x |
 
-Faster on five of eight, slower on three. The pattern is consistent and
+Faster on four of eight, slower on four. The pattern is consistent and
 worth stating plainly rather than cherry-picking: this tier wins at low
 object counts, where its thinner per-draw path costs less than three's
 material and uniform machinery, and LOSES at high counts, where three's
 render-list sorting and state caching pay for themselves. The worst case
-is 10000 per-mesh at 1.67x slower -- three batches state changes across a
+is 10000 per-mesh at 1.69x slower -- three batches state changes across a
 long draw list far better than a straight loop does.
 
 ### Where the remaining gap actually is
@@ -506,7 +509,63 @@ transforms into shared typed arrays rather than per-object Matrix4s. That
 is a real option and it is how a data-oriented engine would be built, but
 it would stop `mesh.position.set(...)` and `mesh.matrixWorld` from being
 what a three user expects, and API compatibility is the point of this
-tier. It is not being done.
+tier. **It is not being done, and that is a settled decision.**
+
+### Phase attribution, and what is NOT the cause
+
+Instrumenting `render()` splits a per-mesh 10000 frame (133ms total) into:
+
+```
+matrix   39.0 ms   recompose 10000 transforms
+collect  32.9 ms   walk the scene graph
+draw     57.3 ms   submission
+```
+
+Instanced 10000 on the same GPU, same driver, same draw count is 10.7ms
+total. The entire difference is per-object CPU work, and none of it is GL.
+
+Two plausible causes were tested and ruled out, which is worth recording so
+they are not re-investigated:
+
+- **Not the offscreen target.** Bare draw calls into the EGL pbuffer cost
+  **27ns each**; 10000 of them total 0.267ms. Headless rendering is not slow.
+- **Not the FFI boundary.** A C-side FFI call measured **32ns**, so the
+  40000 crossings a 10000-mesh frame makes are ~1.3ms. Earlier comments in
+  the renderer claimed ~2us per crossing and ~80ms; that was wrong and has
+  been corrected at both sites.
+
+### Native vs the same source in a browser
+
+The same spinfield source, same GPU (pinned with `SG_GL_DEVICE`), mean
+ms/frame. Firefox clamps `performance.now()` to 1ms, so its p50/p95 are
+quantised to whole milliseconds and unusable; mean survives because the
+rounding is unbiased over 240 frames, and both columns therefore report
+mean.
+
+| path | n | native | browser | |
+| --- | ---: | ---: | ---: | --- |
+| instanced | 250 | 0.149 | 0.113 | 1.32x slower |
+| instanced | 1000 | 0.696 | 0.400 | 1.74x slower |
+| instanced | 2500 | 2.550 | 0.554 | 4.60x slower |
+| instanced | 10000 | 12.698 | 2.087 | 6.08x slower |
+| per-mesh | 250 | 0.359 | 0.188 | 1.91x slower |
+| per-mesh | 1000 | 2.353 | 0.575 | 4.09x slower |
+| per-mesh | 2500 | 10.618 | 1.317 | 8.06x slower |
+| per-mesh | 10000 | 137.882 | 5.142 | 26.81x slower |
+
+Native is slower everywhere, and the gap grows with object count. On the
+per-object scene walk a JIT beats this AOT output badly, and the instanced
+path -- which does almost no per-object work -- stays closest. This does not
+change the compatibility decision above; it says where the cost is.
+
+Caveat on these figures: the browser column is a single run against a
+native median, and the two harnesses were not proven to define a frame
+identically. The direction is unambiguous, the exact multipliers are not.
+
+An earlier version of this comparison was worse than useless: EGL's
+`devices[0]` was an integrated 890M while the browser used the discrete
+RX 7600, so it compared two stacks across two GPUs. `SG_GL_DEVICE` exists
+to pin that.
 
 Both sides measure CPU SUBMIT TIME, deliberately without `glFinish`. An
 earlier attempt called finish() to "measure the real work" and produced an

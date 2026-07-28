@@ -261,8 +261,8 @@ export class WebGLRenderer {
      *
      * It is the inverse-transpose of modelView's 3x3, and computing it on
      * the CPU cost a 3x3 inverse plus a second uniform crossing per mesh
-     * -- 10000 extra crossings a frame at 10000 meshes, measured at ~2us
-     * each. mat3(modelViewMatrix) is EXACT for the rigid and
+     * -- 10000 extra crossings a frame at 10000 meshes, and the inverse
+     * itself is the expensive half. mat3(modelViewMatrix) is EXACT for the rigid and
      * uniformly-scaled transforms games actually use; `normalScaled`
      * switches to a shader-side inverse-transpose only when a non-uniform
      * scale makes that necessary. */
@@ -342,10 +342,15 @@ export class WebGLRenderer {
     if ((features & FEAT_INSTANCED) !== 0) s += "in vec3 vInstanceColor;\n";
     /* diffuse.rgb and opacity in ONE vec4.
      *
-     * Every uniform call crosses the FFI, and a crossing costs ~2us
-     * measured -- at 10000 meshes the per-draw uniforms alone were 40000
-     * crossings and ~80ms. Packing what the shader reads together is the
-     * cheapest way to cut that count. */
+     * Every uniform call crosses the FFI, and at 10000 meshes the per-draw
+     * uniforms alone were 40000 crossings. Packing what the shader reads
+     * together is the cheapest way to cut that count.
+     *
+     * The cost is NOT the C boundary: a bare FFI call measured 32ns, so
+     * 40000 of them is ~1.3ms, not the ~2us/call this comment used to
+     * claim. What is expensive is the scriptc-side work per call plus the
+     * per-object scene walk feeding it -- see "Where the remaining gap
+     * actually is" in docs/WEBGL-AND-3D.md. */
     s += "uniform vec4 diffuseOpacity;\n";
     if ((features & FEAT_MAP) !== 0) {
       s += "uniform sampler2D map;\n";
