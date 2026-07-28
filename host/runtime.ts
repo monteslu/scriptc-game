@@ -166,6 +166,19 @@ export async function run(opts: HostOptions): Promise<number> {
     last = now;
     if (frameMs > 250) frameMs = 250;   // never spiral after a window drag
 
+    /* Fit the GL viewport to the window BEFORE the game draws, so a
+     * resize is reflected in the same frame rather than one late.
+     *
+     * The 2D path gets this from SDL_RenderSetLogicalSize; GL renders
+     * straight into the back buffer, so without this the viewport keeps
+     * its startup size and maximising the window reveals empty
+     * framebuffer around an unchanged image. Letterboxed, so the game
+     * keeps its aspect at any window size.
+     *
+     * A game that calls renderer.setSize() itself will overwrite the
+     * viewport, which is correct: it then owns the decision. */
+    if (usesGLPresent()) ffi.glFitViewport(opts.width, opts.height);
+
     __runFrameCallbacks(now);
 
     if (opts.shotPath !== "" && stats.frames + 1 === opts.shotFrame) {

@@ -33,7 +33,9 @@ const out = [];
 const say = (m) => { out.push(m); el.textContent = out.join("\n"); };
 const fail = (m) => { say("FAIL: " + m); say("VERDICT: FAIL"); };
 
-addEventListener("error", (e) => fail("uncaught: " + (e.message || e.error)));
+addEventListener("error", (e) => fail("uncaught: " + (e.message || e.error || "") +
+  " @" + (e.filename || "?") + ":" + (e.lineno || "?") + ":" + (e.colno || "?") +
+  ((e.error && e.error.stack) ? "\n" + e.error.stack : "")));
 addEventListener("unhandledrejection", (e) => fail("rejected: " + e.reason));
 
 /* Mirror the game's console into the page: a game that logs a diagnostic

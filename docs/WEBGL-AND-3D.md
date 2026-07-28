@@ -241,12 +241,53 @@ the dialect and are listed here rather than left to be discovered.
 
 | three | here | why |
 | --- | --- | --- |
-| `scene.add(anything)` | `addMesh` / `addInstancedMesh` / `addSprite` / `addLine` / `addPoints` / `addLight` | the renderer needs a concrete type per drawable kind; the dialect will not narrow `Object3D` back down (SC1090). `add()` still works for transform parenting. |
+| `new Material({ color: 0xff0000 })` | `new Material(0xff0000)` | an object literal cannot cross into a class-typed parameter (SC2003). Every other option is a field assignment, as it may be in three. |
+| `mesh.rotation.x += 0.01` | `mesh.rotateX(0.01)` | `rotation` is a read-only Euler VIEW of the authoritative quaternion; the dialect has no property setters to sync a write back |
+| `raycaster.setFromCamera(vec2, cam)` | `setFromCamera(x, y, cam)` | two numbers is what every call site actually has |
 | `geometry.attributes.position` | `geometry.position` | no dynamic property access; `setAttribute("position", ...)` still works |
 | `attribute.needsUpdate = true` | `geometry.updatePosition()` | the attribute is a named field, so the flag lives on the geometry |
 | `texture.offset.set(x, y)` | `texture.setOffset(x, y)` | same for `repeat`; no Vector2 property objects with setters |
-| `material.rotation` on a Sprite | same | screen-space spin, as in three |
-| `mesh.instanceMatrix.needsUpdate` | same | works exactly as three's |
+
+Everything else in the canonical three example is **verbatim**:
+
+```ts
+const scene = new Scene();
+const camera = new PerspectiveCamera(75, w / h, 0.1, 1000);
+const cube = new Mesh(new BoxGeometry(1, 1, 1), new MeshLambertMaterial(0x00ff00));
+scene.add(cube);                       // dispatches by instanceof
+camera.position.z = 5;
+cube.position.set(1, 2, 3);
+cube.scale.setScalar(2);
+const light = new PointLight(0xffffff, 1, 100);
+light.position.set(5, 5, 5);
+scene.add(light);
+const hits = new Raycaster().intersectObjects(scene.children);
+```
+
+`test/idiom/` compiles exactly that and checks the values against three's:
+same positions, same colour, same hit count.
+
+**`scene.add()` dispatches by `instanceof`** to the right typed registry
+(most-derived first, so an InstancedMesh is not filed as a Mesh). The typed
+`addMesh`/`addLight`/`addSprite`/... methods remain and are what the
+library's own code uses: they skip the type tests and, more usefully, they
+fail at COMPILE time on the wrong kind where `add()` can only ignore it at
+runtime.
+
+`intersectObjects` takes `Object3D[]` and skips non-Meshes, so
+`scene.children` works. Sprites, Lines and Points have no world-space
+geometry to hit (a Sprite is built in the vertex shader); give them a
+collider Mesh and see `raycastable` below.
+
+### Coverage, honestly
+
+About 37% of three's total member count, but that number is misleading in
+both directions. What is missing is overwhelmingly renderer surface this
+tier does not implement -- shadow maps, stencil, tone mapping, blending
+modes, morph targets, envMaps, `Layers` -- plus a long tail of math
+conveniences (`Vector3.projectOnPlane`, `Color.setHSL`, `Matrix4.decompose`).
+What is present is the part a game touches every frame. Judge it by the
+example above rather than by the percentage.
 
 ### InstancedMesh
 
@@ -301,6 +342,77 @@ assumes real-world distances. At game scale a light 35 units away needs an
 intensity in the hundreds to be visible, and anything near it then blows
 out. `examples/orbits` uses `decay = 1`, which is exactly what the parameter
 is exposed for.
+
+### Raycaster
+
+`setFromCamera(ndcX, ndcY, camera)`, `intersectObject`, `intersectObjects`,
+results sorted nearest-first with `distance`, `point`, `normal` and
+barycentric-interpolated `uv`. Two tiers, as in three: a bounding-sphere
+reject, then triangles tested in the mesh's LOCAL space (one matrix inverse
+per mesh, rather than transforming every triangle to world space).
+
+three takes a `Vector2` for the NDC coordinate; this takes the two numbers,
+because that is what every call site actually has. Converting a mouse event
+is the caller's job, exactly as in three:
+
+```ts
+const ndcX = (e.clientX / canvas.width) * 2 - 1;
+const ndcY = -(e.clientY / canvas.height) * 2 + 1;   // note the y flip
+raycaster.setFromCamera(ndcX, ndcY, camera);
+```
+
+**`mesh.raycastable`, not `mesh.visible`.** These are different questions.
+A collider box that follows a billboard sprite has to be pickable without
+ever being drawn, and gating the raycaster on `visible` means every collider
+renders as a solid block over the thing it stands in for (which is exactly
+what happened in `examples/orbits`: white boxes covering every mine).
+Sprites need colliders at all because a `Sprite` is built in the vertex
+shader and has no world-space geometry for a ray to hit.
+
+`firstHitOnly` skips the sort and returns on the first triangle found, for
+"is anything in the way?" queries.
+
+Not covered: Sprite/Points/Line intersection (three tests those against a
+threshold) and per-instance hits on an InstancedMesh.
+
+A hit count can surprise you: a centre ray through a `PlaneGeometry` reports
+**two** hits, because a plane is two triangles sharing the diagonal the ray
+runs down. three reports both, and so does this. `test/raytest.ts` checks 64
+values against real three.js output.
+
+### Loaders: bake, do not parse
+
+`codegen/bake-mesh.js` converts glTF/GLB/OBJ into a `.sgm` binary at BUILD
+time; `three/loaders/SGMLoader.ts` loads it at runtime.
+
+```
+node codegen/bake-mesh.js model.glb game/public/model.sgm [--scale N]
+```
+
+```ts
+new SGMLoader().load("model.sgm").then((geometry) => {
+  scene.addMesh(new Mesh(geometry, material));
+});
+```
+
+Everything variable about glTF (accessor component types, interleaved
+`byteStride`, normalized integer attributes, base64 data URIs, the scene
+graph) is resolved on the build machine. What ships is a 20-byte header
+followed by exactly the buffers the GPU wants, so the loader is a header
+read and four loops rather than a JSON parser and an accessor engine.
+
+The baker is zero-dependency, matching every other tool in `codegen/`:
+`node:` builtins only. OBJ gets real de-duplication on the v/vt/vn triple
+(a shared position with three different normals becomes three vertices) and
+fan triangulation for quads and n-gons.
+
+Refusals are loud on both sides: a sparse accessor is rejected by the baker
+by name, and a truncated or wrong-magic `.sgm` throws from the loader rather
+than yielding an empty geometry that renders as nothing and reads as a
+shader bug.
+
+Out of scope, deliberately: materials, cameras, lights, skins and
+animations. A game builds its scene in code; this is a geometry pipe.
 
 ## Benchmark: spinfield
 

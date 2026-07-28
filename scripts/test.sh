@@ -35,7 +35,7 @@ run() {
 }
 
 echo "==> building test programs"
-for entry in test/conformance.ts test/readbackprobe.ts test/inputtest.ts test/padvisual.ts test/audiotest.ts test/decodetest.ts test/imagetest.ts test/spritetest.ts test/asynctest.ts test/missileprobe.ts test/websurface.ts test/webgltest.ts test/threetest.ts; do
+for entry in test/conformance.ts test/readbackprobe.ts test/inputtest.ts test/padvisual.ts test/audiotest.ts test/decodetest.ts test/imagetest.ts test/spritetest.ts test/asynctest.ts test/missileprobe.ts test/websurface.ts test/webgltest.ts test/threetest.ts test/raytest.ts; do
   ./scripts/build.sh "$entry" "$TARGET" >/dev/null || { echo "build failed: $entry"; exit 1; }
 done
 
@@ -50,6 +50,9 @@ run "sprite sheets"      env SDL_VIDEODRIVER=dummy ./build/spritetest test/out
 # API-compatible so a project can swap it for three; that only means
 # something if the numbers agree.
 run "three math"         env ./build/threetest
+# Raycaster against real three.js, and the .sgm bake/load round trip. The
+# fixtures are rebuilt first so a format change cannot pass on stale files.
+run "raycaster + loader" ./scripts/mesh-fixtures.sh
 
 run "webgl2"             env ./build/webgltest
 # The acceptance gate: identical framebuffer hashes from this build and from

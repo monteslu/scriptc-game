@@ -123,5 +123,58 @@
     6.394990498,
     6,
     6.300617749
+  ],
+  "ray_origin_center": [
+    0,
+    0,
+    5
+  ],
+  "ray_dir_center": [
+    0,
+    0,
+    -1
+  ],
+  "ray_origin_off": [
+    0,
+    0,
+    5
+  ],
+  "ray_dir_off": [
+    0.452865457,
+    -0.12736841,
+    -0.882434228
+  ],
+  "ray_plane_hitcount": 2,
+  "ray_plane_distance": 5,
+  "ray_plane_point": [
+    0,
+    0,
+    0
+  ],
+  "ray_plane_uv": [
+    0.5,
+    0.5
+  ],
+  "ray_moved_hitcount": 1,
+  "ray_moved_distance": 7.101098913,
+  "ray_moved_point": [
+    0.723855091,
+    0.407168488,
+    -2.052365092
+  ],
+  "ray_moved_uv": [
+    0.533617505,
+    0.676792122
+  ],
+  "ray_backface_frontside": 0,
+  "ray_backface_doubleside": 1,
+  "ray_miss": 0,
+  "ray_behind": 0,
+  "ray_sorted_count": 4,
+  "ray_sorted_distances": [
+    4,
+    4,
+    6,
+    6
   ]
 }

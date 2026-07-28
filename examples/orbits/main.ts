@@ -21,9 +21,10 @@
 import {
   window, document, navigator, requestAnimationFrame, KeyboardEvent,
   AudioContext, FontFace, fetch, AudioBuffer, Image, Math, Gamepad,
-  performance,
+  performance, MouseEvent,
 } from "../../web/globals.js";
 import { pickup, hit, dash as dashSfx, gameOver } from "../../engine/sfx.js";
+import { ParticleSystem, BurstOptions } from "../../engine/particles.js";
 import { Context2D } from "../../web/canvas/context.js";
 
 import { Scene } from "../../three/core/Scene.js";
@@ -31,17 +32,19 @@ import { PerspectiveCamera } from "../../three/core/PerspectiveCamera.js";
 import { Mesh } from "../../three/objects/Mesh.js";
 import { InstancedMesh } from "../../three/objects/InstancedMesh.js";
 import { Sprite, LineSegments, Points } from "../../three/objects/Sprite.js";
+import { Raycaster } from "../../three/core/Raycaster.js";
 import { BoxGeometry } from "../../three/geometries/BoxGeometry.js";
 import { SphereGeometry } from "../../three/geometries/SphereGeometry.js";
 import { BufferGeometry } from "../../three/core/BufferGeometry.js";
 import { BufferAttribute } from "../../three/core/BufferAttribute.js";
 import {
   MeshLambertMaterial, MeshBasicMaterial, SpriteMaterial,
-  LineBasicMaterial, PointsMaterial,
+  LineBasicMaterial, PointsMaterial, AdditiveBlending,
 } from "../../three/materials/Material.js";
 import { AmbientLight, PointLight, DirectionalLight } from "../../three/lights/Light.js";
 import { WebGLRenderer } from "../../three/renderer/WebGLRenderer.js";
 import { Texture } from "../../three/textures/Texture.js";
+import { SGMLoader } from "../../three/loaders/SGMLoader.js";
 import { Matrix4 } from "../../three/math/Matrix4.js";
 import { Quaternion } from "../../three/math/Quaternion.js";
 import { Vector3 } from "../../three/math/Vector3.js";
@@ -82,6 +85,12 @@ class Mote {
 
 class Mine {
   sprite: Sprite | null = null;
+  /* An invisible box that follows the sprite, so the mine can be PICKED.
+   * The Raycaster tests triangles, and a Sprite is a camera-facing quad
+   * built in the vertex shader with no world-space geometry to hit -- so
+   * pickable sprites need a collider. This is that collider: never
+   * rendered, only raycast against. */
+  collider: Mesh | null = null;
   x = 0; y = 0; z = 0;
   vx = 0; vy = 0;
   alive = false;
@@ -178,7 +187,12 @@ window.addEventListener("load", () => {
    * belt is a single matrix rebuild per frame rather than 600 objects. */
   const rockMat = new MeshLambertMaterial();
   rockMat.color.setHex(0xffffff);
+  rockMat.vertexColors = true;   // the models carry their own material colours
   const belt = new InstancedMesh(new BoxGeometry(1, 1, 1), rockMat, ROCK_COUNT);
+  /* Half the rocks use the detailed model. Two instanced meshes is still
+   * two draw calls for 600 rocks. */
+  const belt2 = new InstancedMesh(new BoxGeometry(1, 1, 1), rockMat,
+                                  ROCK_COUNT);
   const rockAngle: number[] = [];
   const rockRadius: number[] = [];
   const rockY: number[] = [];
@@ -196,6 +210,11 @@ window.addEventListener("load", () => {
     belt.setColorAt(i, rockColor);
   }
   scene.addInstancedMesh(belt);
+  scene.add(belt2);
+  /* Both meshes draw the full pool; the unused half of each is collapsed
+   * to a zero-scale matrix per frame, which rasterises nothing. */
+  belt.count = ROCK_COUNT;
+  belt2.count = ROCK_COUNT;
 
   /* ---- sprites: ship, motes, mines ----
    *
@@ -213,12 +232,72 @@ window.addEventListener("load", () => {
    * of phase. */
   const MOTE_FRAMES = 4;
 
-  const shipMat = new SpriteMaterial();
-  shipMat.map = shipTex;
-  shipMat.transparent = true;
-  const ship = new Sprite(shipMat);
-  ship.scale.set(2.6, 2.6, 1);
-  scene.addSprite(ship);
+  /* The ship is a REAL MODEL, baked from an OBJ at build time.
+   *
+   * A billboard sprite cannot bank, cannot catch the star's light on one
+   * side, and looks identical from every angle -- all three are what make
+   * a ship read as a ship. The geometry loads asynchronously, so the mesh
+   * is created empty and filled when the load resolves; the game is
+   * playable either way. */
+  const shipMat = new MeshLambertMaterial(0xffffff);
+  shipMat.vertexColors = true;   // the .mtl's four materials, baked in
+  const ship = new Mesh(new BoxGeometry(0.001, 0.001, 0.001), shipMat);
+  /* The Kenney models are authored around 1-2 units; the arena is ~46
+   * across, so the hero ship is scaled up to read at the play camera. */
+  ship.scale.set(2.4, 2.4, 2.4);
+  scene.add(ship);
+
+  const loader = new SGMLoader();
+  loader.load("craft_racer.sgm")
+    .then((geo) => { ship.geometry = geo; })
+    .catch((e) => {
+      ship.geometry = new BoxGeometry(1.4, 0.5, 2.2);
+      console.log(`orbits: craft_racer.sgm did not load: ${e}`);
+    });
+
+  /* ---- the belt: real meteors, not boxes ----
+   *
+   * Two InstancedMeshes, one per meteor model, so the ring reads as
+   * varied rock rather than a repeated shape -- still only two draw calls
+   * for the whole belt. The geometry arrives asynchronously, so each
+   * starts on a placeholder box and swaps in when its model loads. */
+  loader.load("meteor.sgm")
+    .then((geo) => { belt.geometry = geo; })
+    .catch(() => { console.log("orbits: meteor.sgm did not load"); });
+  loader.load("meteor_detailed.sgm")
+    .then((geo) => { belt2.geometry = geo; })
+    .catch(() => { console.log("orbits: meteor_detailed.sgm did not load"); });
+
+  /* ---- station skyline ----
+   *
+   * Set dressing on the far side of the arena: it never moves and never
+   * collides, but it turns "a star with rocks round it" into a PLACE.
+   * Each is one draw call and they sit outside the play area, so they cost
+   * nothing that matters. */
+  const props: string[] = [
+    "satelliteDish_large", "machine_generator", "structure_detailed",
+    "hangar_roundA", "rocket_finsA", "gate_complex", "turret_double",
+    "rock_crystalsLargeA", "rock_crystals", "rock_largeA", "pipe_ring",
+  ];
+  for (let i = 0; i < props.length; i++) {
+    const angle = (i / props.length) * Math.PI * 2 + 0.4;
+    const radius = 58 + (i % 3) * 9;
+    const px = Math.cos(angle) * radius;
+    const py = Math.sin(angle) * radius;
+    const pz = -14 - (i % 4) * 7;
+    const s = 2.6 + (i % 3) * 1.1;
+
+    const propMat = new MeshLambertMaterial(0xffffff);
+    propMat.vertexColors = true;
+    const prop = new Mesh(new BoxGeometry(0.001, 0.001, 0.001), propMat);
+    prop.position.set(px, py, pz);
+    prop.scale.set(s, s, s);
+    prop.setRotationFromEuler(0, angle + Math.PI, 0);
+    scene.add(prop);
+    loader.load(`${props[i]}.sgm`)
+      .then((geo) => { prop.geometry = geo; })
+      .catch(() => { /* one missing prop must not disturb the rest */ });
+  }
 
   const motes: Mote[] = [];
   for (let i = 0; i < MOTE_COUNT; i++) {
@@ -236,6 +315,10 @@ window.addEventListener("load", () => {
     motes.push(m);
   }
 
+  /* Shared by every collider: never drawn, so its appearance is irrelevant
+   * and one instance keeps the material count down. */
+  const colliderMat = new MeshBasicMaterial();
+  const colliders: Mesh[] = [];
   const mines: Mine[] = [];
   for (let i = 0; i < MINE_COUNT; i++) {
     const m = new Mine();
@@ -246,6 +329,15 @@ window.addEventListener("load", () => {
     sp.scale.set(2.3, 2.3, 1);
     m.sprite = sp;
     scene.addSprite(sp);
+
+    /* The collider is added to the scene's mesh list but kept invisible:
+     * the renderer skips it, the Raycaster still finds it. */
+    const col = new Mesh(new BoxGeometry(2.2, 2.2, 2.2), colliderMat);
+    col.visible = false;
+    m.collider = col;
+    scene.addMesh(col);
+    colliders.push(col);
+
     mines.push(m);
   }
 
@@ -289,6 +381,49 @@ window.addEventListener("load", () => {
   scene.addMesh(hud);
   buildHudQuad(hud);
 
+  /* ---- particles ----
+   *
+   * Three systems, because they are tuned differently and must not
+   * recycle each other's particles: a long thruster burn would otherwise
+   * eat the debris from an explosion mid-blast.
+   *
+   * Gravity is ZERO on all of them: this is space, and particles that
+   * arc downward instantly break the illusion. */
+  const thrust = new ParticleSystem(scene, 420);
+  const blast = new ParticleSystem(scene, 500);
+  const spark = new ParticleSystem(scene, 280);
+
+  const thrustBurst = new BurstOptions();
+  thrustBurst.speed = 7;
+  thrustBurst.speedJitter = 0.45;
+  thrustBurst.life = 0.42;
+  thrustBurst.size = 0.42;
+  thrustBurst.gravity = 0;
+  thrustBurst.drag = 0.2;
+  thrustBurst.spread = 0.32;      // a cone out of the engine, not a puff
+  thrustBurst.colorFrom.setHex(0x9fe8ff);
+  thrustBurst.colorTo.setHex(0x1b4fd8);
+
+  const blastBurst = new BurstOptions();
+  blastBurst.speed = 16;
+  blastBurst.speedJitter = 0.8;
+  blastBurst.life = 1.05;
+  blastBurst.size = 0.6;
+  blastBurst.gravity = 0;
+  blastBurst.drag = 0.35;
+  blastBurst.spin = 10;
+  blastBurst.colorFrom.setHex(0xffe9c0);
+  blastBurst.colorTo.setHex(0xff2a1e);
+
+  const sparkBurst = new BurstOptions();
+  sparkBurst.speed = 8;
+  sparkBurst.life = 0.6;
+  sparkBurst.size = 0.3;
+  sparkBurst.gravity = 0;
+  sparkBurst.drag = 0.3;
+  sparkBurst.colorFrom.setHex(0xfff6c8);
+  sparkBurst.colorTo.setHex(0xffb028);
+
   /* ---- state ---- */
   let shipX = 22;
   let shipY = 0;
@@ -300,6 +435,12 @@ window.addEventListener("load", () => {
   let boost = BOOST_MAX;
   let invuln = 0;
   let over = false;
+  /** Previous frame's heading, for deriving how hard the ship is turning. */
+  let lastHeading = 0;
+  /** Smoothed bank angle, radians. */
+  let bank = 0;
+  /** Camera kick on impact; decays exponentially. */
+  let shake = 0;
   let beltAngle = 0;
   let elapsed = 0;
 
@@ -310,6 +451,12 @@ window.addEventListener("load", () => {
   const scl = new Vector3(1, 1, 1);
   const axis = new Vector3(0.3, 1, 0.2);
   const camTarget = new Vector3();
+  const _bankQ = new Quaternion();
+  /* A zero-scale matrix: an instance set to this rasterises nothing. */
+  const _hidden = new Matrix4().compose(
+    new Vector3(0, 0, 0), new Quaternion(), new Vector3(0, 0, 0));
+  /* The ship's own forward axis: bank is a roll about where it POINTS. */
+  const _fwdAxis = new Vector3(0, 0, 1);
 
   function keyDown(name: string): boolean { return keys.indexOf(name) >= 0; }
 
@@ -317,6 +464,33 @@ window.addEventListener("load", () => {
     if (keys.indexOf(e.key) < 0) keys.push(e.key);
     if ((e.key === "Enter") && over) restart();
   });
+  /* Click a mine to detonate it: the Raycaster in a real game.
+   *
+   * The mouse position is converted to NORMALISED DEVICE coordinates
+   * (-1..1, +y UP, hence the flip on y) exactly as in three, then
+   * setFromCamera builds the world ray. */
+  const picker = new Raycaster();
+  window.addEventListener("mousedown", (e: MouseEvent) => {
+    if (over) return;
+    const ndcX = (e.clientX / W) * 2 - 1;
+    const ndcY = -(e.clientY / H) * 2 + 1;
+    picker.setFromCamera(ndcX, ndcY, camera);
+    /* firstHitOnly: this only needs to know WHAT was clicked, not the full
+     * sorted list, so the triangle loop can stop at the first hit. */
+    picker.firstHitOnly = true;
+    const picked = picker.intersectObjects(colliders);
+    if (picked.length === 0) return;
+    for (let i = 0; i < mines.length; i++) {
+      const m = mines[i];
+      if (!m.alive || m.collider !== picked[0].object) continue;
+      blast.burst(m.x, m.y, m.z, 30, blastBurst);
+      spawnMine(m);
+      score += 5;
+      sfx(pickup, 0.4);
+      break;
+    }
+  });
+
   window.addEventListener("keyup", (e: KeyboardEvent) => {
     const i = keys.indexOf(e.key);
     if (i >= 0) keys.splice(i, 1);
@@ -359,6 +533,8 @@ window.addEventListener("load", () => {
     lives -= 1;
     invuln = 1600;
     sfx(hit, 0.5);
+    blast.burst(shipX, shipY, 0, 46, blastBurst);
+    shake = 0.7;
     shipVX *= 0.2;
     shipVY *= 0.2;
     if (lives <= 0) {
@@ -422,6 +598,18 @@ window.addEventListener("load", () => {
         }
         shipVX += (ax / alen) * power * dt;
         shipVY += (ay / alen) * power * dt;
+
+        /* Exhaust streams OPPOSITE the thrust, from behind the hull. The
+         * emitter is offset so particles do not spawn inside the sprite
+         * and pop into view through it. */
+        const ex = -(ax / alen);
+        const ey = -(ay / alen);
+        thrustBurst.dirX = ex;
+        thrustBurst.dirY = ey;
+        thrustBurst.dirZ = 0;
+        thrustBurst.speed = boosting && boost > 0 ? 13 : 7;
+        thrust.burst(shipX + ex * 1.1, shipY + ey * 1.1, 0,
+                     boosting && boost > 0 ? 4 : 2, thrustBurst);
       }
       if (!boosting) boost = Math.min(BOOST_MAX, boost + 17 * dt);
 
@@ -461,6 +649,7 @@ window.addEventListener("load", () => {
         const dy = m.y - shipY;
         if (dx * dx + dy * dy < (SHIP_RADIUS + MOTE_RADIUS) * (SHIP_RADIUS + MOTE_RADIUS)) {
           m.alive = false;
+          spark.burst(m.x, m.y, m.z, 16, sparkBurst);
           score += 10;
           boost = Math.min(BOOST_MAX, boost + 8);
           sfx(pickup, 0.35);
@@ -496,15 +685,43 @@ window.addEventListener("load", () => {
       const s = rockScale[i];
       scl.set(s, s, s);
       scratch.compose(pos, q, scl);
-      belt.setMatrixAt(i, scratch);
+      /* Alternate models, and COLLAPSE the slot in the other mesh: an
+       * instance left at identity would draw a second rock at the origin.
+       * Each mesh keeps the full count so the indices stay stable. */
+      if ((i & 1) === 0) {
+        belt.setMatrixAt(i, scratch);
+        belt2.setMatrixAt(i, _hidden);
+      } else {
+        belt2.setMatrixAt(i, scratch);
+        belt.setMatrixAt(i, _hidden);
+      }
     }
 
     /* ---- sprite placement ---- */
     ship.position.set(shipX, shipY, 0);
     ship.visible = over || invuln <= 0 || Math.floor(invuln / 110) % 2 === 0;
-    /* The sprite spins to face its velocity. `rotation` on a SpriteMaterial
-     * is a SCREEN-space spin, which is exactly right for a top-down ship. */
-    shipMat.rotation = Math.atan2(shipVY, shipVX) - Math.PI / 2;
+    /* Point the hull along its velocity, and BANK into the turn.
+     *
+     * The model's nose is +Z, so the heading is a rotation about Y. Bank
+     * comes from how fast the heading is changing: a ship that turns
+     * without rolling reads as a sprite being dragged around, and the roll
+     * is what sells it as flying. */
+    const heading = Math.atan2(shipVX, shipVY);
+    let dHead = heading - lastHeading;
+    // Unwrap: a heading crossing +/-PI must not read as a full-speed spin.
+    while (dHead > Math.PI) dHead -= Math.PI * 2;
+    while (dHead < -Math.PI) dHead += Math.PI * 2;
+    lastHeading = heading;
+    // Low-pass the bank so it leans in and out rather than snapping.
+    bank += (Math.max(-1, Math.min(1, dHead * 9)) * 0.85 - bank) *
+            Math.min(1, dt * 7);
+
+    /* Euler order matters: yaw to the heading FIRST, then roll about the
+     * ship's own forward axis. Rolling first would bank in world space and
+     * tilt the ship sideways relative to where it is pointing. */
+    ship.quaternion.setFromEuler(0, heading, 0);
+    _bankQ.setFromAxisAngle(_fwdAxis, -bank);
+    ship.quaternion.multiply(_bankQ);
 
     for (let i = 0; i < motes.length; i++) {
       const m = motes[i];
@@ -525,6 +742,14 @@ window.addEventListener("load", () => {
       if (sp === null) continue;
       sp.visible = m.alive;
       sp.position.set(m.x, m.y, m.z);
+      const col = m.collider;
+      if (col !== null) {
+        col.position.set(m.x, m.y, m.z);
+        /* `raycastable`, not `visible`: the collider must never be drawn
+         * (setting visible would render a white box over the mine) but a
+         * dead mine must not be clickable either. */
+        col.raycastable = m.alive;
+      }
     }
 
     /* ---- trail: integrate the ship forward under the same gravity ---- */
@@ -556,8 +781,12 @@ window.addEventListener("load", () => {
     trail.visible = !over;
 
     /* ---- camera: above the plane, following the ship loosely ---- */
-    camera.position.set(shipX * 0.35, shipY * 0.35 - 16, 54);
-    camTarget.set(shipX * 0.25, shipY * 0.25, 0);
+    shake *= Math.pow(0.015, dt);
+    if (shake < 0.001) shake = 0;
+    const kx = shake * Math.sin(elapsed * 58) * 1.6;
+    const ky = shake * Math.sin(elapsed * 79 + 1.1) * 1.2;
+    camera.position.set(shipX * 0.62 + kx, shipY * 0.62 - 11 + ky, 34);
+    camTarget.set(shipX * 0.72, shipY * 0.72, 0);
     camera.lookAt(camTarget);
 
     /* ---- HUD ---- */
@@ -566,6 +795,10 @@ window.addEventListener("load", () => {
       hudTexture.needsUpdate = true;
     }
     placeHud(hud, camera, over);
+
+    thrust.update(dt);
+    blast.update(dt);
+    spark.update(dt);
 
     renderer.render(scene, camera);
     requestAnimationFrame(frame);

@@ -28,17 +28,19 @@ import {
   UNSIGNED_SHORT, VERTEX_SHADER, FRAGMENT_SHADER, TEXTURE_2D, TEXTURE0,
   RGBA, UNSIGNED_BYTE, TEXTURE_MIN_FILTER, TEXTURE_MAG_FILTER, LINEAR,
   CLAMP_TO_EDGE, REPEAT, TEXTURE_WRAP_S, TEXTURE_WRAP_T, COMPILE_STATUS,
-  LINK_STATUS, BLEND, SRC_ALPHA, ONE_MINUS_SRC_ALPHA, LEQUAL, DEPTH_FUNC,
+  LINK_STATUS, BLEND, SRC_ALPHA, ONE_MINUS_SRC_ALPHA, ONE, LEQUAL, DEPTH_FUNC,
   POINTS as GL_POINTS, LINES, LINE_LOOP, LINE_STRIP, DYNAMIC_DRAW,
 } from "../../web/webgl/constants.js";
 import { Scene } from "../core/Scene.js";
+import { Fog, FOG_EXP2 } from "../scenes/Fog.js";
 import { PerspectiveCamera } from "../core/PerspectiveCamera.js";
 import { Object3D } from "../core/Object3D.js";
 
 import { Mesh } from "../objects/Mesh.js";
 import { BufferGeometry } from "../core/BufferGeometry.js";
 import {
-  Material, MeshLambertMaterial, FEAT_MAP, FEAT_VERTEX_COLORS, FEAT_LAMBERT,
+  Material, MeshLambertMaterial, AdditiveBlending,
+  FEAT_MAP, FEAT_VERTEX_COLORS, FEAT_LAMBERT, FEAT_FOG,
   FEAT_EMISSIVE, FEAT_INSTANCED, FEAT_POINTS, FEAT_SPRITE,
   PointsMaterial, SpriteMaterial, DoubleSide, BackSide,
 } from "../materials/Material.js";
@@ -74,6 +76,8 @@ class Program {
   uOpacity: WebGLUniformLocation | null = null;
   uMap: WebGLUniformLocation | null = null;
   uMapTransform: WebGLUniformLocation | null = null;
+  uFogColor: WebGLUniformLocation | null = null;
+  uFogParams: WebGLUniformLocation | null = null;
   uEmissive: WebGLUniformLocation | null = null;
   uAmbient: WebGLUniformLocation | null = null;
   uDirCount: WebGLUniformLocation | null = null;
@@ -113,6 +117,8 @@ export class WebGLRenderer {
   private dirLights: Light[] = [];
   private pointLights: Light[] = [];
   private ambient: Color = new Color(0x000000);
+  /** The scene's fog, captured at the start of each render. */
+  private fog: Fog | null = null;
 
   constructor(gl: WebGL2RenderingContext) {
     this.gl = gl;
@@ -238,6 +244,13 @@ export class WebGLRenderer {
       /* x = distance (0 = no cutoff), y = decay exponent. */
       s += `uniform vec2 pointLightFalloff[${MAX_POINT_LIGHTS}];\n`;
     }
+    if ((features & FEAT_FOG) !== 0) {
+      s += "uniform vec3 fogColor;\n";
+      /* x = near, y = far, z = density, w = 1 for exp2 and 0 for linear.
+       * One vec4 rather than four uniforms: fewer locations to look up
+       * and fewer calls per draw. */
+      s += "uniform vec4 fogParams;\n";
+    }
     s += "out vec4 fragColor;\n";
     s += "void main() {\n";
     s += "  vec4 base = vec4(diffuse, opacity);\n";
@@ -288,6 +301,26 @@ export class WebGLRenderer {
     }
     if ((features & FEAT_EMISSIVE) !== 0) s += "  base.rgb += emissive;\n";
 
+    if ((features & FEAT_FOG) !== 0) {
+      /* vViewPosition is -mvPosition.xyz, so its length is the distance
+       * from the CAMERA -- exactly what fog wants, and it is already
+       * being interpolated for the lighting. */
+      s += "  float fogDepth = length(vViewPosition);\n";
+      s += "  float fogFactor;\n";
+      s += "  if (fogParams.w > 0.5) {\n";
+      /* Exp2: 1 - exp(-(density*d)^2). Squaring inside the exponent is
+       * what makes it thicken faster than linear with distance. */
+      s += "    float fd = fogParams.z * fogDepth;\n";
+      s += "    fogFactor = 1.0 - exp(-fd * fd);\n";
+      s += "  } else {\n";
+      s += "    fogFactor = smoothstep(fogParams.x, fogParams.y, fogDepth);\n";
+      s += "  }\n";
+      /* Mix only the RGB. Touching alpha would make a fogged transparent
+       * surface fade out as well as fade to colour, which is wrong: fog
+       * changes what you see through a surface, not how much of it there
+       * is. */
+      s += "  base.rgb = mix(base.rgb, fogColor, clamp(fogFactor, 0.0, 1.0));\n";
+    }
     s += "  fragColor = base;\n";
     s += "}\n";
     return s;
@@ -348,6 +381,8 @@ export class WebGLRenderer {
     p.uOpacity = loc("opacity");
     p.uMap = loc("map");
     p.uMapTransform = loc("mapTransform");
+    p.uFogColor = loc("fogColor");
+    p.uFogParams = loc("fogParams");
     p.uEmissive = loc("emissive");
     p.uAmbient = loc("ambientLightColor");
     p.uDirCount = loc("dirLightCount");
@@ -491,7 +526,33 @@ export class WebGLRenderer {
       } else if (light.lightType === LIGHT_DIRECTIONAL) {
         if (this.dirLights.length < MAX_DIR_LIGHTS) this.dirLights.push(light);
       } else if (light.lightType === LIGHT_POINT) {
-        if (this.pointLights.length < MAX_POINT_LIGHTS) this.pointLights.push(light);
+        /* Take the point lights that MATTER, not the first eight added.
+         *
+         * First-come meant a scene with more than MAX_POINT_LIGHTS gave
+         * every slot to whatever was constructed earliest -- static lamps
+         * -- so transient lights (a muzzle flash, a laser bolt) usually
+         * got nothing and lit only occasionally, seemingly at random.
+         *
+         * Ranking by intensity/distance-to-camera keeps the lights the
+         * viewer can actually see. Zero-intensity lights are skipped
+         * outright, which is how a pool of recycled bolt lights stays
+         * cheap: only the live ones compete. */
+        if (light.intensity <= 0) continue;
+        if (this.pointLights.length < MAX_POINT_LIGHTS) {
+          this.pointLights.push(light);
+        } else {
+          _v.setFromMatrixPosition(light.matrixWorld);
+          const score = lightScore(light, _v, camera);
+          let worst = 0;
+          let worstScore = 1e30;
+          for (let k = 0; k < this.pointLights.length; k++) {
+            const c = this.pointLights[k];
+            _v.setFromMatrixPosition(c.matrixWorld);
+            const s = lightScore(c, _v, camera);
+            if (s < worstScore) { worstScore = s; worst = k; }
+          }
+          if (score > worstScore) this.pointLights[worst] = light;
+        }
       }
     }
   }
@@ -499,6 +560,7 @@ export class WebGLRenderer {
   render(scene: Scene, camera: PerspectiveCamera): void {
     const gl = this.gl;
 
+    this.fog = scene.fog;
     scene.updateMatrixWorld(false);
     camera.updateMatrixWorld(false);
     this.collect(scene, camera);
@@ -573,7 +635,7 @@ export class WebGLRenderer {
 
   private renderMesh(mesh: Mesh, camera: PerspectiveCamera): void {
     const gl = this.gl;
-    const program = this.getProgram(mesh.material.featureBits());
+    const program = this.getProgram(this.featuresFor(mesh.material));
     if (program === null) return;
 
     this.prepareGeometry(mesh.geometry);
@@ -587,6 +649,15 @@ export class WebGLRenderer {
     } else {
       gl.drawArrays(TRIANGLES, 0, count);
     }
+  }
+
+  /* A material's own features, plus FOG when the scene has fog and the
+   * material accepts it. Fog cannot live in featureBits() because the same
+   * material may be drawn fogged in one scene and clear in another. */
+  private featuresFor(material: Material): number {
+    const bits = material.featureBits();
+    if (this.fog !== null && material.fog) return bits | FEAT_FOG;
+    return bits;
   }
 
   /* Everything a draw needs that does not depend on the primitive: the
@@ -627,6 +698,12 @@ export class WebGLRenderer {
     if ((program.features & FEAT_LAMBERT) !== 0) {
       this.bindLights(program, camera);
     }
+    if ((program.features & FEAT_FOG) !== 0 && this.fog !== null) {
+      const f = this.fog;
+      gl.uniform3f(program.uFogColor, f.color.r, f.color.g, f.color.b);
+      gl.uniform4f(program.uFogParams, f.near, f.far, f.density,
+                   f.fogType === FOG_EXP2 ? 1 : 0);
+    }
     if ((program.features & FEAT_EMISSIVE) !== 0) {
       gl.uniform3f(program.uEmissive,
                    material.emissive.r, material.emissive.g, material.emissive.b);
@@ -637,6 +714,25 @@ export class WebGLRenderer {
       gl.enable(CULL_FACE);
       gl.cullFace(material.side === BackSide ? FRONT : BACK);
     }
+
+    /* Per-DRAW, not per-list: blending is a material property, so one
+     * additive glow among normal-blended transparents must not inherit
+     * whichever mode the list set last.
+     *
+     * SRC_ALPHA, ONE adds light instead of covering, so overlapping glows
+     * brighten and the dark parts of a sprite disappear against a dark
+     * background with no cutout. */
+    if (material.transparent) {
+      if (material.blending === AdditiveBlending) gl.blendFunc(SRC_ALPHA, ONE);
+      else gl.blendFunc(SRC_ALPHA, ONE_MINUS_SRC_ALPHA);
+    }
+
+    /* material.depthTest was declared but NEVER READ, so a HUD quad that
+     * asked to ignore depth was still occluded by whatever it happened to
+     * be inside -- in examples/station, the ceiling slab, which made the
+     * whole HUD vanish. three honours this per material; so does this now. */
+    if (material.depthTest) gl.enable(DEPTH_TEST);
+    else gl.disable(DEPTH_TEST);
   }
 
   /* ---- instanced ----
@@ -653,7 +749,7 @@ export class WebGLRenderer {
   private renderInstanced(mesh: InstancedMesh, camera: PerspectiveCamera): void {
     const gl = this.gl;
     if (mesh.count === 0) return;
-    const program = this.getProgram(mesh.material.featureBits() | FEAT_INSTANCED);
+    const program = this.getProgram(this.featuresFor(mesh.material) | FEAT_INSTANCED);
     if (program === null) return;
 
     this.prepareGeometry(mesh.geometry);
@@ -678,7 +774,20 @@ export class WebGLRenderer {
     const gl = this.gl;
     const geo = mesh.geometry;
 
+    /* Rebuild when the GEOMETRY changed, not only when the VAO is absent.
+     * A VAO captures the buffers bound when it was made, so a mesh whose
+     * geometry is assigned later (a model loading over a placeholder) would
+     * otherwise keep drawing the placeholder's buffers. */
+    if (mesh.glInstancedVAO !== null && mesh.glVAOGeometry !== geo) {
+      mesh.glInstancedVAO = null;
+      mesh.glMatrixBuffer = null;
+      mesh.glColorBuffer = null;
+      mesh.uploadedCount = -1;
+      mesh.uploadedColorCount = -1;
+    }
+
     if (mesh.glInstancedVAO === null) {
+      mesh.glVAOGeometry = geo;
       mesh.glInstancedVAO = gl.createVertexArray();
       gl.bindVertexArray(mesh.glInstancedVAO);
 
@@ -779,7 +888,7 @@ export class WebGLRenderer {
   private renderSprite(sprite: Sprite, camera: PerspectiveCamera): void {
     const gl = this.gl;
     const material = sprite.material;
-    const program = this.getProgram(material.featureBits());
+    const program = this.getProgram(this.featuresFor(material));
     if (program === null) return;
 
     this.prepareGeometry(sprite.geometry);
@@ -807,7 +916,7 @@ export class WebGLRenderer {
   /* ---- lines ---- */
   private renderLine(line: Line, camera: PerspectiveCamera): void {
     const gl = this.gl;
-    const program = this.getProgram(line.material.featureBits());
+    const program = this.getProgram(this.featuresFor(line.material));
     if (program === null) return;
 
     this.prepareGeometry(line.geometry);
@@ -833,7 +942,7 @@ export class WebGLRenderer {
   private renderPoints(points: Points, camera: PerspectiveCamera): void {
     const gl = this.gl;
     const material = points.material;
-    const program = this.getProgram(material.featureBits());
+    const program = this.getProgram(this.featuresFor(material));
     if (program === null) return;
 
     this.prepareGeometry(points.geometry);
@@ -904,3 +1013,21 @@ export class WebGLRenderer {
 }
 
 const _v = new Vector3();
+
+/* How much a point light matters from here: brighter and nearer wins.
+ *
+ * Ranked on SQUARED distance, which orders identically to the real
+ * distance and avoids a sqrt per light per frame. The +1 keeps a light
+ * sitting on the camera from dividing by zero.
+ *
+ * This exists because MAX_POINT_LIGHTS is 8 and a scene can hold far more:
+ * taking the first eight ADDED gave every slot to whatever was constructed
+ * earliest (static lamps), so transient lights -- a muzzle flash, a laser
+ * bolt -- usually got nothing and appeared to light only at random. */
+function lightScore(light: Light, pos: Vector3,
+                    camera: PerspectiveCamera): number {
+  const dx = pos.x - camera.position.x;
+  const dy = pos.y - camera.position.y;
+  const dz = pos.z - camera.position.z;
+  return light.intensity / (1 + dx * dx + dy * dy + dz * dz);
+}

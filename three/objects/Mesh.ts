@@ -7,6 +7,11 @@ export class Mesh extends Object3D {
   geometry: BufferGeometry;
   material: Material;
 
+  /* Whether a Raycaster considers this mesh. Independent of `visible`,
+   * which controls RENDERING: a collider is raycastable and invisible, and
+   * a purely decorative mesh can be the reverse. */
+  raycastable = true;
+
   constructor(geometry: BufferGeometry, material: Material) {
     super();
     this.isMesh = true;

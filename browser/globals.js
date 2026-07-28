@@ -22,6 +22,24 @@ export const cancelAnimationFrame = globalThis.cancelAnimationFrame.bind(globalT
 export const fetch = globalThis.fetch.bind(globalThis);
 
 export const window = globalThis;
+/* setFillGradient / setStrokeGradient / setFillPattern / setStrokePattern.
+ *
+ * The web assigns a gradient straight to `fillStyle`, which is typed
+ * `string | CanvasGradient | CanvasPattern`. The dialect cannot overload a
+ * SETTER on argument type, so the native side spells these as methods. A
+ * browser has the property, so the methods just forward to it -- the game's
+ * source is identical on both sides.
+ *
+ * Same class of aliasing as the import map itself. */
+if (typeof CanvasRenderingContext2D !== "undefined" &&
+    !CanvasRenderingContext2D.prototype.setFillGradient) {
+  const c2d = CanvasRenderingContext2D.prototype;
+  c2d.setFillGradient = function (g) { this.fillStyle = g; };
+  c2d.setStrokeGradient = function (g) { this.strokeStyle = g; };
+  c2d.setFillPattern = function (p) { this.fillStyle = p; };
+  c2d.setStrokePattern = function (p) { this.strokeStyle = p; };
+}
+
 /* getContextGL: the native side spells WebGL2 this way because the dialect
  * cannot resolve members off a union return, so one getContext returning
  * Context2D | WebGL2RenderingContext would break every 2D game. A browser
@@ -177,6 +195,81 @@ if (typeof globalThis.Buffer === "undefined") {
     readUInt8(offset) { return this[offset]; }
   }
   globalThis.Buffer = SgBuffer;
+}
+
+/* Response.arrayBuffer() returns a Buffer-shaped view.
+ *
+ * The web resolves it with a raw ArrayBuffer, which has no read/write
+ * accessors; the native side resolves with the FFI's `bytes` class, spelled
+ * Buffer in TS. Any game that reads a BINARY asset -- a baked mesh, a save
+ * file, a custom format -- calls bytes.readUInt32LE and gets
+ * "readUInt32LE is not a function" in a page while working natively.
+ * That is exactly what happened to SGMLoader, and the browser proof is
+ * what caught it.
+ *
+ * Wrapping the result costs no copy: SgBuffer is a Uint8Array subclass
+ * viewing the same memory, and `.buffer` still reaches the raw
+ * ArrayBuffer.
+ *
+ * decodeAudioData is the exception and is patched below: it takes an
+ * ArrayBuffer specifically and REJECTS a view, so wrapping the fetch
+ * result broke every game that decodes music. */
+/* globalThis.Response, NOT the bare name: this module exports `Response`
+ * further down, and a module-scoped `const` shadows the global for the
+ * WHOLE module body. Reading it up here hits the temporal dead zone and
+ * throws a ReferenceError with an EMPTY message, which surfaces as a bare
+ * "@globals.js:214:5" with nothing to go on. */
+const SgResponse = globalThis.Response;
+if (typeof SgResponse !== "undefined" && !SgResponse.prototype.__sgArrayBuffer) {
+  const original = SgResponse.prototype.arrayBuffer;
+  /* defineProperty, not plain assignment: Response.prototype's methods are
+   * non-writable accessors in Firefox, and `proto.x = fn` throws in a
+   * module (strict mode) rather than silently failing. */
+  Object.defineProperty(SgResponse.prototype, "arrayBuffer", {
+    configurable: true,
+    writable: true,
+    value: function () {
+      return original.call(this).then((ab) => {
+        const B = globalThis.Buffer;
+        /* new Uint8Array(arrayBuffer) VIEWS the memory; Buffer.from would
+         * treat it as array-like and copy element by element. */
+        return B ? new B(ab) : new Uint8Array(ab);
+      });
+    },
+  });
+  Object.defineProperty(SgResponse.prototype, "__sgArrayBuffer", {
+    configurable: true, value: true,
+  });
+}
+
+/* decodeAudioData accepts an ArrayBuffer ONLY.
+ *
+ * Natively it takes the FFI's `bytes` (a Buffer), and the arrayBuffer()
+ * wrapper above hands games a Buffer in a page too -- so without this the
+ * exact same line ("fetch -> arrayBuffer -> decodeAudioData", which is how
+ * every game here loads music) throws
+ *
+ *   TypeError: Argument 1 does not implement interface ArrayBuffer
+ *
+ * Unwrapping a view to its underlying buffer costs no copy. `byteOffset`
+ * and `byteLength` are honoured, so a view over part of a larger buffer
+ * decodes only its own bytes rather than whatever else shares the memory. */
+if (typeof globalThis.BaseAudioContext !== "undefined" &&
+    !BaseAudioContext.prototype.__sgDecode) {
+  const originalDecode = BaseAudioContext.prototype.decodeAudioData;
+  Object.defineProperty(BaseAudioContext.prototype, "decodeAudioData", {
+    configurable: true,
+    writable: true,
+    value: function (data, ...rest) {
+      const raw = ArrayBuffer.isView(data)
+        ? data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)
+        : data;
+      return originalDecode.call(this, raw, ...rest);
+    },
+  });
+  Object.defineProperty(BaseAudioContext.prototype, "__sgDecode", {
+    configurable: true, value: true,
+  });
 }
 
 export const document = globalThis.document;

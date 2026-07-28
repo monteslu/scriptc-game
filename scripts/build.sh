@@ -46,6 +46,40 @@ if ! "$ROOT/scripts/build-shim.sh" "$TARGET" > "$SHIM_LOG" 2>&1; then
 fi
 rm -f "$SHIM_LOG"
 
+# The WebGL tier, when the manifest asked for it. Driven off the generated
+# manifest rather than a guess, so it tracks gen-ffi.js's `usesGl` exactly.
+#
+# This is built HERE rather than left to the developer because it was
+# originally built by hand and never scripted: it existed on one machine,
+# and every CI run failed with "libraries[0] cannot be read ... libsggl.a".
+# A step nobody can forget is the only kind that stays fixed.
+if grep -q 'libsggl\.a' "$ROOT/ffi/core.ffi.json" 2>/dev/null; then
+  GL_LOG="$(mktemp)"
+  if ! "$ROOT/scripts/build-gl.sh" "$TARGET" > "$GL_LOG" 2>&1; then
+    echo "build-gl.sh failed (target=$TARGET):" >&2
+    tail -30 "$GL_LOG" >&2
+    rm -f "$GL_LOG"
+    exit 1
+  fi
+  rm -f "$GL_LOG"
+fi
+
+# Bake any shared models the game asks for. Sources are .glb in
+# examples/shared/models/; the .sgm output is gitignored, so a clean clone
+# must generate it or the game loads nothing and silently shows
+# placeholders.
+if [ -d "$INPUT/public" ] && ls "$INPUT"/*.ts >/dev/null 2>&1 &&
+   grep -qs '\.sgm' "$INPUT"/*.ts; then
+  # A game states its model set with a `models` file naming the shared
+  # directory to bake from; without one it gets the default kit.
+  SRC="examples/shared/models"
+  [ -f "$INPUT/models" ] && SRC="examples/shared/$(cat "$INPUT/models")"
+  "$ROOT/scripts/bake-models.sh" "$INPUT/public" "$SRC" >/dev/null || {
+    echo "bake-models.sh failed" >&2; exit 1; }
+  # Any atlas the kit ships beside its models.
+  cp -f "$ROOT/$SRC"/*.png "$INPUT/public/" 2>/dev/null || true
+fi
+
 OUT="$ROOT/build/$BASE"
 mkdir -p "$(dirname "$OUT")"
 node "$SCRIPTC" build "$ENTRY" --ffi "$ROOT/ffi/core.ffi.json" -o "$OUT"

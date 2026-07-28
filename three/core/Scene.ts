@@ -17,6 +17,7 @@
  */
 import { Object3D } from "./Object3D.js";
 import { Color } from "../math/Color.js";
+import { Fog } from "../scenes/Fog.js";
 import { Mesh } from "../objects/Mesh.js";
 import { InstancedMesh } from "../objects/InstancedMesh.js";
 import { Sprite, Line, Points } from "../objects/Sprite.js";
@@ -24,6 +25,9 @@ import { Light } from "../lights/Light.js";
 
 export class Scene extends Object3D {
   background: Color | null = null;
+  /* three's `scene.fog`. Null means no fog; the renderer keys a separate
+   * shader variant on its presence, so a scene without it pays nothing. */
+  fog: Fog | null = null;
   readonly isScene = true;
 
   /** Everything drawable, in insertion order. */
@@ -39,15 +43,50 @@ export class Scene extends Object3D {
   lines: Line[] = [];
   points: Points[] = [];
 
-  /** three's spelling; also registers so the renderer can find it. */
+  /* three's `scene.add(anything)`.
+   *
+   * Dispatches to the right registry by `instanceof`, so the canonical
+   * three call works verbatim:
+   *
+   *     scene.add(mesh);
+   *     scene.add(light);
+   *     scene.add(sprite);
+   *
+   * ORDER MATTERS: most-derived first. InstancedMesh and Sprite both
+   * descend from Mesh-shaped bases, so testing the base first would file
+   * them in the wrong list and they would draw with the wrong path.
+   *
+   * The typed addMesh/addLight/... methods below remain, and are what the
+   * renderer-facing code uses: they skip the type tests and, more usefully,
+   * they FAIL AT COMPILE TIME if you pass the wrong kind, where add()
+   * can only ignore it at runtime. */
+  override add(child: Object3D): Object3D {
+    if (child instanceof InstancedMesh) { this.addInstancedMesh(child); return this; }
+    if (child instanceof Sprite) { this.addSprite(child); return this; }
+    if (child instanceof Line) { this.addLine(child); return this; }
+    if (child instanceof Points) { this.addPoints(child); return this; }
+    if (child instanceof Mesh) { this.addMesh(child); return this; }
+    if (child instanceof Light) { this.addLight(child); return this; }
+    /* Not a drawable: a Group or a bare Object3D, which is a legitimate
+     * transform parent. Parent it and register nothing. */
+    super.add(child);
+    return this;
+  }
+
+  /* The typed adders parent through SUPER.add, never this.add.
+   *
+   * this.add() now dispatches by instanceof back into these methods, so
+   * calling it here would recurse until the stack overflowed -- which
+   * segfaults with no diagnostic at all. super.add is also what they always
+   * meant: "attach to the graph", not "re-enter the dispatcher". */
   addMesh(mesh: Mesh): Scene {
-    this.add(mesh);
+    super.add(mesh);
     this.meshes.push(mesh);
     return this;
   }
 
   addLight(light: Light): Scene {
-    this.add(light);
+    super.add(light);
     this.lights.push(light);
     return this;
   }
@@ -61,25 +100,25 @@ export class Scene extends Object3D {
   }
 
   addInstancedMesh(mesh: InstancedMesh): Scene {
-    this.add(mesh);
+    super.add(mesh);
     this.instanced.push(mesh);
     return this;
   }
 
   addSprite(sprite: Sprite): Scene {
-    this.add(sprite);
+    super.add(sprite);
     this.sprites.push(sprite);
     return this;
   }
 
   addLine(line: Line): Scene {
-    this.add(line);
+    super.add(line);
     this.lines.push(line);
     return this;
   }
 
   addPoints(points: Points): Scene {
-    this.add(points);
+    super.add(points);
     this.points.push(points);
     return this;
   }

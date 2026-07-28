@@ -124,9 +124,18 @@ export class BufferGeometry {
       _ab.subVectors(_pA, _pB);
       _cb.cross(_ab);
 
-      normals[a * 3] += _cb.x; normals[a * 3 + 1] += _cb.y; normals[a * 3 + 2] += _cb.z;
-      normals[b * 3] += _cb.x; normals[b * 3 + 1] += _cb.y; normals[b * 3 + 2] += _cb.z;
-      normals[c * 3] += _cb.x; normals[c * 3 + 1] += _cb.y; normals[c * 3 + 2] += _cb.z;
+      /* Read-modify-write spelled out: `a[i] += v` through an indexed
+       * receiver is SC1090. Accumulating the face normal onto all three
+       * corners is what makes shared vertices come out smooth. */
+      normals[a * 3] = normals[a * 3] + _cb.x;
+      normals[a * 3 + 1] = normals[a * 3 + 1] + _cb.y;
+      normals[a * 3 + 2] = normals[a * 3 + 2] + _cb.z;
+      normals[b * 3] = normals[b * 3] + _cb.x;
+      normals[b * 3 + 1] = normals[b * 3 + 1] + _cb.y;
+      normals[b * 3 + 2] = normals[b * 3 + 2] + _cb.z;
+      normals[c * 3] = normals[c * 3] + _cb.x;
+      normals[c * 3 + 1] = normals[c * 3 + 1] + _cb.y;
+      normals[c * 3 + 2] = normals[c * 3 + 2] + _cb.z;
     }
 
     for (let i = 0; i < normals.length; i += 3) {
