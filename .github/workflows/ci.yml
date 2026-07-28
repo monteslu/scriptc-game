@@ -14,6 +14,14 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Runs on the SAME ref supersede each other, but a run must be allowed to
+# finish once it starts reporting: cancelling mid-flight leaves lanes in a
+# "cancelled" state that reads as a failure and hides which target actually
+# broke.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build:
     name: ${{ matrix.target }}
@@ -30,8 +38,18 @@ jobs:
             runner: macos-14
           - target: macos-x86_64
             runner: macos-15-intel
-          - target: windows-x86_64
-            runner: windows-2022
+          # windows-x86_64 is blocked on an ABI mismatch, not on anything
+          # in this repo. scriptc targets Windows ONLY as
+          # x86_64-windows-gnu -- mingw-w64 headers and CRT through zig
+          # (backend/cc.ts) -- while build-libcanvas publishes Skia as MSVC
+          # COFF .lib archives. Those two ABIs cannot link together, and
+          # scriptc's runtime uses POSIX calls (clock_gettime, nanosleep)
+          # that only mingw provides, so building it MSVC-side is not a
+          # workaround either. Unblocking needs a mingw Skia build upstream.
+          #
+          # Everything on this side is ready: fetch-archives.sh vendors the
+          # Windows archives (204 skiac symbols) and build-shim.sh merges
+          # them, both verified against the real tarball.
           # android-aarch64 gets as far as VENDORING and compiling the
           # shim, then stops at the final link, and the wall is upstream:
           # scriptc has no Android support at all. Cross-compiling requires
@@ -108,24 +126,6 @@ jobs:
         run: |
           brew install sdl2 pkg-config ffmpeg
           brew install llvm || true
-
-      - name: Windows deps
-        if: startsWith(matrix.target, 'windows')
-        shell: bash
-        run: |
-          choco install -y llvm ninja
-          # SDL2 development libraries: the official release zip is the
-          # dependable route; the chocolatey package ships runtime DLLs only.
-          curl -fsSL -o /tmp/sdl.zip \
-            https://github.com/libsdl-org/SDL/releases/download/release-2.32.10/SDL2-devel-2.32.10-VC.zip
-          mkdir -p "$GITHUB_WORKSPACE/sdl2"
-          unzip -q /tmp/sdl.zip -d "$GITHUB_WORKSPACE/sdl2"
-          SDLDIR="$(find "$GITHUB_WORKSPACE/sdl2" -maxdepth 1 -type d -name 'SDL2-*' | head -1)"
-          echo "SDL2_DIR=$SDLDIR" >> "$GITHUB_ENV"
-          echo "SDL2_INCLUDE=$SDLDIR/include" >> "$GITHUB_ENV"
-          echo "SDL2_LIB=$SDLDIR/lib/x64" >> "$GITHUB_ENV"
-
-      # ---- vendored archives ----
 
       - name: Fetch Skia archives
         shell: bash
