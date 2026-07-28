@@ -18,6 +18,7 @@ import {
   AudioContext, FontFace, fetch, AudioBuffer, Math, Gamepad,
 } from "../../web/globals.js";
 import { pickup, hit, dash as dashSfx, gameOver } from "../../engine/sfx.js";
+import { ParticleSystem, BurstOptions } from "../../engine/particles.js";
 
 import { Scene } from "../../three/core/Scene.js";
 import { PerspectiveCamera } from "../../three/core/PerspectiveCamera.js";
@@ -26,7 +27,11 @@ import { BoxGeometry } from "../../three/geometries/BoxGeometry.js";
 import { SphereGeometry } from "../../three/geometries/SphereGeometry.js";
 import { PlaneGeometry } from "../../three/geometries/PlaneGeometry.js";
 import { BufferAttribute } from "../../three/core/BufferAttribute.js";
-import { MeshLambertMaterial, MeshBasicMaterial, DoubleSide } from "../../three/materials/Material.js";
+import {
+  MeshLambertMaterial, MeshBasicMaterial, SpriteMaterial, DoubleSide,
+  AdditiveBlending,
+} from "../../three/materials/Material.js";
+import { Sprite } from "../../three/objects/Sprite.js";
 import { AmbientLight, DirectionalLight, PointLight } from "../../three/lights/Light.js";
 import { WebGLRenderer } from "../../three/renderer/WebGLRenderer.js";
 import { Texture } from "../../three/textures/Texture.js";
@@ -58,11 +63,40 @@ const AXIS_LEFT_X = 0;
 
 class Obstacle {
   mesh: Mesh | null = null;
+  /* A camera-facing additive halo around an orb. Additive means
+   * overlapping glows brighten rather than flatten, and the black edge of
+   * the falloff texture contributes nothing, so the quad has no boundary. */
+  glow: Sprite | null = null;
   lane = 0;
   z = 0;
   alive = false;
   isOrb = false;
   spin = 0;
+}
+
+/* A soft radial glow sprite, drawn once into an offscreen canvas.
+ *
+ * Additive blending means the BLACK edge contributes nothing, so the quad
+ * has no visible boundary: the falloff itself is the shape. The stops are
+ * weighted toward the centre because a linear ramp reads as a flat disc
+ * with a fuzzy rim rather than a light source. */
+function makeGlowTexture(): Texture | null {
+  const c = document.createElement("canvas");
+  if (c === null) return null;
+  c.width = 128;
+  c.height = 128;
+  const g = c.getContext("2d");
+  if (g === null) return null;
+
+  const grad = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+  grad.addColorStop(0, "rgba(255,255,255,1)");
+  grad.addColorStop(0.22, "rgba(255,228,150,0.85)");
+  grad.addColorStop(0.5, "rgba(255,160,40,0.32)");
+  grad.addColorStop(1, "rgba(0,0,0,0)");
+  g.setFillGradient(grad);
+  g.fillRect(0, 0, 128, 128);
+
+  return Texture.fromCanvas(g);
 }
 
 window.addEventListener("load", () => {
@@ -182,6 +216,52 @@ window.addEventListener("load", () => {
     scene.addMesh(st);
   }
 
+  /* ---- particles ----
+   *
+   * Two systems rather than one: a coin pop and a crash want different
+   * pool sizes and are tuned independently, and separating them means a
+   * long streak of pickups cannot recycle the debris from a crash. */
+  const sparkles = new ParticleSystem(scene, 320);
+  const debris = new ParticleSystem(scene, 420);
+
+  const coinBurst = new BurstOptions();
+  coinBurst.speed = 5.5;
+  coinBurst.life = 0.5;
+  coinBurst.size = 0.17;
+  coinBurst.gravity = 6;
+  coinBurst.drag = 0.25;
+  coinBurst.colorFrom.setHex(0xfff2a0);
+  coinBurst.colorTo.setHex(0xffa32e);
+
+  const crashBurst = new BurstOptions();
+  crashBurst.speed = 11;
+  crashBurst.speedJitter = 0.8;
+  crashBurst.life = 0.95;
+  crashBurst.size = 0.3;
+  crashBurst.gravity = 13;
+  crashBurst.drag = 0.5;
+  crashBurst.spin = 12;
+  crashBurst.colorFrom.setHex(0xffd9e6);
+  crashBurst.colorTo.setHex(0xff2d6b);
+
+  /* A glowing strip running down the track centre. Additive, so it reads
+   * as light on the floor rather than paint, and it scrolls with the
+   * world so it doubles as a speed cue. */
+  const stripMat = new MeshBasicMaterial(0x3fd8ff);
+  stripMat.transparent = true;
+  stripMat.opacity = 0.5;
+  stripMat.blending = AdditiveBlending;
+  stripMat.depthWrite = false;
+  const strips: Mesh[] = [];
+  const stripGeo = new PlaneGeometry(0.5, 3.2, 1, 1);
+  for (let i = 0; i < 30; i++) {
+    const s = new Mesh(stripGeo, stripMat);
+    s.rotateX(-Math.PI / 2);
+    s.position.set(0, -0.96, -i * 7);
+    strips.push(s);
+    scene.add(s);
+  }
+
   /* Side walls: the corridor is what turns "a plane" into "a track", and
    * the passing panels are what make speed legible. */
   const wallMat = new MeshLambertMaterial();
@@ -237,8 +317,26 @@ window.addEventListener("load", () => {
   obstacleMat.emissive.setHex(0x4a0a16);
 
   const orbMat = new MeshLambertMaterial();
-  orbMat.color.setHex(0xffcf3d);
-  orbMat.emissive.setHex(0x6b5000);
+  orbMat.color.setHex(0xffe066);
+  // Bright emissive: a collectible should read as a light source, not a ball.
+  orbMat.emissive.setHex(0xa87c00);
+
+  /* The halo is a TEXTURED QUAD, not a sphere.
+   *
+   * A solid sphere cannot glow: its face is uniformly bright and its
+   * silhouette is a hard edge, so additive or not it renders as a grey
+   * disc pasted over the orb. Glow is a RADIAL FALLOFF, which means a
+   * texture -- and this stack draws textures with the 2D canvas API, so
+   * the sprite is generated at startup rather than shipped as a file. */
+  const glowTex = makeGlowTexture();
+  /* A SPRITE, so the glow always faces the camera. A world-space quad
+   * turns edge-on as the corridor sweeps past it and the glow winks out
+   * at exactly the moment the orb is closest. */
+  const orbGlowMat = new SpriteMaterial(0xffb43c);
+  orbGlowMat.transparent = true;
+  orbGlowMat.blending = AdditiveBlending;
+  orbGlowMat.depthWrite = false;
+  if (glowTex !== null) orbGlowMat.map = glowTex;
 
   const boxGeo = new BoxGeometry(1.4, 1.4, 1.4);
   const orbGeo = new SphereGeometry(0.45, 14, 10);
@@ -288,8 +386,14 @@ window.addEventListener("load", () => {
   let lives = 3;
   let over = false;
   let invulnMs = 0;
+  /* Screen shake, in "units of kick left". Decays exponentially; the
+   * camera offset is derived from it, so one number drives the whole
+   * effect and it can never get stuck on. */
+  let shake = 0;
   let nextSpawnZ = -30;
   let spin = 0;
+  /** Seconds since the run started; drives shake and pulse phases. */
+  let elapsed = 0;
   let last = 0;
   let hudDirty = true;
 
@@ -407,6 +511,8 @@ window.addEventListener("load", () => {
       o.mesh.visible = true;
       o.mesh.geometry = boxGeo;
       o.mesh.material = obstacleMat;
+      // A pooled slot may still carry the halo from a previous orb life.
+      if (o.glow !== null) o.glow.visible = false;
     }
 
     // An orb in a lane that is clear.
@@ -428,6 +534,16 @@ window.addEventListener("load", () => {
         o.mesh.visible = true;
         o.mesh.geometry = orbGeo;
         o.mesh.material = orbMat;
+        /* The halo is created once per pool slot and then reused: pooled
+         * objects alternate between orb and obstacle, so it is toggled
+         * rather than rebuilt. */
+        if (o.glow === null) {
+          const g = new Sprite(orbGlowMat);
+          g.scale.set(2.6, 2.6, 1);
+          o.glow = g;
+          scene.add(g);
+        }
+        o.glow.visible = true;
       }
       break;
     }
@@ -579,6 +695,7 @@ window.addEventListener("load", () => {
     speed = Math.min(RUN_SPEED_MAX, speed + RUN_ACCEL * dt);
     const travel = speed * dt;
     distance += travel;
+    elapsed += dt;
     score += travel * 0.6;
     if (invulnMs > 0) invulnMs -= dt * 1000;
 
@@ -600,13 +717,23 @@ window.addEventListener("load", () => {
       if (o.z > DESPAWN_BEHIND) {
         o.alive = false;
         o.mesh.visible = false;
+        if (o.glow !== null) o.glow.visible = false;
         continue;
       }
 
       const x = (o.lane - 1) * LANE_X;
       if (o.isOrb) {
         o.spin += dt * 3.2;
-        o.mesh.position.set(x, 0.55 + Math.sin(o.spin) * 0.18, o.z);
+        const orbY = 0.55 + Math.sin(o.spin) * 0.18;
+        o.mesh.position.set(x, orbY, o.z);
+        /* The halo tracks the orb and BREATHES: a constant glow reads as
+         * a texture, a pulsing one reads as energy. */
+        const g = o.glow;
+        if (g !== null) {
+          g.position.set(x, orbY, o.z);
+          const pulse = 2.6 * (1 + Math.sin(elapsed * 5 + o.z * 0.35) * 0.16);
+          g.scale.set(pulse, pulse, 1);
+        }
         o.mesh.quaternion.setFromEuler(0, o.spin, 0);
       } else {
         o.mesh.position.set(x, -0.3, o.z);
@@ -621,17 +748,24 @@ window.addEventListener("load", () => {
         if (playerY < 1.6) {
           o.alive = false;
           o.mesh.visible = false;
+          if (o.glow !== null) o.glow.visible = false;
           score += 45;
           hudDirty = true;
           sfx(pickup, 0.6);
+          sparkles.burst(o.mesh.position.x, o.mesh.position.y,
+                         o.mesh.position.z, 18, coinBurst);
         }
       } else if (invulnMs <= 0 && playerY < 1.15) {
         o.alive = false;
         o.mesh.visible = false;
+        if (o.glow !== null) o.glow.visible = false;
         lives -= 1;
         invulnMs = 1200;
         hudDirty = true;
         sfx(hit, 0.7);
+        debris.burst(o.mesh.position.x, o.mesh.position.y,
+                     o.mesh.position.z, 34, crashBurst);
+        shake = 0.55;   // the camera kick that sells an impact
         if (lives <= 0) {
           over = true;
           if (score > best) best = score;
@@ -652,13 +786,18 @@ window.addEventListener("load", () => {
       const z = m.position.z + travel;
       m.position.z = z > 10 ? z - MARKER_COUNT * MARKER_SPACING : z;
     }
+    for (let i = 0; i < strips.length; i++) {
+      const s = strips[i];
+      const z = s.position.z + travel;
+      s.position.z = z > 10 ? z - strips.length * 7 : z;
+    }
 
     spin += dt;
     hudDirty = true;
   }
 
   /* ---- draw ---- */
-  function draw(): void {
+  function draw(dt: number): void {
     // The player: a tumbling cube, blinking while invulnerable.
     player.position.set(laneX, playerY, 0);
     player.quaternion.setFromEuler(spin * 1.6, spin * 0.9, 0);
@@ -669,8 +808,25 @@ window.addEventListener("load", () => {
      * lanes pushed the player against the frame edge and the near obstacle
      * clipped through the near plane. 0.72 keeps the runner comfortably
      * inside the frame in every lane while still letting the corridor
-     * swing, and the look-at target leads it slightly so the turn reads. */
-    camera.position.set(laneX * 0.72, 2.15 + playerY * 0.25, 5.6);
+     * swing, and the look-at target leads it slightly so the turn reads.
+     *
+     * Speed sells itself through FOV: the frustum widens as the run gets
+     * faster, so the walls streak past harder without anything actually
+     * moving quicker. Every racing game does this. */
+
+    const speedT = (speed - RUN_SPEED_START) / (RUN_SPEED_MAX - RUN_SPEED_START);
+    camera.fov = 62 + speedT * 12;
+    camera.updateProjectionMatrix();
+
+    /* Shake decays exponentially and is applied as a camera OFFSET, not a
+     * rotation: rotating the camera swings the whole corridor and reads as
+     * a stumble rather than an impact. */
+    shake *= Math.pow(0.02, dt);
+    if (shake < 0.001) shake = 0;
+    const sx = shake * Math.sin(elapsed * 62) * 0.5;
+    const sy = shake * Math.sin(elapsed * 87 + 1.7) * 0.38;
+
+    camera.position.set(laneX * 0.72 + sx, 2.15 + playerY * 0.25 + sy, 5.6);
     camera.lookAt(_camTarget.set(laneX * 0.86, 1.0 + playerY * 0.35, -9));
 
     // A light that follows the player, so the near ground stays readable.
@@ -690,6 +846,9 @@ window.addEventListener("load", () => {
       drawHUD();
       hudDirty = false;
     }
+
+    sparkles.update(dt);
+    debris.update(dt);
 
     renderer.render(scene, camera);
   }
@@ -713,7 +872,7 @@ window.addEventListener("load", () => {
     }
 
     update(dt);
-    draw();
+    draw(dt);
     requestAnimationFrame(frame);
   }
 

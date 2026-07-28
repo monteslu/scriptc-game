@@ -13,6 +13,16 @@
 import { Color } from "../math/Color.js";
 import { Texture } from "../textures/Texture.js";
 
+/* three's blending modes.
+ *
+ * ADDITIVE is the one that matters for game feel: it adds light rather than
+ * covering what is behind, so overlapping glows brighten instead of
+ * flattening, and a dark background shows through the dark parts of a
+ * sprite with no cutout needed. Every explosion, muzzle flash, engine
+ * trail and energy field is additive. */
+export const NormalBlending = 0;
+export const AdditiveBlending = 1;
+
 /** three's side constants. */
 export const FrontSide = 0;
 export const BackSide = 1;
@@ -47,6 +57,8 @@ export class Material {
   side: number = FrontSide;
   depthTest = true;
   depthWrite = true;
+  /** NormalBlending or AdditiveBlending; only applies when transparent. */
+  blending: number = NormalBlending;
   map: Texture | null = null;
   vertexColors = false;
 

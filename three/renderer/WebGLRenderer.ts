@@ -28,7 +28,7 @@ import {
   UNSIGNED_SHORT, VERTEX_SHADER, FRAGMENT_SHADER, TEXTURE_2D, TEXTURE0,
   RGBA, UNSIGNED_BYTE, TEXTURE_MIN_FILTER, TEXTURE_MAG_FILTER, LINEAR,
   CLAMP_TO_EDGE, REPEAT, TEXTURE_WRAP_S, TEXTURE_WRAP_T, COMPILE_STATUS,
-  LINK_STATUS, BLEND, SRC_ALPHA, ONE_MINUS_SRC_ALPHA, LEQUAL, DEPTH_FUNC,
+  LINK_STATUS, BLEND, SRC_ALPHA, ONE_MINUS_SRC_ALPHA, ONE, LEQUAL, DEPTH_FUNC,
   POINTS as GL_POINTS, LINES, LINE_LOOP, LINE_STRIP, DYNAMIC_DRAW,
 } from "../../web/webgl/constants.js";
 import { Scene } from "../core/Scene.js";
@@ -38,7 +38,8 @@ import { Object3D } from "../core/Object3D.js";
 import { Mesh } from "../objects/Mesh.js";
 import { BufferGeometry } from "../core/BufferGeometry.js";
 import {
-  Material, MeshLambertMaterial, FEAT_MAP, FEAT_VERTEX_COLORS, FEAT_LAMBERT,
+  Material, MeshLambertMaterial, AdditiveBlending,
+  FEAT_MAP, FEAT_VERTEX_COLORS, FEAT_LAMBERT,
   FEAT_EMISSIVE, FEAT_INSTANCED, FEAT_POINTS, FEAT_SPRITE,
   PointsMaterial, SpriteMaterial, DoubleSide, BackSide,
 } from "../materials/Material.js";
@@ -636,6 +637,18 @@ export class WebGLRenderer {
     else {
       gl.enable(CULL_FACE);
       gl.cullFace(material.side === BackSide ? FRONT : BACK);
+    }
+
+    /* Per-DRAW, not per-list: blending is a material property, so one
+     * additive glow among normal-blended transparents must not inherit
+     * whichever mode the list set last.
+     *
+     * SRC_ALPHA, ONE adds light instead of covering, so overlapping glows
+     * brighten and the dark parts of a sprite disappear against a dark
+     * background with no cutout. */
+    if (material.transparent) {
+      if (material.blending === AdditiveBlending) gl.blendFunc(SRC_ALPHA, ONE);
+      else gl.blendFunc(SRC_ALPHA, ONE_MINUS_SRC_ALPHA);
     }
   }
 

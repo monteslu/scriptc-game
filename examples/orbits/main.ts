@@ -24,6 +24,7 @@ import {
   performance, MouseEvent,
 } from "../../web/globals.js";
 import { pickup, hit, dash as dashSfx, gameOver } from "../../engine/sfx.js";
+import { ParticleSystem, BurstOptions } from "../../engine/particles.js";
 import { Context2D } from "../../web/canvas/context.js";
 
 import { Scene } from "../../three/core/Scene.js";
@@ -38,7 +39,7 @@ import { BufferGeometry } from "../../three/core/BufferGeometry.js";
 import { BufferAttribute } from "../../three/core/BufferAttribute.js";
 import {
   MeshLambertMaterial, MeshBasicMaterial, SpriteMaterial,
-  LineBasicMaterial, PointsMaterial,
+  LineBasicMaterial, PointsMaterial, AdditiveBlending,
 } from "../../three/materials/Material.js";
 import { AmbientLight, PointLight, DirectionalLight } from "../../three/lights/Light.js";
 import { WebGLRenderer } from "../../three/renderer/WebGLRenderer.js";
@@ -224,7 +225,7 @@ window.addEventListener("load", () => {
   shipMat.map = shipTex;
   shipMat.transparent = true;
   const ship = new Sprite(shipMat);
-  ship.scale.set(2.6, 2.6, 1);
+  ship.scale.set(3.1, 3.1, 1);
   scene.addSprite(ship);
 
   const motes: Mote[] = [];
@@ -309,6 +310,49 @@ window.addEventListener("load", () => {
   scene.addMesh(hud);
   buildHudQuad(hud);
 
+  /* ---- particles ----
+   *
+   * Three systems, because they are tuned differently and must not
+   * recycle each other's particles: a long thruster burn would otherwise
+   * eat the debris from an explosion mid-blast.
+   *
+   * Gravity is ZERO on all of them: this is space, and particles that
+   * arc downward instantly break the illusion. */
+  const thrust = new ParticleSystem(scene, 420);
+  const blast = new ParticleSystem(scene, 500);
+  const spark = new ParticleSystem(scene, 280);
+
+  const thrustBurst = new BurstOptions();
+  thrustBurst.speed = 7;
+  thrustBurst.speedJitter = 0.45;
+  thrustBurst.life = 0.42;
+  thrustBurst.size = 0.42;
+  thrustBurst.gravity = 0;
+  thrustBurst.drag = 0.2;
+  thrustBurst.spread = 0.32;      // a cone out of the engine, not a puff
+  thrustBurst.colorFrom.setHex(0x9fe8ff);
+  thrustBurst.colorTo.setHex(0x1b4fd8);
+
+  const blastBurst = new BurstOptions();
+  blastBurst.speed = 16;
+  blastBurst.speedJitter = 0.8;
+  blastBurst.life = 1.05;
+  blastBurst.size = 0.6;
+  blastBurst.gravity = 0;
+  blastBurst.drag = 0.35;
+  blastBurst.spin = 10;
+  blastBurst.colorFrom.setHex(0xffe9c0);
+  blastBurst.colorTo.setHex(0xff2a1e);
+
+  const sparkBurst = new BurstOptions();
+  sparkBurst.speed = 8;
+  sparkBurst.life = 0.6;
+  sparkBurst.size = 0.3;
+  sparkBurst.gravity = 0;
+  sparkBurst.drag = 0.3;
+  sparkBurst.colorFrom.setHex(0xfff6c8);
+  sparkBurst.colorTo.setHex(0xffb028);
+
   /* ---- state ---- */
   let shipX = 22;
   let shipY = 0;
@@ -320,6 +364,8 @@ window.addEventListener("load", () => {
   let boost = BOOST_MAX;
   let invuln = 0;
   let over = false;
+  /** Camera kick on impact; decays exponentially. */
+  let shake = 0;
   let beltAngle = 0;
   let elapsed = 0;
 
@@ -356,6 +402,7 @@ window.addEventListener("load", () => {
     for (let i = 0; i < mines.length; i++) {
       const m = mines[i];
       if (!m.alive || m.collider !== picked[0].object) continue;
+      blast.burst(m.x, m.y, m.z, 30, blastBurst);
       spawnMine(m);
       score += 5;
       sfx(pickup, 0.4);
@@ -405,6 +452,8 @@ window.addEventListener("load", () => {
     lives -= 1;
     invuln = 1600;
     sfx(hit, 0.5);
+    blast.burst(shipX, shipY, 0, 46, blastBurst);
+    shake = 0.7;
     shipVX *= 0.2;
     shipVY *= 0.2;
     if (lives <= 0) {
@@ -468,6 +517,18 @@ window.addEventListener("load", () => {
         }
         shipVX += (ax / alen) * power * dt;
         shipVY += (ay / alen) * power * dt;
+
+        /* Exhaust streams OPPOSITE the thrust, from behind the hull. The
+         * emitter is offset so particles do not spawn inside the sprite
+         * and pop into view through it. */
+        const ex = -(ax / alen);
+        const ey = -(ay / alen);
+        thrustBurst.dirX = ex;
+        thrustBurst.dirY = ey;
+        thrustBurst.dirZ = 0;
+        thrustBurst.speed = boosting && boost > 0 ? 13 : 7;
+        thrust.burst(shipX + ex * 1.1, shipY + ey * 1.1, 0,
+                     boosting && boost > 0 ? 4 : 2, thrustBurst);
       }
       if (!boosting) boost = Math.min(BOOST_MAX, boost + 17 * dt);
 
@@ -507,6 +568,7 @@ window.addEventListener("load", () => {
         const dy = m.y - shipY;
         if (dx * dx + dy * dy < (SHIP_RADIUS + MOTE_RADIUS) * (SHIP_RADIUS + MOTE_RADIUS)) {
           m.alive = false;
+          spark.burst(m.x, m.y, m.z, 16, sparkBurst);
           score += 10;
           boost = Math.min(BOOST_MAX, boost + 8);
           sfx(pickup, 0.35);
@@ -610,8 +672,12 @@ window.addEventListener("load", () => {
     trail.visible = !over;
 
     /* ---- camera: above the plane, following the ship loosely ---- */
-    camera.position.set(shipX * 0.35, shipY * 0.35 - 16, 54);
-    camTarget.set(shipX * 0.25, shipY * 0.25, 0);
+    shake *= Math.pow(0.015, dt);
+    if (shake < 0.001) shake = 0;
+    const kx = shake * Math.sin(elapsed * 58) * 1.6;
+    const ky = shake * Math.sin(elapsed * 79 + 1.1) * 1.2;
+    camera.position.set(shipX * 0.62 + kx, shipY * 0.62 - 11 + ky, 34);
+    camTarget.set(shipX * 0.72, shipY * 0.72, 0);
     camera.lookAt(camTarget);
 
     /* ---- HUD ---- */
@@ -620,6 +686,10 @@ window.addEventListener("load", () => {
       hudTexture.needsUpdate = true;
     }
     placeHud(hud, camera, over);
+
+    thrust.update(dt);
+    blast.update(dt);
+    spark.update(dt);
 
     renderer.render(scene, camera);
     requestAnimationFrame(frame);

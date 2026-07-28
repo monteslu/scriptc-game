@@ -44,7 +44,9 @@ import {
   ALIGN_END,
 } from "../../host/skia-enums.js";
 import { blendMode } from "./enums.js";
-import { Gradient } from "./gradient.js";
+import {
+  Gradient, createLinearGradient, createRadialGradient, createConicGradient,
+} from "./gradient.js";
 import { Pattern } from "./pattern.js";
 import { Image } from "./image.js";
 import { parseFont } from "./font.js";
@@ -101,6 +103,26 @@ export class Context2D {
   set strokeStyle(css: string) {
     this.style.stroke = parseColor(css);
     this.style.strokeShader = 0;
+  }
+
+  /* The spec spelling: a gradient is created FROM the context.
+   *
+   * These forward to the module-level factories, which is where the Skia
+   * shader is actually built. Having them here means game code reads as
+   * `ctx.createRadialGradient(...)` exactly as in a browser, rather than
+   * importing a factory the web has no equivalent of. */
+  createLinearGradient(x0: number, y0: number, x1: number, y1: number): Gradient {
+    return createLinearGradient(x0, y0, x1, y1);
+  }
+
+  createRadialGradient(x0: number, y0: number, r0: number,
+                       x1: number, y1: number, r1: number): Gradient {
+    return createRadialGradient(x0, y0, r0, x1, y1, r1);
+  }
+
+  /** startAngle is in radians, as in the web API. */
+  createConicGradient(startAngle: number, x: number, y: number): Gradient {
+    return createConicGradient(startAngle, x, y);
   }
 
   /** Gradients and patterns are set through these, since a setter cannot be

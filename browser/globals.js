@@ -22,6 +22,24 @@ export const cancelAnimationFrame = globalThis.cancelAnimationFrame.bind(globalT
 export const fetch = globalThis.fetch.bind(globalThis);
 
 export const window = globalThis;
+/* setFillGradient / setStrokeGradient / setFillPattern / setStrokePattern.
+ *
+ * The web assigns a gradient straight to `fillStyle`, which is typed
+ * `string | CanvasGradient | CanvasPattern`. The dialect cannot overload a
+ * SETTER on argument type, so the native side spells these as methods. A
+ * browser has the property, so the methods just forward to it -- the game's
+ * source is identical on both sides.
+ *
+ * Same class of aliasing as the import map itself. */
+if (typeof CanvasRenderingContext2D !== "undefined" &&
+    !CanvasRenderingContext2D.prototype.setFillGradient) {
+  const c2d = CanvasRenderingContext2D.prototype;
+  c2d.setFillGradient = function (g) { this.fillStyle = g; };
+  c2d.setStrokeGradient = function (g) { this.strokeStyle = g; };
+  c2d.setFillPattern = function (p) { this.fillStyle = p; };
+  c2d.setStrokePattern = function (p) { this.strokeStyle = p; };
+}
+
 /* getContextGL: the native side spells WebGL2 this way because the dialect
  * cannot resolve members off a union return, so one getContext returning
  * Context2D | WebGL2RenderingContext would break every 2D game. A browser
