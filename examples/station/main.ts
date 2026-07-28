@@ -232,6 +232,35 @@ window.addEventListener("load", () => {
 
   /* ---- pickup sparks ---- */
   const sparks = new ParticleSystem(scene, 260);
+  /* ---- engine exhaust ----
+   *
+   * Its own system: a thruster emits continuously while the debris
+   * sparks fire in bursts, so sharing a pool would let a long burn
+   * recycle the pickup particles out from under themselves.
+   *
+   * Zero gravity, short life, heavy drag: exhaust should fall behind and
+   * die, not arc or drift. */
+  const exhaust = new ParticleSystem(scene, 420);
+  const exhaustBurst = new BurstOptions();
+  exhaustBurst.speed = 4;
+  exhaustBurst.speedJitter = 0.3;
+  exhaustBurst.life = 0.16;   // dies before it reaches the trailing camera
+  exhaustBurst.lifeJitter = 0.3;
+  /* A nozzle is 0.19 world units across, so a particle must be a
+   * FRACTION of that. The first pass used 0.24-0.42 -- each cube wider
+   * than the whole nozzle -- and the flame rendered as a pile of giant
+   * orange blocks swallowing the ship. */
+  exhaustBurst.size = 0.085;
+  exhaustBurst.sizeJitter = 0.5;
+  exhaustBurst.gravity = 0;
+  exhaustBurst.drag = 0.06;      // stops almost at once: a short flame
+  exhaustBurst.spin = 1.5;
+  exhaustBurst.spread = 0.1;     // a tight jet, not a spray
+  /* White-hot at the nozzle, falling through orange to a dull red as it
+   * cools. That gradient IS the flame; a single colour reads as confetti. */
+  exhaustBurst.colorFrom.setHex(0xfff1c8);
+  exhaustBurst.colorTo.setHex(0xff3a10);
+
   const cellBurst = new BurstOptions();
   cellBurst.speed = 5.5;
   cellBurst.life = 0.6;
@@ -302,6 +331,10 @@ window.addEventListener("load", () => {
   const headlight = new PointLight(0xbfd8ff, 5.5, 60, 1);
   scene.add(headlight);
 
+  /** Engine glow; intensity tracks the throttle. */
+  const engineLight = new PointLight(0xff7a30, 0, 18, 1);
+  scene.add(engineLight);
+
   /* ---- ship state ----
    *
    * Position and VELOCITY: a flying ship carries momentum, so input
@@ -368,6 +401,8 @@ window.addEventListener("load", () => {
 
   let boltCursor = 0;
   let fireCooldown = 0;
+  /** Throttles exhaust emission; a per-frame burst floods the pool. */
+  let exhaustTimer = 0;
   /** Alternates the muzzle between wingtips, as a twin-cannon ship does. */
   let fireSide = 1;
 
@@ -999,6 +1034,29 @@ window.addEventListener("load", () => {
       shipYaw = Math.PI + Math.sin(elapsed * 0.25) * 0.22;
       shipPitch = Math.sin(elapsed * 0.19) * 0.12;
       velX = 0; velY = 0; velZ = 0;
+      /* Exhaust in the attract mode as well: a ship gliding with dead
+       * engines looks broken. */
+      const cpE = Math.cos(shipPitch);
+      const efx = Math.sin(shipYaw) * cpE;
+      const efy = Math.sin(shipPitch);
+      const efz = Math.cos(shipYaw) * cpE;
+      exhaustTimer -= dt;
+      if (exhaustTimer <= 0) {
+        exhaustTimer = 0.014;
+        exhaustBurst.dirX = -efx;
+        exhaustBurst.dirY = -efy;
+        exhaustBurst.dirZ = -efz;
+        const ox = -Math.cos(shipYaw) * 0.142;
+        const oz = Math.sin(shipYaw) * 0.142;
+        exhaust.burst(shipX - efx * 0.98 + ox, shipY - efy * 0.98 + 0.285,
+                      shipZ - efz * 0.98 + oz, 4, exhaustBurst);
+        exhaust.burst(shipX - efx * 0.98 - ox, shipY - efy * 0.98 + 0.285,
+                      shipZ - efz * 0.98 - oz, 4, exhaustBurst);
+      }
+      engineLight.intensity = 2.4;
+      engineLight.position.set(shipX - efx * 1.4, shipY - efy * 1.4 + 0.285,
+                               shipZ - efz * 1.4);
+
       /* The attract mode shoots too, so an unattended demo shows the
        * weapon rather than a ship drifting silently. */
       const cpT = Math.cos(shipPitch);
@@ -1090,6 +1148,54 @@ window.addEventListener("load", () => {
       /* Fire on a cooldown rather than per frame: at 500fps an
        * uncooled trigger empties the whole pool in one tick and the
        * bolts arrive as a single blob. */
+      /* ---- thruster flames ----
+       *
+       * Emitted from BEHIND the hull, opposite the thrust, from two
+       * nozzles set out at the wingtips. The rate scales with how hard
+       * you are pushing, so the flame swells under boost and dies to
+       * nothing when you coast -- that feedback is most of the effect.
+       *
+       * The model spans +/-0.96 in Z and its nose points -Z after the PI
+       * yaw, so the nozzles sit at POSITIVE local Z: behind. */
+      const throttle = Math.abs(fwd);
+      if (throttle > 0.05) {
+        exhaustTimer -= dt;
+        if (exhaustTimer <= 0) {
+          exhaustTimer = 0.012;
+          /* MEASURED from the model, not guessed: the rear face sits at
+           * local z 1.013 with its two nozzles at x +/-0.15 and y 0.30.
+           * At scale 0.95 that is +/-0.142 out and 0.285 up, and the
+           * first attempt at +/-0.42 put the flames nearly 3x too wide,
+           * outside the hull entirely.
+           *
+           * The model's origin is at its BASE (y spans 0..0.75), so the
+           * nozzles are ABOVE the ship position, not level with it. */
+          const back = 0.98;
+          const outX = rx * 0.142;
+          const outZ = rz * 0.142;
+          const upY = 0.285;
+          /* Fired opposite the nose, and inheriting the ship's velocity so
+           * the flame trails properly instead of sliding sideways. */
+          exhaustBurst.dirX = -fx;
+          exhaustBurst.dirY = -fy;
+          exhaustBurst.dirZ = -fz;
+          exhaustBurst.speed = 3.5 + throttle * 4 * run;
+          exhaustBurst.size = 0.07 + throttle * 0.055 * run;
+          const n = run > 1.5 ? 6 : 4;
+          exhaust.burst(shipX - fx * back + outX, shipY - fy * back + upY,
+                        shipZ - fz * back + outZ, n, exhaustBurst);
+          exhaust.burst(shipX - fx * back - outX, shipY - fy * back + upY,
+                        shipZ - fz * back - outZ, n, exhaustBurst);
+        }
+        /* A warm light at the tail, so the flame throws colour onto the
+         * tunnel behind rather than floating over it. */
+        engineLight.intensity = 1.6 + throttle * 1.8 * run;
+        engineLight.position.set(shipX - fx * 1.4, shipY - fy * 1.4 + 0.285,
+                                 shipZ - fz * 1.4);
+      } else {
+        engineLight.intensity = 0;
+      }
+
       fireCooldown -= dt;
       if (firing && fireCooldown <= 0 && !won && !lost) {
         fireCooldown = 0.11;
@@ -1285,6 +1391,7 @@ window.addEventListener("load", () => {
       boltLight[i].intensity = 3.4 * f;
     }
 
+    exhaust.update(dt);
     sparks.update(dt);
 
     if (hudCtx !== null && hudTexture !== null) {
