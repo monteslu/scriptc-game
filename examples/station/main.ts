@@ -321,7 +321,7 @@ window.addEventListener("load", () => {
 
   /* A DIM light at the tail. The particle version used 1.6-3.4 and blew
    * the hull out to white; this is a hint of colour on the wall behind. */
-  const engineLight = new PointLight(0xff7a30, 0, 9, 1);
+  const engineLight = new PointLight(0xff7a30, 0, 5, 1);
   scene.add(engineLight);
 
   /* ---- ship state ----
@@ -1204,17 +1204,28 @@ window.addEventListener("load", () => {
      * brightest point -- a single blob on the fuselage centre, which is
      * exactly what it looked like at 0.42. The quad has to stay narrower
      * than the gap between the ports. */
-    const ps = 0.17 + g * 0.11;
+    /* Barely larger than the port itself (0.14 x 0.19 world). The glow
+     * texture's falloff then sits INSIDE the recess rather than spilling
+     * across the tail. */
+    const ps = 0.13 + g * 0.06;
     portL.scale.set(ps, ps, 1);
     portR.scale.set(ps, ps, 1);
-    portMat.opacity = 0.25 + g * 0.75;
+    /* Never reaches 1. An additive quad at full opacity saturates to
+     * white and loses the amber entirely; a soft glow wants to stay a
+     * colour, not become a light source. */
+    portMat.opacity = 0.14 + g * 0.34;
     portL.visible = g > 0.02;
     portR.visible = g > 0.02;
 
     /* The tail light sits behind BOTH ports, again via the quaternion. */
     _portOff.set(0, PORT_Y, 1.5).applyQuaternion(playerShip.quaternion);
 
-    engineLight.intensity = g * 1.1;
+    /* A HINT on the wall behind, not a lamp on the hull.
+     *
+     * At 1.1 with decay 1 this contributed 2.2 at half a metre -- more
+     * than full white -- so it lit the entire back of the ship instead of
+     * tinting the tunnel behind it. */
+    engineLight.intensity = g * 0.16;
     engineLight.position.set(shipX + _portOff.x, shipY + _portOff.y,
                              shipZ + _portOff.z);
 
