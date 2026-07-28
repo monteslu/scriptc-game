@@ -42,3 +42,29 @@ the GPU.
 
 The 8.4 readback-parity gate runs on the pbuffer lane, so it needs no
 display and fits CI as-is.
+
+## Windows and macOS GL: follow native-gles, do not build ANGLE
+
+native-gles builds on all six targets in GitHub Actions, including
+windows-x64 and windows-arm64, and the way it does it is worth copying
+verbatim rather than rediscovering:
+
+- **ANGLE is downloaded prebuilt, never built.** macOS from
+  `kivy/angle-builder` releases, Windows from `mmozeiko/build-angle`
+  releases, both pinned by tag. Linux uses the system Mesa `libEGL`/
+  `libGLESv2`, so no download at all.
+- **It links as plain `-lEGL -lGLESv2`** against that download
+  (`binding.gyp`), which is exactly the shape scriptc's manifest can
+  express: no frameworks, no `.lib` special-casing.
+- **Headless Linux is `EGL_PLATFORM=surfaceless`** plus
+  `LIBGL_ALWAYS_SOFTWARE=1` in CI, which independently confirms the
+  pbuffer/device-platform lane chosen above.
+
+So the GL tier's cross-platform story needs no new invention: pin the same
+ANGLE releases, download per platform in the workflow, link `-lEGL
+-lGLESv2` everywhere.
+
+**This does not unblock the 2D tier on Windows.** That blocker is Skia and
+scriptc's mingw-only runtime (see internal-scriptc-game/WINDOWS.md), and
+ANGLE has nothing to do with either. It does mean that if a Windows build
+ever becomes possible, the GL half is already solved.
