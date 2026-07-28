@@ -1,6 +1,11 @@
-/* station: a walkable, TEXTURED space station.
+/* station: SALVAGE RUN.
  *
- * The showcase for the model pipeline end to end:
+ * The hull is breached and the air is going. Collect power cells down the
+ * corridor and reach the escape pod at the far end before your oxygen runs
+ * out. Every cell buys you more air, so the run is a push-your-luck
+ * problem: the last cells are the furthest from the pod.
+ *
+ * It is also the showcase for the model pipeline end to end:
  *
  *   TEXTURES     every model samples one shared 512x512 atlas. The kit is
  *                authored that way, so the whole station is ONE texture
@@ -14,27 +19,31 @@
  *                travel the corridor.
  *
  * Controls:
- *   W/S or up/down     walk forward and back
- *   A/D or left/right  turn
- *   Q/E                strafe
- *   SHIFT              run
- *   SPACE              toggle the slow auto-tour
+ *   W/S, up/down, d-pad up/down, left stick   walk
+ *   A/D, left/right, d-pad left/right          turn
+ *   Q/E, L1/R1                                 strafe
+ *   SHIFT                                      run
+ *   ENTER / START                              restart
  */
 import {
   window, document, navigator, requestAnimationFrame, KeyboardEvent,
-  Image, Math, performance, Gamepad,
+  Image, Math, performance, Gamepad, AudioContext,
 } from "../../web/globals.js";
+import { pickup, gameOver } from "../../engine/sfx.js";
+import { ParticleSystem, BurstOptions } from "../../engine/particles.js";
+import { Context2D } from "../../web/canvas/context.js";
 
 import { Scene } from "../../three/core/Scene.js";
 import { PerspectiveCamera } from "../../three/core/PerspectiveCamera.js";
 import { Mesh } from "../../three/objects/Mesh.js";
 import { InstancedMesh } from "../../three/objects/InstancedMesh.js";
-import { Points } from "../../three/objects/Sprite.js";
+import { Points, Sprite } from "../../three/objects/Sprite.js";
 import { BoxGeometry } from "../../three/geometries/BoxGeometry.js";
 import { BufferGeometry } from "../../three/core/BufferGeometry.js";
 import { BufferAttribute } from "../../three/core/BufferAttribute.js";
 import {
-  MeshLambertMaterial, MeshBasicMaterial, PointsMaterial, AdditiveBlending,
+  MeshLambertMaterial, MeshBasicMaterial, PointsMaterial, SpriteMaterial,
+  AdditiveBlending,
 } from "../../three/materials/Material.js";
 import {
   AmbientLight, DirectionalLight, PointLight,
@@ -64,6 +73,16 @@ const HALL_W = 7;         // tiles across
  * bare 1.6 would put the camera 0.7m off the ground -- crawling. */
 const FLOOR_TOP = 0.3 * SCALE;
 const EYE = FLOOR_TOP + 1.65;
+
+/* Standard Gamepad button indices. The spec names no constants. */
+const BTN_L1 = 4;
+const BTN_R1 = 5;
+const BTN_DPAD_UP = 12;
+const BTN_DPAD_DOWN = 13;
+const BTN_DPAD_LEFT = 14;
+const BTN_DPAD_RIGHT = 15;
+/** Below this a stick is treated as centred: cheap sticks never rest at 0. */
+const DEADZONE = 0.2;
 
 class Piece {
   mesh: InstancedMesh | null = null;
@@ -106,6 +125,44 @@ window.addEventListener("load", () => {
 
   const stationMat = new MeshLambertMaterial(0xffffff);
   stationMat.map = atlas;
+
+  const glowTex = makeGlowTexture();
+
+  /* ---- audio ---- */
+  const audio = new AudioContext();
+  const hasAudio = audio.state === "running";
+
+  /* ---- pickup sparks ---- */
+  const sparks = new ParticleSystem(scene, 260);
+  const cellBurst = new BurstOptions();
+  cellBurst.speed = 5.5;
+  cellBurst.life = 0.6;
+  cellBurst.size = 0.22;
+  cellBurst.gravity = 3.5;
+  cellBurst.drag = 0.3;
+  cellBurst.colorFrom.setHex(0xd8ffe8);
+  cellBurst.colorTo.setHex(0x2fbf7a);
+
+  /* ---- HUD ----
+   *
+   * A 2D canvas uploaded as a texture on a quad pinned to the camera. The
+   * oxygen bar is the whole interface: a number alone does not convey
+   * "running out" the way a shrinking bar does. */
+  const HUD_W = 512;
+  const HUD_H = 256;
+  const hudCanvas = document.createElement("canvas");
+  if (hudCanvas !== null) {
+    hudCanvas.width = HUD_W;      // the default is 300x150
+    hudCanvas.height = HUD_H;
+  }
+  const hudCtx = hudCanvas === null ? null : hudCanvas.getContext("2d");
+  const hudTexture = hudCtx === null ? null : Texture.fromCanvas(hudCtx);
+  const hudMat = new MeshBasicMaterial(0xffffff);
+  hudMat.transparent = true;
+  hudMat.depthTest = false;      // always on top of the world
+  if (hudTexture !== null) hudMat.map = hudTexture;
+  const hud = new Mesh(makeQuad(1.15, 0.575), hudMat);
+  scene.add(hud);
 
   /* ---- lighting ----
    *
@@ -271,8 +328,109 @@ window.addEventListener("load", () => {
     place(railPiece, x * TILE, 0, -(HALL_LEN - 0.5) * TILE, 0, 1);
   }
 
+  /* ---- power cells ----
+   *
+   * Spread down the corridor, alternating sides so the run zig-zags: a
+   * straight line of pickups would just be "hold forward". Each is a
+   * glowing crate with an additive halo so it reads from the far end of
+   * the hall, which is what makes the risk legible.
+   */
+  const CELL_COUNT = 9;
+  const cellMat = new MeshLambertMaterial(0x8fffc8);
+  cellMat.emissive.setHex(0x1f6b45);
+  const cellHaloMat = new SpriteMaterial(0x66ffb0);
+  cellHaloMat.transparent = true;
+  cellHaloMat.opacity = 0.5;
+  cellHaloMat.blending = AdditiveBlending;
+  cellHaloMat.depthWrite = false;
+  if (glowTex !== null) cellHaloMat.map = glowTex;
+
+  const cellX: number[] = [];
+  const cellZ: number[] = [];
+  const cellAlive: boolean[] = [];
+  const cellMesh: Mesh[] = [];
+  const cellHalo: Sprite[] = [];
+
+  for (let i = 0; i < CELL_COUNT; i++) {
+    const frac = (i + 1) / (CELL_COUNT + 1);
+    const cz = -frac * (HALL_LEN - 3) * TILE;
+    const cx = ((i % 2 === 0) ? -1 : 1) * (halfW - 1.1) * TILE;
+    cellX.push(cx);
+    cellZ.push(cz);
+    cellAlive.push(true);
+
+    const m = new Mesh(new BoxGeometry(0.55, 0.55, 0.55), cellMat);
+    m.position.set(cx, FLOOR_TOP + 0.75, cz);
+    scene.add(m);
+    cellMesh.push(m);
+
+    const halo = new Sprite(cellHaloMat);
+    halo.scale.set(2.4, 2.4, 1);
+    halo.position.set(cx, FLOOR_TOP + 0.75, cz);
+    scene.add(halo);
+    cellHalo.push(halo);
+  }
+
+  /* ---- the escape pod ----
+   *
+   * At the FAR end, so the whole run is a commitment: every cell you take
+   * is distance you still have to cover coming back to nothing. */
+  const podZ = -(HALL_LEN - 1.2) * TILE;
+  const podMat = new MeshBasicMaterial(0xffd25a);
+  podMat.transparent = true;
+  podMat.opacity = 0.75;
+  podMat.blending = AdditiveBlending;
+  podMat.depthWrite = false;
+  const pod = new Mesh(new BoxGeometry(2.6 * SCALE, 0.08, 2.6 * SCALE), podMat);
+  pod.position.set(0, FLOOR_TOP + 0.05, podZ);
+  scene.add(pod);
+
+  const podLight = new PointLight(0xffd25a, 3.2, 18, 1);
+  podLight.position.set(0, FLOOR_TOP + 1.6, podZ);
+  scene.add(podLight);
+
+  /* ---- YOUR SHIP, docked at the pod ----
+   *
+   * The escape craft, sitting on the pad you are running toward. It is
+   * the goal made visible: a glowing rectangle on the floor says "here",
+   * but a ship says "here is how you get out", and it is the same
+   * craft_racer the orbits demo flies.
+   *
+   * It hovers and turns gently so it reads as powered up and waiting
+   * rather than as scenery. */
+  const shipMat = new MeshLambertMaterial(0xffffff);
+  shipMat.vertexColors = true;
+  const playerShip = new Mesh(new BoxGeometry(0.001, 0.001, 0.001), shipMat);
+  playerShip.scale.set(6.5, 6.5, 6.5);
+  playerShip.position.set(0, FLOOR_TOP + 2.2, podZ);
+  scene.add(playerShip);
+
+  /* Its own light: the far end of the corridor is the darkest part of the
+   * level, and an unlit ship there is a silhouette rather than a goal. */
+  const shipLight = new PointLight(0x9fd0ff, 4.5, 26, 1);
+  shipLight.position.set(0, FLOOR_TOP + 4.5, podZ + 4);
+  scene.add(shipLight);
+
+  loader.load("craft_racer.sgm")
+    .then((geo) => { playerShip.geometry = geo; })
+    .catch(() => { console.log("station: craft_racer.sgm did not load"); });
+
   /* ---- starfield beyond the windows ---- */
   scene.add(makeStars(rand));
+
+  /* ---- game state ----
+   *
+   * Oxygen is the whole game: it is the clock, the score and the reason to
+   * take risks. Cells add air rather than points, so collecting one is
+   * always worth something and the decision is only ever "can I reach it
+   * and still get back". */
+  const START_AIR = 45;
+  const AIR_PER_CELL = 13;
+  let air = START_AIR;
+  let collected = 0;
+  let won = false;
+  let lost = false;
+  let endTime = 0;
 
   /* ---- movement ---- */
   let px = 0;
@@ -285,8 +443,24 @@ window.addEventListener("load", () => {
   const keys: string[] = [];
   function down(k: string): boolean { return keys.indexOf(k) >= 0; }
 
+  function restart(): void {
+    air = START_AIR;
+    collected = 0;
+    won = false;
+    lost = false;
+    px = 0;
+    pz = -2 * SCALE;
+    yaw = Math.PI;
+    for (let i = 0; i < CELL_COUNT; i++) {
+      cellAlive[i] = true;
+      cellMesh[i].visible = true;
+      cellHalo[i].visible = true;
+    }
+  }
+
   window.addEventListener("keydown", (e: KeyboardEvent) => {
     if (keys.indexOf(e.key) < 0) keys.push(e.key);
+    if (e.key === "Enter" && (won || lost)) { restart(); return; }
     if (e.key === " ") touring = !touring;
     else touring = false;   // any other key takes over from the tour
   });
@@ -318,13 +492,41 @@ window.addEventListener("load", () => {
     for (let i = 0; i < pads.length; i++) {
       const pad = pads[i];
       if (pad === null) continue;
+
+      /* Standard Gamepad axes: 0/1 left stick, 2/3 right stick. Both Y
+       * axes read POSITIVE DOWN, which is why forward subtracts. */
       const lx = pad.axes[0];
       const ly = pad.axes[1];
       const rx = pad.axes[2];
-      if (ly > 0.2 || ly < -0.2) { fwd -= ly; touring = false; }
-      if (lx > 0.2 || lx < -0.2) { strafe += lx; touring = false; }
-      if (rx > 0.2 || rx < -0.2) { turn -= rx; touring = false; }
+      if (ly > DEADZONE || ly < -DEADZONE) { fwd -= ly; touring = false; }
+      if (lx > DEADZONE || lx < -DEADZONE) { strafe += lx; touring = false; }
+      if (rx > DEADZONE || rx < -DEADZONE) { turn -= rx; touring = false; }
+
+      /* D-pad MOVES, it does not look.
+       *
+       * Left/right STRAFE rather than turn: the d-pad is a movement
+       * control and the right stick is the camera, which is the standard
+       * every first-person game uses. Turning with the d-pad while the
+       * right stick also turns gives two controls fighting over one axis.
+       */
+      if (pad.buttons.length > BTN_DPAD_RIGHT) {
+        if (pad.buttons[BTN_DPAD_UP].pressed) { fwd += 1; touring = false; }
+        if (pad.buttons[BTN_DPAD_DOWN].pressed) { fwd -= 1; touring = false; }
+        if (pad.buttons[BTN_DPAD_LEFT].pressed) { strafe -= 1; touring = false; }
+        if (pad.buttons[BTN_DPAD_RIGHT].pressed) { strafe += 1; touring = false; }
+      }
+
+      /* Shoulders also strafe, for players who prefer the stick for
+       * movement and want a quick sidestep. */
+      if (pad.buttons.length > BTN_R1) {
+        if (pad.buttons[BTN_L1].pressed) { strafe -= 1; touring = false; }
+        if (pad.buttons[BTN_R1].pressed) { strafe += 1; touring = false; }
+      }
       break;
+    }
+
+    if (won || lost) {
+      fwd = 0; strafe = 0; turn = 0;
     }
 
     if (touring) {
@@ -344,8 +546,13 @@ window.addEventListener("load", () => {
       const speed = 4.6 * run;
       const sinY = Math.sin(yaw);
       const cosY = Math.cos(yaw);
-      px += (sinY * fwd + cosY * strafe) * speed * dt;
-      pz += (cosY * fwd - sinY * strafe) * speed * dt;
+      /* Forward is (sin yaw, cos yaw); RIGHT is that rotated -90 degrees,
+       * which is (-cos yaw, sin yaw). The first version used (cos, -sin) --
+       * the LEFT-hand vector -- so strafing went the wrong way on both the
+       * keyboard and the stick. Checked against yaw=PI (facing -Z), where
+       * right must be +X. */
+      px += (sinY * fwd - cosY * strafe) * speed * dt;
+      pz += (cosY * fwd + sinY * strafe) * speed * dt;
       if (fwd !== 0 || strafe !== 0) bobPhase += dt * 9 * run;
 
       // Keep the walker inside the corridor.
@@ -374,6 +581,92 @@ window.addEventListener("load", () => {
                             WALL_H * 2 - 1.1, lz);
     }
 
+    /* ---- game logic ---- */
+    if (!won && !lost) {
+      air -= dt;
+
+      // Cell pickup: a generous radius, because a precise one in a
+      // first-person view reads as the pickup being broken.
+      for (let i = 0; i < CELL_COUNT; i++) {
+        if (!cellAlive[i]) continue;
+        const dx = cellX[i] - px;
+        const dz = cellZ[i] - pz;
+        if (dx * dx + dz * dz < 2.6 * 2.6) {
+          cellAlive[i] = false;
+          cellMesh[i].visible = false;
+          cellHalo[i].visible = false;
+          collected += 1;
+          air += AIR_PER_CELL;
+          sparks.burst(cellX[i], FLOOR_TOP + 0.75, cellZ[i], 22, cellBurst);
+          if (hasAudio) pickup(audio, 0.4);
+        }
+      }
+
+      // The pod only counts once every cell is aboard.
+      const dpz = pz - podZ;
+      if (collected >= CELL_COUNT && dpz * dpz < 3.2 * 3.2) {
+        won = true;
+        endTime = elapsed;
+        if (hasAudio) pickup(audio, 0.7);
+      }
+
+      if (air <= 0) {
+        air = 0;
+        lost = true;
+        endTime = elapsed;
+        if (hasAudio) gameOver(audio, 0.6);
+      }
+    }
+
+    /* Cells bob and spin: a static pickup reads as scenery. */
+    for (let i = 0; i < CELL_COUNT; i++) {
+      if (!cellAlive[i]) continue;
+      const y = FLOOR_TOP + 0.75 + Math.sin(elapsed * 2.2 + i) * 0.16;
+      cellMesh[i].position.set(cellX[i], y, cellZ[i]);
+      cellMesh[i].quaternion.setFromEuler(0, elapsed * 1.3 + i, 0.4);
+      cellHalo[i].position.set(cellX[i], y, cellZ[i]);
+      const pulse = 2.4 * (1 + Math.sin(elapsed * 4 + i) * 0.13);
+      cellHalo[i].scale.set(pulse, pulse, 1);
+    }
+
+    /* The ship hovers and rocks on its pad; on a win it lifts off, which
+     * is the payoff for the whole run. */
+    if (won) {
+      const since = elapsed - endTime;
+      playerShip.position.set(0, FLOOR_TOP + 2.2 + since * since * 2.6,
+                              podZ - since * 1.8);
+      playerShip.quaternion.setFromEuler(-since * 0.25, Math.PI, 0);
+    } else {
+      playerShip.position.set(0, FLOOR_TOP + 2.2 + Math.sin(elapsed * 1.6) * 0.18,
+                              podZ);
+      playerShip.quaternion.setFromEuler(0, Math.PI + Math.sin(elapsed * 0.5) * 0.15,
+                                         Math.sin(elapsed * 0.9) * 0.05);
+    }
+
+    /* The pod pulses only once it can actually be used, so it reads as
+     * "not yet" until the last cell is aboard. */
+    podMat.opacity = collected >= CELL_COUNT
+      ? 0.55 + Math.sin(elapsed * 6) * 0.3
+      : 0.12;
+    podLight.intensity = collected >= CELL_COUNT
+      ? 3.4 + Math.sin(elapsed * 6) * 1.6
+      : 0.7;
+
+    /* Air runs out: the light drains with it, so the panic is visible
+     * before the number is. */
+    const airFrac = air / START_AIR;
+    const dim = lost ? 0.15 : 0.45 + Math.min(1, airFrac * 1.6) * 0.55;
+    for (let i = 0; i < lamps.length; i++) lamps[i].intensity = 2.6 * dim;
+
+    sparks.update(dt);
+
+    if (hudCtx !== null && hudTexture !== null) {
+      drawHUD(hudCtx, air, START_AIR, collected, CELL_COUNT, won, lost,
+              endTime);
+      hudTexture.needsUpdate = true;
+    }
+    placeHUD(hud, camera);
+
     renderer.render(scene, camera);
     requestAnimationFrame(frame);
   }
@@ -382,6 +675,29 @@ window.addEventListener("load", () => {
 });
 
 /* ---- helpers ---- */
+
+/* A soft radial glow, drawn once into an offscreen canvas.
+ *
+ * Additive blending makes the black edge contribute nothing, so the quad
+ * has no visible boundary and the falloff itself is the shape. A solid
+ * mesh cannot do this: its face is uniformly bright and its silhouette is
+ * a hard edge, which reads as a disc pasted on rather than a light. */
+function makeGlowTexture(): Texture | null {
+  const c = document.createElement("canvas");
+  if (c === null) return null;
+  c.width = 128;
+  c.height = 128;
+  const g = c.getContext("2d");
+  if (g === null) return null;
+  const grad = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+  grad.addColorStop(0, "rgba(255,255,255,1)");
+  grad.addColorStop(0.25, "rgba(190,255,220,0.8)");
+  grad.addColorStop(0.55, "rgba(90,230,160,0.28)");
+  grad.addColorStop(1, "rgba(0,0,0,0)");
+  g.setFillGradient(grad);
+  g.fillRect(0, 0, 128, 128);
+  return Texture.fromCanvas(g);
+}
 
 function loadImage(url: string): Image {
   const img = new Image();
@@ -417,6 +733,99 @@ function makeStars(rand: () => number): Points {
   return new Points(geo, mat);
 }
 
+/** A unit quad, indexed, with uvs: the HUD surface. */
+function makeQuad(w: number, h: number): BufferGeometry {
+  const geo = new BufferGeometry();
+  geo.setAttribute("position", new BufferAttribute(
+    [-w, -h, 0, w, -h, 0, w, h, 0, -w, h, 0], 3, false));
+  geo.setAttribute("uv", new BufferAttribute([0, 0, 1, 0, 1, 1, 0, 1], 2, false));
+  geo.setAttribute("normal", new BufferAttribute(
+    [0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1], 3, false));
+  geo.setIndex(new BufferAttribute([0, 1, 2, 0, 2, 3], 1, false));
+  return geo;
+}
+
+/* Pin the HUD a fixed distance down the camera's view axis, so it never
+ * intersects the world however the camera moves. */
+function placeHUD(hud: Mesh, camera: PerspectiveCamera): void {
+  _fwd.set(0, 0, -1).applyQuaternion(camera.quaternion);
+  _up.set(0, 1, 0).applyQuaternion(camera.quaternion);
+  hud.position.copy(camera.position);
+  hud.position.addScaledVector(_fwd, 2.2);
+  hud.position.addScaledVector(_up, 0.72);
+  hud.quaternion.copy(camera.quaternion);
+}
+
+function drawHUD(ctx: Context2D, air: number, maxAir: number,
+                 cells: number, totalCells: number,
+                 won: boolean, lost: boolean, endTime: number): void {
+  ctx.clearRect(0, 0, 512, 256);
+
+  /* The oxygen bar IS the game: a number counting down does not convey
+   * urgency the way a draining bar does, and the colour shift gives a
+   * warning before the number is small enough to read as one. */
+  const frac = Math.max(0, Math.min(1, air / maxAir));
+  ctx.fillStyle = "rgba(4,8,16,0.72)";
+  ctx.fillRect(0, 0, 512, 104);
+
+  ctx.fillStyle = "#7f93bf";
+  ctx.font = "18px sans-serif";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "alphabetic";
+  ctx.fillText("OXYGEN", 26, 30);
+
+  ctx.fillStyle = "#141d33";
+  ctx.fillRect(26, 40, 300, 22);
+  // Green while comfortable, amber, then red: readable at a glance.
+  if (frac > 0.5) ctx.fillStyle = "#4fe08a";
+  else if (frac > 0.22) ctx.fillStyle = "#ffc247";
+  else ctx.fillStyle = "#ff4d6a";
+  ctx.fillRect(26, 40, 300 * frac, 22);
+
+  ctx.fillStyle = "#dbe7ff";
+  ctx.font = "30px sans-serif";
+  ctx.textAlign = "right";
+  ctx.fillText(`${Math.ceil(air)}s`, 486, 62);
+
+  ctx.fillStyle = "#7f93bf";
+  ctx.font = "18px sans-serif";
+  ctx.textAlign = "left";
+  ctx.fillText(`CELLS  ${cells} / ${totalCells}`, 26, 88);
+
+  if (cells >= totalCells && !won && !lost) {
+    ctx.fillStyle = "#ffd25a";
+    ctx.textAlign = "right";
+    ctx.fillText("POD OPEN", 486, 88);
+  }
+
+  if (won || lost) {
+    ctx.fillStyle = "rgba(3,6,14,0.9)";
+    ctx.fillRect(0, 104, 512, 152);
+    ctx.textAlign = "center";
+    if (won) {
+      ctx.fillStyle = "#8ef0a8";
+      ctx.font = "44px sans-serif";
+      ctx.fillText("ESCAPED", 256, 164);
+      ctx.fillStyle = "#dbe7ff";
+      ctx.font = "22px sans-serif";
+      ctx.fillText(`${endTime.toFixed(1)}s  with ${Math.ceil(air)}s air left`,
+                   256, 200);
+    } else {
+      ctx.fillStyle = "#ff6f8b";
+      ctx.font = "44px sans-serif";
+      ctx.fillText("OUT OF AIR", 256, 164);
+      ctx.fillStyle = "#dbe7ff";
+      ctx.font = "22px sans-serif";
+      ctx.fillText(`${cells} of ${totalCells} cells recovered`, 256, 200);
+    }
+    ctx.fillStyle = "#96a8cf";
+    ctx.font = "19px sans-serif";
+    ctx.fillText("ENTER to try again", 256, 232);
+  }
+}
+
+const _fwd = new Vector3();
+const _up = new Vector3();
 const _pos = new Vector3();
 const _scl = new Vector3(1, 1, 1);
 const _rot = new Quaternion();
