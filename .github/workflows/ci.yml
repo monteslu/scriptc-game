@@ -38,30 +38,29 @@ jobs:
             runner: macos-14
           - target: macos-x86_64
             runner: macos-15-intel
-          - target: windows-x86_64
-            runner: windows-2022
-            # scriptc's own CI cross-compiles Windows with zig, and the
-            # triple is passed straight through to `zig cc -target`
-            # (backend/cc.ts), so the MSVC triple works as well as the gnu
-            # one. It has to be MSVC here: build-libcanvas builds Skia
-            # against MSVC (skia's own gn/BUILDCONFIG.gn hard-asserts a VC
-            # installation for target_os="win", so a mingw Skia is not
-            # something we can produce), and mingw cannot supply the MSVC
-            # CRT those objects import. Verified locally: lld-link READS the
-            # MSVC Skia objects fine under -target x86_64-windows-gnu and
-            # fails only on libcmt/oldnames/libcpmt, which the MSVC triple
-            # resolves from the runner's Visual Studio install.
-            scriptc_cc: zigcc
-            scriptc_target: x86_64-windows-msvc
-          # them, both verified against the real tarball.
-          # android-aarch64 gets as far as VENDORING and compiling the
-          # shim, then stops at the final link, and the wall is upstream:
-          # scriptc has no Android support at all. Cross-compiling requires
-          # SCRIPTC_CC=zigcc, which links with `zig cc` rather than the
-          # NDK's linker, and there is no way to point it at the NDK
-          # sysroot. The archives are fine (204 skiac symbols) and
-          # scripts/fetch-archives.sh handles the target today, so this
-          # becomes a matrix entry the moment scriptc can link it.
+          # windows-x86_64 is OUT, and the reason is a genuine standoff
+          # between two upstreams rather than anything in this repo.
+          #
+          # scriptc's Windows support is written for mingw: 27 unguarded
+          # POSIX includes across the runtime (dirent.h, unistd.h, fcntl.h,
+          # signal.h...), which mingw-w64 provides and MSVC does not. The
+          # x86_64-windows-gnu triple builds scriptc programs cleanly,
+          # verified locally.
+          #
+          # Skia's GN goes the other way: gn/BUILDCONFIG.gn routes EVERY
+          # target_os="win" build to the msvc toolchain (the only others
+          # are gcc_like and wasm), so build-libcanvas can only publish an
+          # MSVC Skia, whose objects import the MSVC CRT that mingw cannot
+          # supply.
+          #
+          # So gnu compiles but cannot link Skia, and msvc links Skia but
+          # cannot compile the runtime. Closing it needs one of: a mingw
+          # toolchain in Skia's GN, or MSVC ports of those 27 POSIX include
+          # sites. Both are upstream, and neither is a shim.
+          #
+          # Everything on THIS side is done and verified against the real
+          # release tarball: fetch-archives.sh vendors the Windows archives
+          # (204 skiac symbols) and build-shim.sh merges them.
 
     steps:
       - uses: actions/checkout@v7

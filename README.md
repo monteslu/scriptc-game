@@ -90,11 +90,22 @@ Each target builds on its own runner rather than cross-compiling. scriptc
 can cross-compile, but Skia, SDL2 and the audio graph are per-platform
 binaries, so only a native runner links a real result.
 
-Windows cross-compiles with zig (`SCRIPTC_TARGET=x86_64-windows-msvc`),
-which is how scriptc's own CI builds for Windows. The MSVC triple rather
-than the mingw one, because build-libcanvas builds Skia against MSVC and
-Skia's GN hard-asserts a Visual Studio installation for any Windows target,
-so a mingw Skia is not something we can produce.
+Windows is not a target yet, and the blocker is a standoff between two
+upstreams rather than anything here. scriptc's Windows support is built for
+mingw: 16 of its 54 runtime translation units include POSIX headers
+(`dirent.h`, `unistd.h`, `poll.h`) unguarded, which mingw-w64 provides and
+MSVC does not. Skia's GN goes the other way, routing every `target_os="win"`
+build to its `msvc` toolchain, so build-libcanvas can only publish an MSVC
+Skia whose objects import a CRT mingw cannot supply. Verified locally: the
+gnu triple compiles scriptc programs cleanly and cannot link Skia; the MSVC
+triple links Skia and cannot compile the runtime.
+
+Everything on this side is done: `fetch-archives.sh` vendors the Windows
+archives (204 skiac symbols) and `build-shim.sh` merges them, both checked
+against the real release tarball. Two of the MSVC-side compiler gaps are
+already fixed on branches (see the table above). The likely path to Windows
+is a wasmcart build rather than a native one, which avoids the toolchain
+question entirely.
 
 **Android is blocked upstream**: scriptc has no Android support, and its
 cross path goes through `zig cc`, which cannot be pointed at an NDK
