@@ -67,6 +67,8 @@ const SCALE = 3;
 const TILE = 1 * SCALE;
 const WALL_H = 1 * SCALE;
 const HALL_LEN = 26;      // tiles down the corridor
+/* Two wall courses tall, so the ceiling sits on top of the second one. */
+const CEIL_Y = 2 * SCALE;
 const HALL_W = 7;         // tiles across
 /* Eye height is measured from the FLOOR SURFACE, not from the origin: the
  * floor model is 0.3 tall in kit units, so its top sits at 0.3*SCALE and a
@@ -75,6 +77,8 @@ const FLOOR_TOP = 0.3 * SCALE;
 const EYE = FLOOR_TOP + 1.65;
 
 /* Standard Gamepad button indices. The spec names no constants. */
+const BTN_START = 9;
+const BTN_A = 0;
 const BTN_L1 = 4;
 const BTN_R1 = 5;
 const BTN_DPAD_UP = 12;
@@ -174,6 +178,13 @@ window.addEventListener("load", () => {
   fill.position.set(0.3, 1, 0.25);
   scene.add(fill);
 
+  /* A second, DOWNWARD fill. The first points up, which lights floors and
+   * leaves the new ceiling unlit -- it rendered as a black lid with a few
+   * blown-out hotspots. This one catches the underside. */
+  const roofFill = new DirectionalLight(0x6d86bd, 0.26);
+  roofFill.position.set(-0.2, -1, -0.15);
+  scene.add(roofFill);
+
   const lamps: PointLight[] = [];
   for (let i = 0; i < 4; i++) {
     /* decay 1, not the physically-correct 2: at station scale
@@ -223,9 +234,19 @@ window.addEventListener("load", () => {
 
   function place(p: Piece, x: number, y: number, z: number,
                  yaw: number, s: number): void {
+    placeRolled(p, x, y, z, yaw, s, 0);
+  }
+
+  /* Same as place, with a roll about X. A ceiling is a floor tile flipped
+   * 180 degrees: the kit has no ceiling piece, and flipping reuses the
+   * same geometry, the same atlas region and the same instanced mesh.
+   * Rotating the mesh carries its NORMALS with it, so the underside lights
+   * correctly rather than being lit from behind. */
+  function placeRolled(p: Piece, x: number, y: number, z: number,
+                       yaw: number, s: number, roll: number): void {
     if (p.count >= 400) return;
     _pos.set(x, y, z);
-    _rot.setFromEuler(0, yaw, 0);
+    _rot.setFromEuler(roll, yaw, 0);
     _scl.set(s * SCALE, s * SCALE, s * SCALE);
     const m = new Matrix4().compose(_pos, _rot, _scl);
     p.pending.push(m);
@@ -237,6 +258,7 @@ window.addEventListener("load", () => {
   }
 
   const floor = piece("floor", 260);
+  const ceiling = piece("floor", 260);
   const floorDetail = piece("floor-detail", 80);
   const wall = piece("wall", 260);
   const wallWindow = piece("wall-window", 120);
@@ -266,6 +288,11 @@ window.addEventListener("load", () => {
       // A scattering of detail tiles breaks up a flat repeating floor.
       if (rand() < 0.14) place(floorDetail, wx, 0, wz, 0, 1);
       else place(floor, wx, 0, wz, 0, 1);
+
+      /* Ceiling: the same tile, flipped. Its 0.3-tall lip then hangs DOWN
+       * from the ceiling plane, which is what a structural rib looks like
+       * from underneath. */
+      placeRolled(ceiling, wx, CEIL_Y, wz, 0, 1, Math.PI);
     }
 
     /* Walls down both sides. Windows every few tiles turn a corridor into
@@ -438,6 +465,10 @@ window.addEventListener("load", () => {
   let yaw = Math.PI;         // facing down the corridor
   let bobPhase = 0;
   let touring = true;
+  /* Whether the restart button was already down: without this, holding
+   * START through the end of a run restarts instantly and the result
+   * screen never appears. */
+  let restartHeld = false;
   let elapsed = 0;
 
   const keys: string[] = [];
@@ -501,6 +532,26 @@ window.addEventListener("load", () => {
       if (ly > DEADZONE || ly < -DEADZONE) { fwd -= ly; touring = false; }
       if (lx > DEADZONE || lx < -DEADZONE) { strafe += lx; touring = false; }
       if (rx > DEADZONE || rx < -DEADZONE) { turn -= rx; touring = false; }
+
+      /* START (or A) restarts once the run is over. A gamepad player
+       * should never have to reach for the keyboard to play again.
+       *
+       * Edge-triggered on the button going down: held across the frame
+       * where the run ends, a level-triggered restart would fire
+       * immediately and the player would never see the result screen. */
+      if (won || lost) {
+        const startDown = pad.buttons.length > BTN_START &&
+                          pad.buttons[BTN_START].pressed;
+        const aDown = pad.buttons.length > BTN_A && pad.buttons[BTN_A].pressed;
+        const pressed = startDown || aDown;
+        if (pressed && !restartHeld) {
+          restartHeld = true;
+          restart();
+          break;
+        }
+        if (!pressed) restartHeld = false;
+        break;   // no movement while the result screen is up
+      }
 
       /* D-pad MOVES, it does not look.
        *
@@ -577,8 +628,13 @@ window.addEventListener("load", () => {
     for (let i = 0; i < lamps.length; i++) {
       const lz = -(((elapsed * 3.6 + i * 6.5 * SCALE) %
                      ((HALL_LEN + 6) * SCALE)) - 3 * SCALE);
+      /* Hung well below the ceiling, not just under it. At 1.1m below a
+       * 6m roof the tile directly above each lamp saturated to pure white
+       * while the rest of the ceiling sat at (20,27,46) -- nearly black.
+       * Lower is both more even and more useful: it lights the floor the
+       * player is actually walking on. */
       lamps[i].position.set(Math.sin(elapsed * 0.4 + i) * 1.6,
-                            WALL_H * 2 - 1.1, lz);
+                            WALL_H * 2 - 2.4, lz);
     }
 
     /* ---- game logic ---- */
@@ -820,7 +876,7 @@ function drawHUD(ctx: Context2D, air: number, maxAir: number,
     }
     ctx.fillStyle = "#96a8cf";
     ctx.font = "19px sans-serif";
-    ctx.fillText("ENTER to try again", 256, 232);
+    ctx.fillText("ENTER or START to try again", 256, 232);
   }
 }
 
