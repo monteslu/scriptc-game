@@ -232,35 +232,6 @@ window.addEventListener("load", () => {
 
   /* ---- pickup sparks ---- */
   const sparks = new ParticleSystem(scene, 260);
-  /* ---- engine exhaust ----
-   *
-   * Its own system: a thruster emits continuously while the debris
-   * sparks fire in bursts, so sharing a pool would let a long burn
-   * recycle the pickup particles out from under themselves.
-   *
-   * Zero gravity, short life, heavy drag: exhaust should fall behind and
-   * die, not arc or drift. */
-  const exhaust = new ParticleSystem(scene, 420);
-  const exhaustBurst = new BurstOptions();
-  exhaustBurst.speed = 4;
-  exhaustBurst.speedJitter = 0.3;
-  exhaustBurst.life = 0.16;   // dies before it reaches the trailing camera
-  exhaustBurst.lifeJitter = 0.3;
-  /* A nozzle is 0.19 world units across, so a particle must be a
-   * FRACTION of that. The first pass used 0.24-0.42 -- each cube wider
-   * than the whole nozzle -- and the flame rendered as a pile of giant
-   * orange blocks swallowing the ship. */
-  exhaustBurst.size = 0.085;
-  exhaustBurst.sizeJitter = 0.5;
-  exhaustBurst.gravity = 0;
-  exhaustBurst.drag = 0.06;      // stops almost at once: a short flame
-  exhaustBurst.spin = 1.5;
-  exhaustBurst.spread = 0.1;     // a tight jet, not a spray
-  /* White-hot at the nozzle, falling through orange to a dull red as it
-   * cools. That gradient IS the flame; a single colour reads as confetti. */
-  exhaustBurst.colorFrom.setHex(0xfff1c8);
-  exhaustBurst.colorTo.setHex(0xff3a10);
-
   const cellBurst = new BurstOptions();
   cellBurst.speed = 5.5;
   cellBurst.life = 0.6;
@@ -331,8 +302,26 @@ window.addEventListener("load", () => {
   const headlight = new PointLight(0xbfd8ff, 5.5, 60, 1);
   scene.add(headlight);
 
-  /** Engine glow; intensity tracks the throttle. */
-  const engineLight = new PointLight(0xff7a30, 0, 18, 1);
+  /* Engine ports: two additive quads sitting ON the exhausts.
+   *
+   * Sprites so they always face the camera, and additive so they read as
+   * emitted light rather than painted-on colour. Measured from the model:
+   * the rear face is at local z 1.013 with nozzles at x +/-0.15, y 0.30,
+   * which at scale 0.95 is +/-0.142 out and 0.285 up. */
+  const portMat = new SpriteMaterial(0xff8a3a);
+  portMat.transparent = true;
+  portMat.blending = AdditiveBlending;
+  portMat.depthWrite = false;
+  portMat.fog = false;
+  if (glowTex !== null) portMat.map = glowTex;
+  const portL = new Sprite(portMat);
+  const portR = new Sprite(portMat);
+  scene.add(portL);
+  scene.add(portR);
+
+  /* A DIM light at the tail. The particle version used 1.6-3.4 and blew
+   * the hull out to white; this is a hint of colour on the wall behind. */
+  const engineLight = new PointLight(0xff7a30, 0, 9, 1);
   scene.add(engineLight);
 
   /* ---- ship state ----
@@ -402,7 +391,8 @@ window.addEventListener("load", () => {
   let boltCursor = 0;
   let fireCooldown = 0;
   /** Throttles exhaust emission; a per-frame burst floods the pool. */
-  let exhaustTimer = 0;
+  /** 0..1 forward throttle, drives the port glow. */
+  let glowLevel = 0;
   /** Alternates the muzzle between wingtips, as a twin-cannon ship does. */
   let fireSide = 1;
 
@@ -791,6 +781,8 @@ window.addEventListener("load", () => {
   shipMat.vertexColors = true;
   const playerShip = new Mesh(new BoxGeometry(0.001, 0.001, 0.001), shipMat);
   playerShip.scale.set(0.95, 0.95, 0.95);
+  /* Half the model's height, scaled: the model spans local y 0..0.75. */
+  const HULL_HALF = 0.375 * 0.95;
   playerShip.position.set(0, 0, 0);
   scene.add(playerShip);
 
@@ -1034,28 +1026,7 @@ window.addEventListener("load", () => {
       shipYaw = Math.PI + Math.sin(elapsed * 0.25) * 0.22;
       shipPitch = Math.sin(elapsed * 0.19) * 0.12;
       velX = 0; velY = 0; velZ = 0;
-      /* Exhaust in the attract mode as well: a ship gliding with dead
-       * engines looks broken. */
-      const cpE = Math.cos(shipPitch);
-      const efx = Math.sin(shipYaw) * cpE;
-      const efy = Math.sin(shipPitch);
-      const efz = Math.cos(shipYaw) * cpE;
-      exhaustTimer -= dt;
-      if (exhaustTimer <= 0) {
-        exhaustTimer = 0.014;
-        exhaustBurst.dirX = -efx;
-        exhaustBurst.dirY = -efy;
-        exhaustBurst.dirZ = -efz;
-        const ox = -Math.cos(shipYaw) * 0.142;
-        const oz = Math.sin(shipYaw) * 0.142;
-        exhaust.burst(shipX - efx * 0.98 + ox, shipY - efy * 0.98 + 0.285,
-                      shipZ - efz * 0.98 + oz, 4, exhaustBurst);
-        exhaust.burst(shipX - efx * 0.98 - ox, shipY - efy * 0.98 + 0.285,
-                      shipZ - efz * 0.98 - oz, 4, exhaustBurst);
-      }
-      engineLight.intensity = 2.4;
-      engineLight.position.set(shipX - efx * 1.4, shipY - efy * 1.4 + 0.285,
-                               shipZ - efz * 1.4);
+      glowLevel = 1;
 
       /* The attract mode shoots too, so an unattended demo shows the
        * weapon rather than a ship drifting silently. */
@@ -1148,53 +1119,17 @@ window.addEventListener("load", () => {
       /* Fire on a cooldown rather than per frame: at 500fps an
        * uncooled trigger empties the whole pool in one tick and the
        * bolts arrive as a single blob. */
-      /* ---- thruster flames ----
+      /* ---- engine glow ----
        *
-       * Emitted from BEHIND the hull, opposite the thrust, from two
-       * nozzles set out at the wingtips. The rate scales with how hard
-       * you are pushing, so the flame swells under boost and dies to
-       * nothing when you coast -- that feedback is most of the effect.
+       * Two small additive quads on the exhaust ports, brightening with
+       * forward throttle. No particles: a trail of tumbling cubes behind
+       * the ship read as debris, not thrust, and the light needed to make
+       * it visible blew the hull out to white.
        *
-       * The model spans +/-0.96 in Z and its nose points -Z after the PI
-       * yaw, so the nozzles sit at POSITIVE local Z: behind. */
-      const throttle = Math.abs(fwd);
-      if (throttle > 0.05) {
-        exhaustTimer -= dt;
-        if (exhaustTimer <= 0) {
-          exhaustTimer = 0.012;
-          /* MEASURED from the model, not guessed: the rear face sits at
-           * local z 1.013 with its two nozzles at x +/-0.15 and y 0.30.
-           * At scale 0.95 that is +/-0.142 out and 0.285 up, and the
-           * first attempt at +/-0.42 put the flames nearly 3x too wide,
-           * outside the hull entirely.
-           *
-           * The model's origin is at its BASE (y spans 0..0.75), so the
-           * nozzles are ABOVE the ship position, not level with it. */
-          const back = 0.98;
-          const outX = rx * 0.142;
-          const outZ = rz * 0.142;
-          const upY = 0.285;
-          /* Fired opposite the nose, and inheriting the ship's velocity so
-           * the flame trails properly instead of sliding sideways. */
-          exhaustBurst.dirX = -fx;
-          exhaustBurst.dirY = -fy;
-          exhaustBurst.dirZ = -fz;
-          exhaustBurst.speed = 3.5 + throttle * 4 * run;
-          exhaustBurst.size = 0.07 + throttle * 0.055 * run;
-          const n = run > 1.5 ? 6 : 4;
-          exhaust.burst(shipX - fx * back + outX, shipY - fy * back + upY,
-                        shipZ - fz * back + outZ, n, exhaustBurst);
-          exhaust.burst(shipX - fx * back - outX, shipY - fy * back + upY,
-                        shipZ - fz * back - outZ, n, exhaustBurst);
-        }
-        /* A warm light at the tail, so the flame throws colour onto the
-         * tunnel behind rather than floating over it. */
-        engineLight.intensity = 1.6 + throttle * 1.8 * run;
-        engineLight.position.set(shipX - fx * 1.4, shipY - fy * 1.4 + 0.285,
-                                 shipZ - fz * 1.4);
-      } else {
-        engineLight.intensity = 0;
-      }
+       * Only FORWARD thrust lights them. Coasting or reversing leaves them
+       * dark, which is the whole tell -- a glow that is always on conveys
+       * nothing. */
+      glowLevel = fwd > 0.05 ? fwd * run : 0;
 
       fireCooldown -= dt;
       if (firing && fireCooldown <= 0 && !won && !lost) {
@@ -1209,10 +1144,79 @@ window.addEventListener("load", () => {
      * camera trails on a spring rather than rigidly: a hard-mounted
      * camera transmits every collision jolt straight to the player's eye
      * and is unreadable in a tight tunnel. */
-    playerShip.position.set(shipX, shipY, shipZ);
+    /* The mesh is SUNK by half the model's height.
+     *
+     * The model spans local y 0..0.75, so its origin is at its BASE: put
+     * at shipY it floats entirely above the ship point and, worse, rolls
+     * about its base rather than its centre. Anything positioned relative
+     * to it then swings wildly with bank -- which is exactly why the
+     * engine glows kept sliding off the ports.
+     *
+     * Sinking it by half the height puts the hull's centre at shipY, so
+     * roll happens about the middle of the ship as it should. */
+    _portOff.set(0, -HULL_HALF, 0).applyQuaternion(playerShip.quaternion);
+    playerShip.position.set(shipX + _portOff.x, shipY + _portOff.y,
+                            shipZ + _portOff.z);
     playerShip.quaternion.setFromEuler(-shipPitch, shipYaw + Math.PI, 0);
     _bankQ.setFromAxisAngle(_fwdAxis, bank);
     playerShip.quaternion.multiply(_bankQ);
+
+    /* The ports ride the hull, positioned by the SHIP'S OWN QUATERNION.
+     *
+     * The previous version rebuilt the offset from shipYaw with
+     * hand-written trig -- a horizontal right vector and a world-up
+     * offset -- which silently ignored BANK and PITCH. At only 10 degrees
+     * of bank the port had already moved 0.052m, 18% of the spacing
+     * between them, so the glows drifted off the ports whenever the ship
+     * was doing anything but flying dead level.
+     *
+     * Transforming the local offset by the quaternion is what a
+     * quaternion is FOR, and it cannot fall out of step with however the
+     * hull is oriented. The offsets are the model's real port centres:
+     * two rectangles at local x -0.20..-0.10 and +0.10..+0.20, y
+     * 0.10..0.50, on the rear face at z 1.013 -- so centres at
+     * (+/-0.15, 0.30, 1.013), scaled by 0.95. */
+    /* The REAL exhaust ports, found by isolating the model's DARK
+     * material in the rear half rather than reading the flat rear face:
+     *
+     *   x -0.40..-0.25 and +0.25..+0.40   -> centres +/-0.325
+     *   y  0.15..0.35                     -> centre   0.25
+     *   z  0.813..0.913                   -> face at  0.913
+     *
+     * The earlier +/-0.15 at z 1.013 was the fuselage vent between them,
+     * which is why the glows kept landing inboard of the actual engines. */
+    const SC = 0.95;
+    const PORT_X = 0.325 * SC;
+    const PORT_Y = (0.25 - 0.375) * SC;   // from the sunk hull centre
+    const PORT_Z = 0.93 * SC;
+    _portOff.set(PORT_X, PORT_Y, PORT_Z)
+            .applyQuaternion(playerShip.quaternion);
+    portL.position.set(shipX + _portOff.x, shipY + _portOff.y,
+                       shipZ + _portOff.z);
+    _portOff.set(-PORT_X, PORT_Y, PORT_Z)
+            .applyQuaternion(playerShip.quaternion);
+    portR.position.set(shipX + _portOff.x, shipY + _portOff.y,
+                       shipZ + _portOff.z);
+
+    const g = Math.min(1, glowLevel);
+    /* The ports sit only 0.285 apart, so an oversized glow makes the two
+     * sprites OVERLAP and additive blending turns the overlap into the
+     * brightest point -- a single blob on the fuselage centre, which is
+     * exactly what it looked like at 0.42. The quad has to stay narrower
+     * than the gap between the ports. */
+    const ps = 0.17 + g * 0.11;
+    portL.scale.set(ps, ps, 1);
+    portR.scale.set(ps, ps, 1);
+    portMat.opacity = 0.25 + g * 0.75;
+    portL.visible = g > 0.02;
+    portR.visible = g > 0.02;
+
+    /* The tail light sits behind BOTH ports, again via the quaternion. */
+    _portOff.set(0, PORT_Y, 1.5).applyQuaternion(playerShip.quaternion);
+
+    engineLight.intensity = g * 1.1;
+    engineLight.position.set(shipX + _portOff.x, shipY + _portOff.y,
+                             shipZ + _portOff.z);
 
     const cpz = Math.cos(shipPitch);
     const camBackX = -Math.sin(shipYaw) * cpz;
@@ -1391,7 +1395,6 @@ window.addEventListener("load", () => {
       boltLight[i].intensity = 3.4 * f;
     }
 
-    exhaust.update(dt);
     sparks.update(dt);
 
     if (hudCtx !== null && hudTexture !== null) {
@@ -1490,10 +1493,22 @@ function placeHUD(hud: Mesh, camera: PerspectiveCamera): void {
    * outside the frustum and vanished. */
   /* Up and to the LEFT: centred over the nose it sat exactly where the
    * tunnel ahead needs to be readable. */
-  hud.position.addScaledVector(_fwd, 2.4);
-  hud.position.addScaledVector(_up, 1.18);
+  /* Anchored to the TOP-LEFT CORNER of the frustum.
+   *
+   * Derived rather than dialled in: at distance d the half-width of the
+   * view is tan(fov/2)*d, so offsetting by that puts the quad's centre on
+   * the frame edge. Backing off by the quad's own half-width leaves it
+   * flush inside the corner, which is where a HUD belongs and where
+   * nudging a magic number never quite got it. */
+  const HUD_D = 2.4;
+  const halfH = 1.68;             // tan(70/2 deg) * 2.4  -- fov is VERTICAL
+  const halfW = halfH * (1280 / 720);
+  /* The quad is makeQuad(0.72, 0.36), whose arguments are HALF-extents, so
+   * pulling in by exactly those puts it flush in the corner. */
+  hud.position.addScaledVector(_fwd, HUD_D);
+  hud.position.addScaledVector(_up, halfH - 0.36);
   _right.set(1, 0, 0).applyQuaternion(camera.quaternion);
-  hud.position.addScaledVector(_right, -1.34);
+  hud.position.addScaledVector(_right, -(halfW - 0.72));
   hud.quaternion.copy(camera.quaternion);
 }
 
@@ -1568,6 +1583,7 @@ function drawHUD(ctx: Context2D, air: number, maxAir: number,
 const _bankQ = new Quaternion();
 /* Bank is a roll about the ship's OWN forward axis. */
 const _fwdAxis = new Vector3(0, 0, 1);
+const _portOff = new Vector3();
 const _fwd = new Vector3();
 const _right = new Vector3();
 const _up = new Vector3();
