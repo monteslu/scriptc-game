@@ -1,0 +1,48 @@
+{
+  "ffi_format": 1,
+  "functions": [
+    {
+      "name": "glClear",
+      "symbol": "glClear",
+      "params": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "glGetError",
+      "symbol": "glGetError",
+      "params": [],
+      "returns": "u32"
+    },
+    {
+      "name": "glViewport",
+      "symbol": "glViewport",
+      "params": [
+        "u32",
+        "u32",
+        "u32",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "sg_gl_clear_color",
+      "symbol": "sg_gl_clear_color",
+      "params": [
+        "f64",
+        "f64",
+        "f64",
+        "f64"
+      ],
+      "returns": "void"
+    }
+  ],
+  "libraries": [
+    "../vendor/linux-x86_64/libsggl.a"
+  ],
+  "system_libraries": [
+    "GLESv2",
+    "EGL"
+  ]
+}
