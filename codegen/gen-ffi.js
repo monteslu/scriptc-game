@@ -300,6 +300,40 @@ function systemLibraries(t) {
  * `brew install sdl2 pkg-config`. A dylib's position in the link line does
  * not matter (unlike archives, it resolves symbols lazily), so it rides at
  * the end of `libraries`. */
+/* ANGLE's dylibs on macOS, by FULL PATH.
+ *
+ * Apple deprecated OpenGL and never shipped GLES3, so there is no system
+ * libGLESv2/libEGL to link: every macOS CI run failed at the link step
+ * even after the Khronos headers were vendored. ANGLE is the standard
+ * answer -- it is what native-gles uses, what Chrome ships, and what
+ * translates GLES3 onto Metal.
+ *
+ * They join `libraries` rather than `system_libraries` for the same
+ * reason SDL2 does: system_libraries becomes a bare -l<name>, which only
+ * searches the toolchain's default paths, and ANGLE is unpacked into the
+ * workspace.
+ *
+ * ANGLE_LIB is set by the CI step that downloads it; a local build
+ * without it gets a clear error rather than an undefined-symbol wall. */
+function angleDylibs(target) {
+  const dir = process.env.ANGLE_LIB;
+  if (!dir) {
+    throw new Error(
+      "gen-ffi: ANGLE_LIB is not set. macOS has no system GLES3, so a GL " +
+      "program needs ANGLE: run scripts/fetch-angle.sh and export ANGLE_LIB.",
+    );
+  }
+  const out = [];
+  for (const name of ["libGLESv2.dylib", "libEGL.dylib"]) {
+    const p = join(dir, name);
+    if (!existsSync(p)) {
+      throw new Error(`gen-ffi: no ${name} in '${dir}' (scripts/fetch-angle.sh)`);
+    }
+    out.push(p);
+  }
+  return out;
+}
+
 function sdl2DylibPath() {
   let libdir;
   try {
@@ -360,12 +394,18 @@ const manifest = {
    * declaration set, which is already the reachable-from-entry union. */
   libraries: [
     ...(usesGl ? [`${vendor}/libsggl.a`] : []),
+    /* ANGLE first: libsggl calls into it, and the linker takes each
+     * archive once, left to right. */
+    ...(usesGl && target.startsWith("macos") ? angleDylibs(target) : []),
     `${vendor}/libsggfx.a`,
     `${vendor}/libwebaudio.a`,
     ...(target.startsWith("macos") ? [sdl2DylibPath()] : []),
     ...(target.startsWith("windows") ? [windowsSdl2Lib()] : []),
   ],
-  system_libraries: usesGl
+  /* GLESv2/EGL are system libraries on Linux and Android. On macOS they
+   * come from ANGLE by full path (see angleDylibs), so naming them here
+   * as well would make the linker search for a second, nonexistent copy. */
+  system_libraries: usesGl && !target.startsWith("macos")
     ? [...systemLibraries(target), "GLESv2", "EGL"]
     : systemLibraries(target),
 };
