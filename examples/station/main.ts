@@ -27,9 +27,9 @@
  */
 import {
   window, document, navigator, requestAnimationFrame, KeyboardEvent,
-  Image, Math, performance, Gamepad, AudioContext,
+  Image, Math, performance, Gamepad, AudioContext, fetch, AudioBuffer,
 } from "../../web/globals.js";
-import { pickup, gameOver } from "../../engine/sfx.js";
+import { pickup, gameOver, shoot } from "../../engine/sfx.js";
 import { ParticleSystem, BurstOptions } from "../../engine/particles.js";
 import { Context2D } from "../../web/canvas/context.js";
 
@@ -71,6 +71,16 @@ const HALL_LEN = 26;      // tiles down the corridor
 /* A level is TWO wall courses tall, so a tunnel is roomy enough to fly
  * through rather than scrape along. */
 const LEVEL_H = 2 * SCALE;
+/* Grid <-> world. Pure functions of the constants above, so they live at
+ * module scope and anything in the game can use them. */
+const CELL = 1 * SCALE;
+const GX = 9;             // cells across
+const GY = 3;             // LEVELS: what makes it Descent-like
+const GZ = 40;            // cells deep
+const MID = (GX - 1) / 2;
+function cellX(x: number): number { return (x - MID) * CELL; }
+function cellY(y: number): number { return y * LEVEL_H; }
+function cellZ(z: number): number { return -z * CELL; }
 const CEIL_Y = LEVEL_H;
 const HALL_W = 7;         // tiles across
 /* Eye height is measured from the FLOOR SURFACE, not from the origin: the
@@ -83,6 +93,7 @@ const EYE = FLOOR_TOP + 1.65;
 const BTN_START = 9;
 const BTN_A = 0;
 const BTN_L1 = 4;
+const BTN_X = 2;
 const BTN_L2 = 6;
 const BTN_R2 = 7;
 const BTN_R1 = 5;
@@ -142,6 +153,25 @@ window.addEventListener("load", () => {
   /* ---- audio ---- */
   const audio = new AudioContext();
   const hasAudio = audio.state === "running";
+
+  /* Music at 40%: loud enough to carry the level, quiet enough that the
+   * laser and the pickups still cut through it. */
+  if (hasAudio) {
+    fetch("music.mp3")
+      .then((res) => res.arrayBuffer())
+      .then((bytes) => audio.decodeAudioData(bytes))
+      .then((track) => {
+        const bus = audio.createGain();
+        bus.gain.value = 0.4;
+        bus.connect(audio.destination);
+        const src = audio.createBufferSource();
+        src.buffer = track;
+        src.loop = true;
+        src.connect(bus);
+        src.start(0);
+      })
+      .catch(() => { console.log("station: music.mp3 did not load"); });
+  }
 
   /* ---- pickup sparks ---- */
   const sparks = new ParticleSystem(scene, 260);
@@ -213,6 +243,97 @@ window.addEventListener("load", () => {
    * headlight, and it is what makes a tunnel readable while flying it. */
   const headlight = new PointLight(0xbfd8ff, 2.2, 30, 1);
   scene.add(headlight);
+
+  /* ---- ship state ----
+   *
+   * Position and VELOCITY: a flying ship carries momentum, so input
+   * accelerates rather than teleports. */
+  let shipX = 0;
+  let shipY = cellY(1) + LEVEL_H * 0.5;
+  let shipZ = -3 * CELL;
+  let velX = 0;
+  let velY = 0;
+  let velZ = 0;
+  let shipYaw = Math.PI;      // facing down the map
+  let shipPitch = 0;
+  let bank = 0;
+
+  /* The chase camera lags the ship on a spring; these are its own
+   * position so the lag survives across frames. */
+  let camX = shipX;
+  let camY = shipY + 2.4;
+  let camZ = shipZ + 7.5;
+
+  /* ---- laser bolts ----
+   *
+   * Cosmetic: they light the tunnel and they feel good, and they hit
+   * nothing. A pool of glowing bars, each with its own point light, fired
+   * in alternating pairs from the wingtips.
+   *
+   * The LIGHT is the point. An additive bar alone reads as a decal; a bar
+   * that throws colour onto the walls as it passes is what makes a dark
+   * corridor flash. Lights are the expensive part, so the pool is small
+   * and the lights are recycled with the bolts. */
+  const BOLT_COUNT = 12;
+  const boltMat = new MeshBasicMaterial(0xff4d6a);
+  boltMat.transparent = true;
+  boltMat.opacity = 0.95;
+  boltMat.blending = AdditiveBlending;
+  boltMat.depthWrite = false;
+
+  const boltMesh: Mesh[] = [];
+  const boltLight: PointLight[] = [];
+  const boltX: number[] = [];
+  const boltY: number[] = [];
+  const boltZ: number[] = [];
+  const boltVX: number[] = [];
+  const boltVY: number[] = [];
+  const boltVZ: number[] = [];
+  const boltLife: number[] = [];
+
+  for (let i = 0; i < BOLT_COUNT; i++) {
+    /* Long in Z and thin: a bolt is a streak, and the mesh is oriented to
+     * the direction it flies. */
+    const m = new Mesh(new BoxGeometry(0.16, 0.16, 2.2), boltMat);
+    m.visible = false;
+    scene.add(m);
+    boltMesh.push(m);
+
+    const l = new PointLight(0xff4d6a, 0, 16, 1);
+    scene.add(l);
+    boltLight.push(l);
+
+    boltX.push(0); boltY.push(0); boltZ.push(0);
+    boltVX.push(0); boltVY.push(0); boltVZ.push(0);
+    boltLife.push(0);
+  }
+
+  let boltCursor = 0;
+  let fireCooldown = 0;
+  /** Alternates the muzzle between wingtips, as a twin-cannon ship does. */
+  let fireSide = 1;
+
+  function fire(fx: number, fy: number, fz: number,
+                rx: number, rz: number): void {
+    const i = boltCursor;
+    boltCursor = (boltCursor + 1) % BOLT_COUNT;
+
+    const BOLT_SPEED = 62;
+    // Muzzle offset: out to a wingtip and slightly ahead of the hull.
+    const off = 0.85 * fireSide;
+    boltX[i] = shipX + rx * off + fx * 1.6;
+    boltY[i] = shipY + fy * 1.6;
+    boltZ[i] = shipZ + rz * off + fz * 1.6;
+    /* Inherit the ship's velocity so a bolt fired while strafing does not
+     * appear to fly sideways out of the barrel. */
+    boltVX[i] = fx * BOLT_SPEED + velX;
+    boltVY[i] = fy * BOLT_SPEED + velY;
+    boltVZ[i] = fz * BOLT_SPEED + velZ;
+    boltLife[i] = 0.85;
+    boltMesh[i].visible = true;
+    fireSide = -fireSide;
+    if (hasAudio) shoot(audio, 0.22);
+  }
 
   /* ---- the station ----
    *
@@ -308,9 +429,6 @@ window.addEventListener("load", () => {
    * walls were built from is the array the ship tests against, so the two
    * can never disagree.
    */
-  const GX = 9;             // cells across
-  const GY = 3;             // LEVELS: this is what makes it Descent-like
-  const GZ = 40;            // cells deep
   const open: boolean[] = [];
   for (let i = 0; i < GX * GY * GZ; i++) open.push(false);
 
@@ -338,7 +456,6 @@ window.addEventListener("load", () => {
     }
   }
 
-  const MID = (GX - 1) / 2;   // 4
 
   /* The spine: a wide main tunnel on the middle level, running the length
    * of the map. */
@@ -403,10 +520,6 @@ window.addEventListener("load", () => {
    * on each of the four sides that faces a closed cell. A cell with an
    * open neighbour gets nothing there, which is what leaves the branches
    * connected. */
-  const CELL = TILE;
-  function cellX(x: number): number { return (x - MID) * CELL; }
-  function cellY(y: number): number { return y * LEVEL_H; }
-  function cellZ(z: number): number { return -z * CELL; }
 
   for (let y = 0; y < GY; y++) {
     for (let z = 0; z < GZ; z++) {
@@ -572,25 +685,6 @@ window.addEventListener("load", () => {
   let lost = false;
   let endTime = 0;
 
-  /* ---- ship state ----
-   *
-   * Position and VELOCITY: a flying ship carries momentum, so input
-   * accelerates rather than teleports. */
-  let shipX = 0;
-  let shipY = cellY(1) + LEVEL_H * 0.5;
-  let shipZ = -3 * CELL;
-  let velX = 0;
-  let velY = 0;
-  let velZ = 0;
-  let shipYaw = Math.PI;      // facing down the map
-  let shipPitch = 0;
-  let bank = 0;
-
-  /* The chase camera lags the ship on a spring; these are its own
-   * position so the lag survives across frames. */
-  let camX = shipX;
-  let camY = shipY + 2.4;
-  let camZ = shipZ + 7.5;
 
   let touring = true;
   let restartHeld = false;
@@ -670,6 +764,7 @@ window.addEventListener("load", () => {
     /** Thrust straight up/down, independent of where the nose points:
      * this is what makes a vertical shaft flyable. */
     let lift = 0;
+    let firing = false;
     const run = down("Shift") ? 2.1 : 1;
 
     if (down("w") || down("W") || down("ArrowUp")) fwd += 1;
@@ -683,6 +778,7 @@ window.addEventListener("load", () => {
     if (down("Control") || down("f") || down("F")) lift -= 1;
     if (down("i") || down("I")) pitch += 1;
     if (down("k") || down("K")) pitch -= 1;
+    if (down("z") || down("Z") || down("Enter")) firing = true;
 
     const pads = navigator.getGamepads();
     for (let i = 0; i < pads.length; i++) {
@@ -710,6 +806,13 @@ window.addEventListener("load", () => {
         const rt = pad.buttons[BTN_R2].value;
         if (rt > 0.1) { lift += rt; touring = false; }
         if (lt > 0.1) { lift -= lt; touring = false; }
+      }
+
+      // A or X fires.
+      if (pad.buttons.length > BTN_X &&
+          (pad.buttons[BTN_A].pressed || pad.buttons[BTN_X].pressed)) {
+        firing = true;
+        touring = false;
       }
 
       /* START (or A) restarts once the run is over. A gamepad player
@@ -769,6 +872,15 @@ window.addEventListener("load", () => {
       shipYaw = Math.PI + Math.sin(elapsed * 0.25) * 0.4;
       shipPitch = Math.sin(elapsed * 0.19) * 0.12;
       velX = 0; velY = 0; velZ = 0;
+      /* The attract mode shoots too, so an unattended demo shows the
+       * weapon rather than a ship drifting silently. */
+      const cpT = Math.cos(shipPitch);
+      fireCooldown -= dt;
+      if (fireCooldown <= 0) {
+        fireCooldown = 0.22;
+        fire(Math.sin(shipYaw) * cpT, Math.sin(shipPitch),
+             Math.cos(shipYaw) * cpT, -Math.cos(shipYaw), Math.sin(shipYaw));
+      }
     } else {
       /* ---- 6DOF FLIGHT ----
        *
@@ -826,6 +938,15 @@ window.addEventListener("load", () => {
 
       // Bank into the turn: a ship that yaws without rolling reads as a cursor.
       bank += (-turn * 0.5 - bank) * Math.min(1, dt * 6);
+
+      /* Fire on a cooldown rather than per frame: at 500fps an
+       * uncooled trigger empties the whole pool in one tick and the
+       * bolts arrive as a single blob. */
+      fireCooldown -= dt;
+      if (firing && fireCooldown <= 0 && !won && !lost) {
+        fireCooldown = 0.11;
+        fire(fx, fy, fz, rx, rz);
+      }
     }
 
     /* ---- the ship, and a chase camera ----
@@ -951,6 +1072,39 @@ window.addEventListener("load", () => {
     const airFrac = air / START_AIR;
     const dim = lost ? 0.15 : 0.45 + Math.min(1, airFrac * 1.6) * 0.55;
     for (let i = 0; i < lamps.length; i++) lamps[i].intensity = 2.6 * dim;
+
+    /* ---- bolts ----
+     *
+     * They fly, they fade, they light what they pass, and they hit
+     * nothing. The light intensity follows the remaining life so a bolt
+     * dims out rather than snapping off. */
+    for (let i = 0; i < BOLT_COUNT; i++) {
+      if (boltLife[i] <= 0) continue;
+      boltLife[i] = boltLife[i] - dt;   // a[i] -= v is SC1090
+      if (boltLife[i] <= 0) {
+        boltMesh[i].visible = false;
+        boltLight[i].intensity = 0;
+        continue;
+      }
+      boltX[i] = boltX[i] + boltVX[i] * dt;
+      boltY[i] = boltY[i] + boltVY[i] * dt;
+      boltZ[i] = boltZ[i] + boltVZ[i] * dt;
+
+      boltMesh[i].position.set(boltX[i], boltY[i], boltZ[i]);
+      /* Point the streak along its own velocity, so a bolt fired while
+       * turning still looks like it is going where it is going. */
+      const bs = Math.sqrt(boltVX[i] * boltVX[i] + boltVY[i] * boltVY[i] +
+                           boltVZ[i] * boltVZ[i]);
+      if (bs > 0.001) {
+        const byaw = Math.atan2(boltVX[i], boltVZ[i]);
+        const bpit = Math.asin(Math.max(-1, Math.min(1, boltVY[i] / bs)));
+        boltMesh[i].quaternion.setFromEuler(-bpit, byaw, 0);
+      }
+
+      const f = boltLife[i] / 0.85;
+      boltLight[i].position.set(boltX[i], boltY[i], boltZ[i]);
+      boltLight[i].intensity = 3.4 * f;
+    }
 
     sparks.update(dt);
 
