@@ -32,6 +32,7 @@ import {
   POINTS as GL_POINTS, LINES, LINE_LOOP, LINE_STRIP, DYNAMIC_DRAW,
 } from "../../web/webgl/constants.js";
 import { Scene } from "../core/Scene.js";
+import { Fog, FOG_EXP2 } from "../scenes/Fog.js";
 import { PerspectiveCamera } from "../core/PerspectiveCamera.js";
 import { Object3D } from "../core/Object3D.js";
 
@@ -39,7 +40,7 @@ import { Mesh } from "../objects/Mesh.js";
 import { BufferGeometry } from "../core/BufferGeometry.js";
 import {
   Material, MeshLambertMaterial, AdditiveBlending,
-  FEAT_MAP, FEAT_VERTEX_COLORS, FEAT_LAMBERT,
+  FEAT_MAP, FEAT_VERTEX_COLORS, FEAT_LAMBERT, FEAT_FOG,
   FEAT_EMISSIVE, FEAT_INSTANCED, FEAT_POINTS, FEAT_SPRITE,
   PointsMaterial, SpriteMaterial, DoubleSide, BackSide,
 } from "../materials/Material.js";
@@ -75,6 +76,8 @@ class Program {
   uOpacity: WebGLUniformLocation | null = null;
   uMap: WebGLUniformLocation | null = null;
   uMapTransform: WebGLUniformLocation | null = null;
+  uFogColor: WebGLUniformLocation | null = null;
+  uFogParams: WebGLUniformLocation | null = null;
   uEmissive: WebGLUniformLocation | null = null;
   uAmbient: WebGLUniformLocation | null = null;
   uDirCount: WebGLUniformLocation | null = null;
@@ -114,6 +117,8 @@ export class WebGLRenderer {
   private dirLights: Light[] = [];
   private pointLights: Light[] = [];
   private ambient: Color = new Color(0x000000);
+  /** The scene's fog, captured at the start of each render. */
+  private fog: Fog | null = null;
 
   constructor(gl: WebGL2RenderingContext) {
     this.gl = gl;
@@ -239,6 +244,13 @@ export class WebGLRenderer {
       /* x = distance (0 = no cutoff), y = decay exponent. */
       s += `uniform vec2 pointLightFalloff[${MAX_POINT_LIGHTS}];\n`;
     }
+    if ((features & FEAT_FOG) !== 0) {
+      s += "uniform vec3 fogColor;\n";
+      /* x = near, y = far, z = density, w = 1 for exp2 and 0 for linear.
+       * One vec4 rather than four uniforms: fewer locations to look up
+       * and fewer calls per draw. */
+      s += "uniform vec4 fogParams;\n";
+    }
     s += "out vec4 fragColor;\n";
     s += "void main() {\n";
     s += "  vec4 base = vec4(diffuse, opacity);\n";
@@ -289,6 +301,26 @@ export class WebGLRenderer {
     }
     if ((features & FEAT_EMISSIVE) !== 0) s += "  base.rgb += emissive;\n";
 
+    if ((features & FEAT_FOG) !== 0) {
+      /* vViewPosition is -mvPosition.xyz, so its length is the distance
+       * from the CAMERA -- exactly what fog wants, and it is already
+       * being interpolated for the lighting. */
+      s += "  float fogDepth = length(vViewPosition);\n";
+      s += "  float fogFactor;\n";
+      s += "  if (fogParams.w > 0.5) {\n";
+      /* Exp2: 1 - exp(-(density*d)^2). Squaring inside the exponent is
+       * what makes it thicken faster than linear with distance. */
+      s += "    float fd = fogParams.z * fogDepth;\n";
+      s += "    fogFactor = 1.0 - exp(-fd * fd);\n";
+      s += "  } else {\n";
+      s += "    fogFactor = smoothstep(fogParams.x, fogParams.y, fogDepth);\n";
+      s += "  }\n";
+      /* Mix only the RGB. Touching alpha would make a fogged transparent
+       * surface fade out as well as fade to colour, which is wrong: fog
+       * changes what you see through a surface, not how much of it there
+       * is. */
+      s += "  base.rgb = mix(base.rgb, fogColor, clamp(fogFactor, 0.0, 1.0));\n";
+    }
     s += "  fragColor = base;\n";
     s += "}\n";
     return s;
@@ -349,6 +381,8 @@ export class WebGLRenderer {
     p.uOpacity = loc("opacity");
     p.uMap = loc("map");
     p.uMapTransform = loc("mapTransform");
+    p.uFogColor = loc("fogColor");
+    p.uFogParams = loc("fogParams");
     p.uEmissive = loc("emissive");
     p.uAmbient = loc("ambientLightColor");
     p.uDirCount = loc("dirLightCount");
@@ -526,6 +560,7 @@ export class WebGLRenderer {
   render(scene: Scene, camera: PerspectiveCamera): void {
     const gl = this.gl;
 
+    this.fog = scene.fog;
     scene.updateMatrixWorld(false);
     camera.updateMatrixWorld(false);
     this.collect(scene, camera);
@@ -600,7 +635,7 @@ export class WebGLRenderer {
 
   private renderMesh(mesh: Mesh, camera: PerspectiveCamera): void {
     const gl = this.gl;
-    const program = this.getProgram(mesh.material.featureBits());
+    const program = this.getProgram(this.featuresFor(mesh.material));
     if (program === null) return;
 
     this.prepareGeometry(mesh.geometry);
@@ -614,6 +649,15 @@ export class WebGLRenderer {
     } else {
       gl.drawArrays(TRIANGLES, 0, count);
     }
+  }
+
+  /* A material's own features, plus FOG when the scene has fog and the
+   * material accepts it. Fog cannot live in featureBits() because the same
+   * material may be drawn fogged in one scene and clear in another. */
+  private featuresFor(material: Material): number {
+    const bits = material.featureBits();
+    if (this.fog !== null && material.fog) return bits | FEAT_FOG;
+    return bits;
   }
 
   /* Everything a draw needs that does not depend on the primitive: the
@@ -653,6 +697,12 @@ export class WebGLRenderer {
 
     if ((program.features & FEAT_LAMBERT) !== 0) {
       this.bindLights(program, camera);
+    }
+    if ((program.features & FEAT_FOG) !== 0 && this.fog !== null) {
+      const f = this.fog;
+      gl.uniform3f(program.uFogColor, f.color.r, f.color.g, f.color.b);
+      gl.uniform4f(program.uFogParams, f.near, f.far, f.density,
+                   f.fogType === FOG_EXP2 ? 1 : 0);
     }
     if ((program.features & FEAT_EMISSIVE) !== 0) {
       gl.uniform3f(program.uEmissive,
@@ -699,7 +749,7 @@ export class WebGLRenderer {
   private renderInstanced(mesh: InstancedMesh, camera: PerspectiveCamera): void {
     const gl = this.gl;
     if (mesh.count === 0) return;
-    const program = this.getProgram(mesh.material.featureBits() | FEAT_INSTANCED);
+    const program = this.getProgram(this.featuresFor(mesh.material) | FEAT_INSTANCED);
     if (program === null) return;
 
     this.prepareGeometry(mesh.geometry);
@@ -838,7 +888,7 @@ export class WebGLRenderer {
   private renderSprite(sprite: Sprite, camera: PerspectiveCamera): void {
     const gl = this.gl;
     const material = sprite.material;
-    const program = this.getProgram(material.featureBits());
+    const program = this.getProgram(this.featuresFor(material));
     if (program === null) return;
 
     this.prepareGeometry(sprite.geometry);
@@ -866,7 +916,7 @@ export class WebGLRenderer {
   /* ---- lines ---- */
   private renderLine(line: Line, camera: PerspectiveCamera): void {
     const gl = this.gl;
-    const program = this.getProgram(line.material.featureBits());
+    const program = this.getProgram(this.featuresFor(line.material));
     if (program === null) return;
 
     this.prepareGeometry(line.geometry);
@@ -892,7 +942,7 @@ export class WebGLRenderer {
   private renderPoints(points: Points, camera: PerspectiveCamera): void {
     const gl = this.gl;
     const material = points.material;
-    const program = this.getProgram(material.featureBits());
+    const program = this.getProgram(this.featuresFor(material));
     if (program === null) return;
 
     this.prepareGeometry(points.geometry);

@@ -17,6 +17,7 @@
  */
 import { Object3D } from "./Object3D.js";
 import { Color } from "../math/Color.js";
+import { Fog } from "../scenes/Fog.js";
 import { Mesh } from "../objects/Mesh.js";
 import { InstancedMesh } from "../objects/InstancedMesh.js";
 import { Sprite, Line, Points } from "../objects/Sprite.js";
@@ -24,6 +25,9 @@ import { Light } from "../lights/Light.js";
 
 export class Scene extends Object3D {
   background: Color | null = null;
+  /* three's `scene.fog`. Null means no fog; the renderer keys a separate
+   * shader variant on its presence, so a scene without it pays nothing. */
+  fog: Fog | null = null;
   readonly isScene = true;
 
   /** Everything drawable, in insertion order. */

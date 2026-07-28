@@ -50,6 +50,7 @@ import {
 } from "../../three/lights/Light.js";
 import { WebGLRenderer } from "../../three/renderer/WebGLRenderer.js";
 import { SGMLoader } from "../../three/loaders/SGMLoader.js";
+import { Fog } from "../../three/scenes/Fog.js";
 import { Texture, NearestFilter } from "../../three/textures/Texture.js";
 import { Matrix4 } from "../../three/math/Matrix4.js";
 import { Quaternion } from "../../three/math/Quaternion.js";
@@ -136,6 +137,17 @@ window.addEventListener("load", () => {
   renderer.setClearColor(0x05070d);
 
   const scene = new Scene();
+  /* Fog, matched to the level's real sightlines.
+   *
+   * The spine is 120m end to end, so without fog the far wall is drawn as
+   * crisply as the one beside you and a long tunnel reads as a flat wall
+   * of geometry. Linear rather than exp2: `far` can be set to the longest
+   * sightline that should stay visible, and everything past it goes to
+   * the fog colour, which also hides the far clip plane.
+   *
+   * The colour matches the clear colour so the two blend seamlessly at
+   * the windows, where the tunnel opens onto space. */
+  scene.fog = new Fog(0x05070d, 14, 96);
   /* Near plane 0.4, not 0.05.
    *
    * A 0.05/260 range spends almost all of the depth buffer's precision in
@@ -166,13 +178,46 @@ window.addEventListener("load", () => {
   const audio = new AudioContext();
   const hasAudio = audio.state === "running";
 
+  /* The blaster, as a decoded SAMPLE rather than a synthesised beep.
+   *
+   * engine/sfx's shoot() is an oscillator sweep: fine as a placeholder,
+   * but it has no body and reads as a chirp next to real audio. This is a
+   * recorded laser (Kenney, CC0), decoded once at startup and replayed
+   * from one buffer -- a BufferSource is single-use, so each shot needs a
+   * fresh node, but they all share the decoded buffer. */
+  let laserBuf: AudioBuffer | null = null;
+  let laserBus: ReturnType<typeof makeGain> | null = null;
+  function makeGain() { return audio.createGain(); }
+
+  if (hasAudio) {
+    const lb = audio.createGain();
+    lb.gain.value = 0.5;
+    lb.connect(audio.destination);
+    laserBus = lb;
+    fetch("laser.ogg")
+      .then((res) => res.arrayBuffer())
+      .then((bytes) => audio.decodeAudioData(bytes))
+      .then((buf: AudioBuffer) => { laserBuf = buf; })
+      .catch(() => { console.log("station: laser.ogg did not load"); });
+  }
+
+  function playLaser(): void {
+    const buf = laserBuf;
+    const bus = laserBus;
+    if (buf === null || bus === null) return;
+    const src = audio.createBufferSource();
+    src.buffer = buf;
+    src.connect(bus);
+    src.start(0);
+  }
+
   /* Music at 40%: loud enough to carry the level, quiet enough that the
    * laser and the pickups still cut through it. */
   if (hasAudio) {
     fetch("music.mp3")
       .then((res) => res.arrayBuffer())
       .then((bytes) => audio.decodeAudioData(bytes))
-      .then((track) => {
+      .then((track: AudioBuffer) => {
         const bus = audio.createGain();
         bus.gain.value = 0.4;
         bus.connect(audio.destination);
@@ -213,8 +258,9 @@ window.addEventListener("load", () => {
   const hudMat = new MeshBasicMaterial(0xffffff);
   hudMat.transparent = true;
   hudMat.depthTest = false;      // always on top of the world
+  hudMat.fog = false;            // a HUD is not in the world's atmosphere
   if (hudTexture !== null) hudMat.map = hudTexture;
-  const hud = new Mesh(makeQuad(0.86, 0.43), hudMat);
+  const hud = new Mesh(makeQuad(0.72, 0.36), hudMat);
   scene.add(hud);
 
   /* ---- lighting ----
@@ -344,7 +390,10 @@ window.addEventListener("load", () => {
     boltLife[i] = 0.85;
     boltMesh[i].visible = true;
     fireSide = -fireSide;
-    if (hasAudio) shoot(audio, 0.22);
+    /* The sample if it has decoded, the synth beep until then: a shot
+     * fired in the first frames should still make a noise. */
+    if (laserBuf !== null) playLaser();
+    else if (hasAudio) shoot(audio, 0.22);
   }
 
   /* ---- the station ----
@@ -984,7 +1033,7 @@ window.addEventListener("load", () => {
       const rx = -Math.cos(shipYaw);
       const rz = Math.sin(shipYaw);
 
-      const thrust = 26 * run;
+      const thrust = 46 * run;
       velX += (fx * fwd + rx * strafe) * thrust * dt;
       /* Vertical gets its OWN, stronger thrust. At the shared value the
        * climb rate lost to drag almost immediately and the ship felt
@@ -1002,7 +1051,7 @@ window.addEventListener("load", () => {
       velZ *= damp;
 
       const sp = Math.sqrt(velX * velX + velY * velY + velZ * velZ);
-      const MAX_SPEED = 17 * run;
+      const MAX_SPEED = 30 * run;
       if (sp > MAX_SPEED) {
         const k = MAX_SPEED / sp;
         velX *= k; velY *= k; velZ *= k;
@@ -1335,9 +1384,9 @@ function placeHUD(hud: Mesh, camera: PerspectiveCamera): void {
   /* Up and to the LEFT: centred over the nose it sat exactly where the
    * tunnel ahead needs to be readable. */
   hud.position.addScaledVector(_fwd, 2.4);
-  hud.position.addScaledVector(_up, 1.02);
+  hud.position.addScaledVector(_up, 1.18);
   _right.set(1, 0, 0).applyQuaternion(camera.quaternion);
-  hud.position.addScaledVector(_right, -0.92);
+  hud.position.addScaledVector(_right, -1.34);
   hud.quaternion.copy(camera.quaternion);
 }
 

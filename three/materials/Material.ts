@@ -44,6 +44,11 @@ export const FEAT_INSTANCED = 16;
 export const FEAT_POINTS = 32;
 /** Camera-facing quad: the model-view rotation is replaced at draw time. */
 export const FEAT_SPRITE = 64;
+/* Set by the RENDERER from scene.fog, not by a material: the same material
+ * is drawn fogged in one scene and clear in another, so it cannot live in
+ * featureBits(). three has a per-material `fog` flag as well, which is
+ * honoured here -- a HUD or a skybox sets fog=false to opt out. */
+export const FEAT_FOG = 128;
 
 export class Material {
   color: Color = new Color(0xffffff);
@@ -59,6 +64,9 @@ export class Material {
   depthWrite = true;
   /** NormalBlending or AdditiveBlending; only applies when transparent. */
   blending: number = NormalBlending;
+  /* Whether scene.fog affects this material. three's default is true; a
+   * HUD quad or a skybox wants false. */
+  fog = true;
   map: Texture | null = null;
   vertexColors = false;
 
