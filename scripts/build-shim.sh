@@ -20,7 +20,16 @@ mkdir -p "$OBJ"
 # runner unpacks the official VC release, and the Android NDK sysroot has
 # no pkg-config at all, so both pass a directory instead.
 if [ -n "${SDL2_INCLUDE:-}" ]; then
+  # The shim includes <SDL2/SDL.h>, which is how distributions lay it out.
+  # The upstream VC zip and source release put the headers at the root of
+  # include/ instead, so a shim built against those would need every include
+  # rewritten. A symlinked SDL2 -> . inside the include dir satisfies both
+  # spellings and leaves the source alone.
+  if [ ! -e "$SDL2_INCLUDE/SDL2" ]; then
+    ln -sfn . "$SDL2_INCLUDE/SDL2" 2>/dev/null || true
+  fi
   SDL_CFLAGS="-I$SDL2_INCLUDE"
+  [ -d "$SDL2_INCLUDE/SDL2" ] || SDL_CFLAGS="-I$SDL2_INCLUDE -I$(dirname "$SDL2_INCLUDE")"
 elif pkg-config --exists sdl2 2>/dev/null; then
   SDL_CFLAGS="$(pkg-config --cflags sdl2)"
 else
@@ -68,14 +77,7 @@ if needs_build "$OBJ/sg_tables.o"; then
   "$CC_BIN" -O2 -std=c11 -MMD -c "$ROOT/shim/sg_tables.c" -o "$OBJ/sg_tables.o" $INC
 fi
 
-# Carries the macOS -framework requirements as Mach-O load commands; a no-op
-# TU everywhere else. See the file for why this cannot go in the manifest.
-if needs_build "$OBJ/sg_macos_frameworks.o"; then
-  "$CC_BIN" -O2 -std=c11 -MMD -c "$ROOT/shim/sg_macos_frameworks.c" \
-        -o "$OBJ/sg_macos_frameworks.o" $INC
-fi
-
-SHIM_OBJS="$OBJ/sg_tables.o $OBJ/sg_macos_frameworks.o"
+SHIM_OBJS="$OBJ/sg_tables.o"
 for cpp in sg_core sg_input sg_audio sg_audio_decode sg_skia_gen sg_skia_extra; do
   if needs_build "$OBJ/$cpp.o"; then
     "$CXX_BIN" -O2 -std=c++17 -stdlib=libc++ -fno-exceptions -MMD \

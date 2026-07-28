@@ -33,6 +33,11 @@ INCLUDES="-I$ROOT/shim -I$SRC -I$SRC/src/vendor"
 # upstream source stays byte-identical -- see the note at the top.
 INCLUDES="$INCLUDES -include string"
 
+# M_PI and friends are NOT in the C++ standard; they come from POSIX, and
+# MSVC's headers only expose them when _USE_MATH_DEFINES is set before
+# <cmath>. Harmless everywhere else, and iir_filter_node.cpp needs it.
+INCLUDES="$INCLUDES -D_USE_MATH_DEFINES"
+
 # Matches the shim's own flags: libc++ for ABI compatibility with Skia, and
 # no exceptions (the engine uses none -- verified, zero try/throw/catch).
 CXXFLAGS="-O2 -std=c++17 -stdlib=libc++ -fno-exceptions -fvisibility=hidden -DNDEBUG"

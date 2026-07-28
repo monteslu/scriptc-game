@@ -10,6 +10,29 @@
  *   - nothing unwinds; every fallible call returns a status
  *   - strings come back through the mailbox, never as a return value
  */
+/* macOS frameworks, declared where they cannot be dropped.
+ *
+ * Skia's font stack (fontmgr_mac_ct) references CoreText and
+ * CoreFoundation, which link as `-framework Foo`. scriptc's FFI manifest
+ * cannot say that: system_libraries is validated against
+ * /^[A-Za-z0-9_+.-]+$/ and every entry becomes -l<name>.
+ *
+ * Mach-O objects can carry their own requirements as LC_LINKER_OPTION load
+ * commands, which the linker reads out of the archive. The catch is that a
+ * member with no referenced symbols is never pulled in, and its load
+ * commands go with it -- which is exactly what happened when these lived in
+ * their own TU. sg_init is in THIS file and every program calls it, so the
+ * member is always linked and the directives always apply.
+ *
+ * Same mechanism as Rust's #[link(kind = "framework")]. */
+#if defined(__APPLE__)
+__asm__(".linker_option \"-framework\", \"CoreText\"");
+__asm__(".linker_option \"-framework\", \"CoreGraphics\"");
+__asm__(".linker_option \"-framework\", \"CoreFoundation\"");
+__asm__(".linker_option \"-framework\", \"CoreServices\"");
+__asm__(".linker_option \"-framework\", \"AppKit\"");
+#endif
+
 #include <SDL2/SDL.h>
 #include <stdint.h>
 #include <stdio.h>
