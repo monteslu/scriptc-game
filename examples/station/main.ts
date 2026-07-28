@@ -761,23 +761,32 @@ window.addEventListener("load", () => {
     return isOpen(gx, gy, gz);
   }
 
-  const SHIP_R = 1.5;
+  /* Clearance, in metres, kept between the hull and a wall.
+   *
+   * 1.5 was catastrophic: a 1.5m sphere in a 3m cell spans TWO cells on
+   * every axis at almost any position, so if either was closed ALL motion
+   * stopped -- the ship froze solid anywhere near a wall while its
+   * velocity kept reading 7 m/s. Testing the CENTRE plus a small skin
+   * lets it fly the tunnel and still not clip through. */
+  const SHIP_R = 0.55;
   function flyable(x: number, y: number, z: number): boolean {
-    // Grid coordinates of the extremes of the ship's bounding sphere.
-    const gx0 = Math.floor((x - SHIP_R) / CELL + MID + 0.5);
-    const gx1 = Math.floor((x + SHIP_R) / CELL + MID + 0.5);
-    const gy0 = Math.floor((y - SHIP_R) / LEVEL_H);
-    const gy1 = Math.floor((y + SHIP_R) / LEVEL_H);
-    const gz0 = Math.floor((-z - SHIP_R) / CELL + 0.5);
-    const gz1 = Math.floor((-z + SHIP_R) / CELL + 0.5);
-    for (let gy = gy0; gy <= gy1; gy++) {
-      for (let gz = gz0; gz <= gz1; gz++) {
-        for (let gx = gx0; gx <= gx1; gx++) {
-          if (!isOpen(gx, gy, gz)) return false;
-        }
-      }
-    }
+    /* The centre cell must be open, and each axis is probed one skin
+     * width out. That is six lookups instead of up to twenty-seven, and
+     * it cannot wedge on a diagonal the way a full box test does. */
+    if (!cellOpenAt(x, y, z)) return false;
+    if (!cellOpenAt(x - SHIP_R, y, z)) return false;
+    if (!cellOpenAt(x + SHIP_R, y, z)) return false;
+    if (!cellOpenAt(x, y - SHIP_R, z)) return false;
+    if (!cellOpenAt(x, y + SHIP_R, z)) return false;
+    if (!cellOpenAt(x, y, z - SHIP_R)) return false;
+    if (!cellOpenAt(x, y, z + SHIP_R)) return false;
     return true;
+  }
+
+  function cellOpenAt(x: number, y: number, z: number): boolean {
+    return isOpen(Math.floor(x / CELL + MID + 0.5),
+                  Math.floor(y / LEVEL_H),
+                  Math.floor(-z / CELL + 0.5));
   }
 
   const keys: string[] = [];
@@ -958,7 +967,7 @@ window.addEventListener("load", () => {
        * only thing that stops you. Directly setting a position from input
        * is what makes a flying game feel like a cursor.
        */
-      shipYaw += turn * dt * 1.9;
+      shipYaw += turn * dt * 2.4;   // quicker: a slow turn feels like drag
       shipPitch += pitch * dt * 1.5;
       // Stop short of straight up/down: past vertical the roll flips.
       const maxPitch = 1.25;
@@ -1009,8 +1018,25 @@ window.addEventListener("load", () => {
       const nz = shipZ + velZ * dt;
       if (flyable(shipX, shipY, nz)) shipZ = nz; else velZ = -velZ * 0.25;
 
-      // Bank into the turn: a ship that yaws without rolling reads as a cursor.
-      bank += (-turn * 0.5 - bank) * Math.min(1, dt * 6);
+      /* A HINT of bank, not a barrel roll.
+       *
+       * 0.5 rad is 29 degrees, held for as long as the stick is held: the
+       * ship ended up flying visibly on its side, which reads as the
+       * controls fighting you rather than as a turn. 0.16 rad (9 degrees)
+       * is enough to feel the turn without the hull ever looking wrong,
+       * and it settles faster so it tracks the stick instead of lagging
+       * behind it.
+       *
+       * SIGN: you lean INTO a turn, dropping the inside wing. The model is
+       * yawed by PI so its nose points -Z, which means a roll about the
+       * WORLD +Z axis is a roll about the ship's BACKWARD axis -- the old
+       * sign banked it away from the turn. Positive here leans in. */
+      const speedNow = Math.sqrt(velX * velX + velY * velY + velZ * velZ);
+      const speedF = Math.min(1, speedNow / 14);
+      /* Up to 21 degrees at speed, almost nothing at a crawl. A fixed
+       * angle looks wrong at both ends: dramatic when nudging into a
+       * corner, and too flat when carving a fast turn. */
+      bank += (turn * 0.36 * speedF - bank) * Math.min(1, dt * 9);
 
       /* Fire on a cooldown rather than per frame: at 500fps an
        * uncooled trigger empties the whole pool in one tick and the

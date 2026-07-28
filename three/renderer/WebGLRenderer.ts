@@ -492,7 +492,33 @@ export class WebGLRenderer {
       } else if (light.lightType === LIGHT_DIRECTIONAL) {
         if (this.dirLights.length < MAX_DIR_LIGHTS) this.dirLights.push(light);
       } else if (light.lightType === LIGHT_POINT) {
-        if (this.pointLights.length < MAX_POINT_LIGHTS) this.pointLights.push(light);
+        /* Take the point lights that MATTER, not the first eight added.
+         *
+         * First-come meant a scene with more than MAX_POINT_LIGHTS gave
+         * every slot to whatever was constructed earliest -- static lamps
+         * -- so transient lights (a muzzle flash, a laser bolt) usually
+         * got nothing and lit only occasionally, seemingly at random.
+         *
+         * Ranking by intensity/distance-to-camera keeps the lights the
+         * viewer can actually see. Zero-intensity lights are skipped
+         * outright, which is how a pool of recycled bolt lights stays
+         * cheap: only the live ones compete. */
+        if (light.intensity <= 0) continue;
+        if (this.pointLights.length < MAX_POINT_LIGHTS) {
+          this.pointLights.push(light);
+        } else {
+          _v.setFromMatrixPosition(light.matrixWorld);
+          const score = lightScore(light, _v, camera);
+          let worst = 0;
+          let worstScore = 1e30;
+          for (let k = 0; k < this.pointLights.length; k++) {
+            const c = this.pointLights[k];
+            _v.setFromMatrixPosition(c.matrixWorld);
+            const s = lightScore(c, _v, camera);
+            if (s < worstScore) { worstScore = s; worst = k; }
+          }
+          if (score > worstScore) this.pointLights[worst] = light;
+        }
       }
     }
   }
@@ -937,3 +963,21 @@ export class WebGLRenderer {
 }
 
 const _v = new Vector3();
+
+/* How much a point light matters from here: brighter and nearer wins.
+ *
+ * Ranked on SQUARED distance, which orders identically to the real
+ * distance and avoids a sqrt per light per frame. The +1 keeps a light
+ * sitting on the camera from dividing by zero.
+ *
+ * This exists because MAX_POINT_LIGHTS is 8 and a scene can hold far more:
+ * taking the first eight ADDED gave every slot to whatever was constructed
+ * earliest (static lamps), so transient lights -- a muzzle flash, a laser
+ * bolt -- usually got nothing and appeared to light only at random. */
+function lightScore(light: Light, pos: Vector3,
+                    camera: PerspectiveCamera): number {
+  const dx = pos.x - camera.position.x;
+  const dy = pos.y - camera.position.y;
+  const dz = pos.z - camera.position.z;
+  return light.intensity / (1 + dx * dx + dy * dy + dz * dz);
+}
