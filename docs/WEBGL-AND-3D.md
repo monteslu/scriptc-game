@@ -343,6 +343,43 @@ intensity in the hundreds to be visible, and anything near it then blows
 out. `examples/orbits` uses `decay = 1`, which is exactly what the parameter
 is exposed for.
 
+### MeshStandardMaterial, lite
+
+`roughness` and `metalness`, three's names and meanings. NOT
+Cook-Torrance: a Lambert diffuse term plus a Blinn-Phong specular lobe
+whose tightness comes from roughness, with metalness tinting the highlight
+by the albedo and cutting the diffuse. No IBL, no Fresnel, not
+energy-conserving -- the plan scopes it as "albedo/metal-rough, no IBL in
+v0" and it will not match three pixel for pixel. What it gives that
+Lambert cannot is a surface that reads as metal or plastic from two
+numbers.
+
+### HemisphereLight
+
+Sky colour from above, ground colour from below, blended by the surface
+normal against WORLD up. The cheapest believable ambient: a flat
+AmbientLight makes every face equally bright regardless of orientation, so
+a scene lit only by it looks pasted-on.
+
+World up specifically, passed into view space as a uniform. A first
+version used the view-space normal's y, which rotates with the camera --
+and on a symmetric object the two colours then summed to the same image
+however they were assigned.
+
+### WebGLRenderTarget
+
+`renderer.setRenderTarget(rt)` / `setRenderTarget(null)`, with
+`rt.texture` usable anywhere a Texture is. Colour texture plus a depth
+renderbuffer; the depth attachment is not optional in practice, since
+without it a 3D scene drawn into the target has no depth test and the
+result looks like a shattered mesh.
+
+`setRenderTarget(null)` restores the screen VIEWPORT as well as the
+framebuffer -- forgetting that is the classic bug here, because a 512x512
+target otherwise leaves the next screen frame drawing into a corner.
+
+MSAA (`samples`) and stencil attachments are not implemented.
+
 ### Raycaster
 
 `setFromCamera(ndcX, ndcY, camera)`, `intersectObject`, `intersectObjects`,
@@ -414,25 +451,44 @@ shader bug.
 Out of scope, deliberately: materials, cameras, lights, skins and
 animations. A game builds its scene in code; this is a geometry pipe.
 
-## Benchmark: spinfield
+## Benchmark: spinfield, head to head with three.js
 
-Identical per-cube math both ways, so the only difference measured is how
-transforms reach the GPU. `SG_NO_VSYNC=1 ./build/spinfield`:
+`examples/spinfield` and `test/three-bench/reference.mjs` render the SAME
+scene -- same cube count, geometry, material class, light rig, camera,
+per-cube math, fixed timestep and warmup -- one through threeTS-lite
+natively, the other through real three.js on Node + webgl-node. Both report
+CPU submit time in milliseconds per frame.
 
-```
-  instanced n=  250  mean    0.121 ms   p95    0.146   8268 fps
-  per-mesh  n=  250  mean    0.700 ms   p95    0.760   1429 fps
-  instanced n= 1000  mean    0.604 ms   p95    0.655   1655 fps
-  per-mesh  n= 1000  mean    3.465 ms   p95    3.686    289 fps
-  instanced n= 2500  mean    2.199 ms   p95    2.787    455 fps
-  per-mesh  n= 2500  mean   12.872 ms   p95   18.587     78 fps
-  instanced n=10000  mean    9.147 ms   p95   13.137    109 fps
-  per-mesh  n=10000  mean  125.158 ms   p95  146.503      8 fps
-```
+| path | n | threeTS-lite | three.js | ratio |
+| --- | ---: | ---: | ---: | ---: |
+| instanced | 250 | 0.172 | 0.232 | **0.74x** |
+| per-mesh | 250 | 0.752 | 1.164 | **0.65x** |
+| instanced | 1000 | 0.641 | 0.600 | 1.07x |
+| per-mesh | 1000 | 4.077 | 6.322 | **0.64x** |
+| instanced | 2500 | 2.294 | 1.772 | 1.29x |
+| per-mesh | 2500 | 13.750 | 18.380 | **0.75x** |
+| instanced | 10000 | 9.298 | 7.084 | 1.31x |
+| per-mesh | 10000 | 125.794 | 75.343 | 1.67x |
 
-Instancing wins at every count, by 5.8x at 250 and 13.7x at 10000. The
-per-mesh path is not a strawman: it is the same renderer, the same
-geometry and the same material, drawn one object at a time.
+Faster on five of eight, slower on three. The pattern is consistent and
+worth stating plainly rather than cherry-picking: this tier wins at low
+object counts, where its thinner per-draw path costs less than three's
+material and uniform machinery, and LOSES at high counts, where three's
+render-list sorting and state caching pay for themselves. The worst case
+is 10000 per-mesh at 1.67x slower -- three batches state changes across a
+long draw list far better than a straight loop does.
+
+Both sides measure CPU SUBMIT TIME, deliberately without `glFinish`. An
+earlier attempt called finish() to "measure the real work" and produced an
+identical 33.2ms for every configuration from 250 to 10000 cubes: the
+native game presents every frame, finish blocks until the presented frame
+retires, so it was timing the display refresh. The reference renders
+offscreen and never presents, so a finish there would block on nothing
+comparable. Submit time is the quantity both stacks can report honestly.
+
+That investigation also found a real bug: `SDL_GL_SetSwapInterval` was
+never called, so `SG_NO_VSYNC` only ever affected the 2D renderer's
+`PRESENTVSYNC` flag and a 3D game was paced by the driver default.
 
 **D (post-v0):** shadow maps (directional first), fog, skinning + 
 animation clips, IBL/environment, post-processing chain, GLTFLoader at

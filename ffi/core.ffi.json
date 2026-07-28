@@ -1899,6 +1899,20 @@
       "returns": "void"
     },
     {
+      "name": "sg_gl_tex_image_empty",
+      "symbol": "sg_gl_tex_image_empty",
+      "params": [
+        "u32",
+        "i32",
+        "i32",
+        "i32",
+        "i32",
+        "u32",
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
       "name": "glCopyTexImage2D",
       "symbol": "glCopyTexImage2D",
       "params": [

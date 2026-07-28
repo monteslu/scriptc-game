@@ -69,6 +69,7 @@ static SDL_Renderer* g_renderer;
 static SDL_Texture*  g_texture;
 static skiac_surface* g_surface;
 static uint32_t g_width, g_height;
+static bool g_gl_novsync = false;
 static uint8_t* g_pixels;        /* shim-owned RGBA staging buffer */
 static size_t   g_pixels_size;
 
@@ -82,6 +83,10 @@ extern "C" int32_t sg_init(uint32_t w, uint32_t h, uint32_t flags) {
     mail_set(SDL_GetError());
     return SG_ESDL;
   }
+  /* Remembered for the GL context, which is created later and paces its
+   * own presents. */
+  g_gl_novsync = (flags & 2u) != 0;
+
   /* flags bit 0: resizable. Logical size stays w*h regardless. */
   Uint32 winflags = SDL_WINDOW_ALLOW_HIGHDPI;
   if (flags & 1u) winflags |= SDL_WINDOW_RESIZABLE;
@@ -232,6 +237,18 @@ extern "C" int32_t sg_gl_init_window(int32_t unused) {
   g_gl_context = SDL_GL_CreateContext(g_window);
   if (!g_gl_context) { mail_set(SDL_GetError()); return SG_ESDL; }
   SDL_GL_MakeCurrent(g_window, g_gl_context);
+
+  /* GL PRESENT PACING IS SEPARATE from the 2D renderer's PRESENTVSYNC.
+   *
+   * A GL game swaps with SDL_GL_SwapWindow, which honours the GL swap
+   * INTERVAL and knows nothing about the SDL_Renderer flags -- so
+   * SG_NO_VSYNC silently did nothing for 3D, and the benchmark measured
+   * the display refresh instead of the work: every configuration reported
+   * exactly 33.2ms (30fps) whether it drew 250 cubes or 10000.
+   *
+   * 0 = present immediately. Setting it can fail on drivers that force
+   * composition, so the result is not treated as fatal. */
+  SDL_GL_SetSwapInterval(g_gl_novsync ? 0 : 1);
   return SG_OK;
 }
 

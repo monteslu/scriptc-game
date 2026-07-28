@@ -26,6 +26,7 @@ declare function glClear(a0: number): void;
 declare function glClearStencil(a0: number): void;
 declare function glColorMask(a0: number, a1: number, a2: number, a3: number): void;
 declare function glCompileShader(a0: number): void;
+declare function sg_gl_tex_image_empty(a0: number, a1: number, a2: number, a3: number, a4: number, a5: number, a6: number): number;
 declare function glCopyTexImage2D(a0: number, a1: number, a2: number, a3: number, a4: number, a5: number, a6: number, a7: number): void;
 declare function glCopyTexSubImage2D(a0: number, a1: number, a2: number, a3: number, a4: number, a5: number, a6: number, a7: number): void;
 declare function glCreateProgram(): number;
@@ -197,6 +198,12 @@ export function Clear(a0: number): void { glClear(a0); }
 export function ClearStencil(a0: number): void { glClearStencil(a0); }
 export function ColorMask(a0: number, a1: number, a2: number, a3: number): void { glColorMask(a0, a1, a2, a3); }
 export function CompileShader(a0: number): void { glCompileShader(a0); }
+/** Allocate texture storage with no pixels: a render target's colour attachment. */
+export function texImageEmpty(target: number, level: number, internalformat: number,
+                              width: number, height: number,
+                              format: number, type: number): number {
+  return sg_gl_tex_image_empty(target, level, internalformat, width, height, format, type);
+}
 export function CopyTexImage2D(a0: number, a1: number, a2: number, a3: number, a4: number, a5: number, a6: number, a7: number): void { glCopyTexImage2D(a0, a1, a2, a3, a4, a5, a6, a7); }
 export function CopyTexSubImage2D(a0: number, a1: number, a2: number, a3: number, a4: number, a5: number, a6: number, a7: number): void { glCopyTexSubImage2D(a0, a1, a2, a3, a4, a5, a6, a7); }
 export function CreateProgram(): number { return glCreateProgram(); }

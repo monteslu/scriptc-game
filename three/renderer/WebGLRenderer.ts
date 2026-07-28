@@ -29,10 +29,13 @@ import {
   RGBA, UNSIGNED_BYTE, TEXTURE_MIN_FILTER, TEXTURE_MAG_FILTER, LINEAR,
   CLAMP_TO_EDGE, REPEAT, TEXTURE_WRAP_S, TEXTURE_WRAP_T, COMPILE_STATUS,
   LINK_STATUS, BLEND, SRC_ALPHA, ONE_MINUS_SRC_ALPHA, ONE, LEQUAL, DEPTH_FUNC,
+  FRAMEBUFFER, COLOR_ATTACHMENT0, DEPTH_ATTACHMENT, RENDERBUFFER,
+  DEPTH_COMPONENT16,
   POINTS as GL_POINTS, LINES, LINE_LOOP, LINE_STRIP, DYNAMIC_DRAW,
 } from "../../web/webgl/constants.js";
 import { Scene } from "../core/Scene.js";
 import { Fog, FOG_EXP2 } from "../scenes/Fog.js";
+import { WebGLRenderTarget } from "../textures/WebGLRenderTarget.js";
 import { PerspectiveCamera } from "../core/PerspectiveCamera.js";
 import { Object3D } from "../core/Object3D.js";
 
@@ -41,14 +44,15 @@ import { BufferGeometry } from "../core/BufferGeometry.js";
 import {
   Material, MeshLambertMaterial, AdditiveBlending,
   FEAT_MAP, FEAT_VERTEX_COLORS, FEAT_LAMBERT, FEAT_FOG,
-  FEAT_EMISSIVE, FEAT_INSTANCED, FEAT_POINTS, FEAT_SPRITE,
+  FEAT_EMISSIVE, FEAT_INSTANCED, FEAT_POINTS, FEAT_SPRITE, FEAT_STANDARD,
+  MeshStandardMaterial,
   PointsMaterial, SpriteMaterial, DoubleSide, BackSide,
 } from "../materials/Material.js";
 import { InstancedMesh } from "../objects/InstancedMesh.js";
 import { Sprite, Line, LineSegments, LineLoop, Points } from "../objects/Sprite.js";
 import {
-  Light, AmbientLight, DirectionalLight, PointLight,
-  LIGHT_AMBIENT, LIGHT_DIRECTIONAL, LIGHT_POINT,
+  Light, AmbientLight, DirectionalLight, PointLight, HemisphereLight,
+  LIGHT_AMBIENT, LIGHT_DIRECTIONAL, LIGHT_POINT, LIGHT_HEMISPHERE,
 } from "../lights/Light.js";
 import { Texture } from "../textures/Texture.js";
 import { Matrix4 } from "../math/Matrix4.js";
@@ -79,7 +83,12 @@ class Program {
   uFogColor: WebGLUniformLocation | null = null;
   uFogParams: WebGLUniformLocation | null = null;
   uEmissive: WebGLUniformLocation | null = null;
+  uRoughness: WebGLUniformLocation | null = null;
+  uMetalness: WebGLUniformLocation | null = null;
   uAmbient: WebGLUniformLocation | null = null;
+  uHemiSky: WebGLUniformLocation | null = null;
+  uHemiGround: WebGLUniformLocation | null = null;
+  uHemiUp: WebGLUniformLocation | null = null;
   uDirCount: WebGLUniformLocation | null = null;
   uDirDirections: WebGLUniformLocation | null = null;
   uDirColors: WebGLUniformLocation | null = null;
@@ -117,8 +126,14 @@ export class WebGLRenderer {
   private dirLights: Light[] = [];
   private pointLights: Light[] = [];
   private ambient: Color = new Color(0x000000);
+  /* Summed hemisphere contribution. Several hemisphere lights add, the
+   * same way several ambients do. */
+  private hemiSky: Color = new Color(0x000000);
+  private hemiGround: Color = new Color(0x000000);
   /** The scene's fog, captured at the start of each render. */
   private fog: Fog | null = null;
+  /** The target currently bound, or null for the screen. */
+  private renderTarget: WebGLRenderTarget | null = null;
 
   constructor(gl: WebGL2RenderingContext) {
     this.gl = gl;
@@ -131,6 +146,62 @@ export class WebGLRenderer {
     this.width = width;
     this.height = height;
     this.gl.viewport(0, 0, width, height);
+  }
+
+  /* Direct subsequent renders into a texture, or back to the screen.
+   *
+   * three's signature. Passing null restores the default framebuffer AND
+   * the screen viewport -- forgetting the viewport is the classic bug
+   * here, because a 512x512 target leaves the viewport at 512x512 and the
+   * next screen frame draws into a corner. */
+  setRenderTarget(target: WebGLRenderTarget | null): void {
+    const gl = this.gl;
+    if (target === null) {
+      gl.bindFramebuffer(FRAMEBUFFER, null);
+      gl.viewport(0, 0, this.width, this.height);
+      this.renderTarget = null;
+      return;
+    }
+
+    if (target.glFramebuffer === null) this.setupRenderTarget(target);
+    gl.bindFramebuffer(FRAMEBUFFER, target.glFramebuffer);
+    gl.viewport(0, 0, target.width, target.height);
+    this.renderTarget = target;
+  }
+
+  /* Allocate the framebuffer, its colour texture and its depth buffer.
+   *
+   * The depth attachment matters: without it a 3D scene drawn into the
+   * target has NO depth test, so triangles land in submission order and
+   * the result looks like a shattered mesh rather than a view. */
+  private setupRenderTarget(target: WebGLRenderTarget): void {
+    const gl = this.gl;
+    const tex = target.texture;
+
+    if (tex.glTexture === null) {
+      tex.glTexture = gl.createTexture();
+      gl.bindTexture(TEXTURE_2D, tex.glTexture);
+      gl.texImage2DEmpty(TEXTURE_2D, 0, RGBA, target.width, target.height,
+                         RGBA, UNSIGNED_BYTE);
+      gl.texParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, LINEAR);
+      gl.texParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, LINEAR);
+      gl.texParameteri(TEXTURE_2D, TEXTURE_WRAP_S, CLAMP_TO_EDGE);
+      gl.texParameteri(TEXTURE_2D, TEXTURE_WRAP_T, CLAMP_TO_EDGE);
+    }
+
+    target.glFramebuffer = gl.createFramebuffer();
+    gl.bindFramebuffer(FRAMEBUFFER, target.glFramebuffer);
+    gl.framebufferTexture2D(FRAMEBUFFER, COLOR_ATTACHMENT0, TEXTURE_2D,
+                            tex.glTexture, 0);
+
+    if (target.depthBuffer) {
+      target.glDepthBuffer = gl.createRenderbuffer();
+      gl.bindRenderbuffer(RENDERBUFFER, target.glDepthBuffer);
+      gl.renderbufferStorage(RENDERBUFFER, DEPTH_COMPONENT16,
+                             target.width, target.height);
+      gl.framebufferRenderbuffer(FRAMEBUFFER, DEPTH_ATTACHMENT, RENDERBUFFER,
+                                 target.glDepthBuffer);
+    }
   }
 
   setClearColor(color: number): void {
@@ -235,6 +306,14 @@ export class WebGLRenderer {
     if ((features & FEAT_EMISSIVE) !== 0) s += "uniform vec3 emissive;\n";
     if ((features & FEAT_LAMBERT) !== 0) {
       s += "uniform vec3 ambientLightColor;\n";
+      /* Hemisphere: sky above, ground below, blended by the normal's Y.
+       * One vec3 pair and one mix -- the cheapest believable ambient. */
+      s += "uniform vec3 hemiSky;\n";
+      s += "uniform vec3 hemiGround;\n";
+      /* WORLD up, expressed in VIEW space. Hemisphere lighting is a
+       * world-space effect: which way is "up" cannot depend on where the
+       * camera is looking. */
+      s += "uniform vec3 hemiUp;\n";
       s += `uniform int dirLightCount;\n`;
       s += `uniform vec3 dirLightDirections[${MAX_DIR_LIGHTS}];\n`;
       s += `uniform vec3 dirLightColors[${MAX_DIR_LIGHTS}];\n`;
@@ -243,6 +322,10 @@ export class WebGLRenderer {
       s += `uniform vec3 pointLightColors[${MAX_POINT_LIGHTS}];\n`;
       /* x = distance (0 = no cutoff), y = decay exponent. */
       s += `uniform vec2 pointLightFalloff[${MAX_POINT_LIGHTS}];\n`;
+    }
+    if ((features & FEAT_STANDARD) !== 0) {
+      s += "uniform float roughness;\n";
+      s += "uniform float metalness;\n";
     }
     if ((features & FEAT_FOG) !== 0) {
       s += "uniform vec3 fogColor;\n";
@@ -268,6 +351,13 @@ export class WebGLRenderer {
     if ((features & FEAT_LAMBERT) !== 0) {
       s += "  vec3 n = normalize(vNormal);\n";
       s += "  vec3 lit = ambientLightColor;\n";
+      /* dot against world-up-in-view-space, NOT the view normal's y.
+       *
+       * Using n.y made the term rotate with the camera, and on a
+       * symmetric object the two colours summed to the same image however
+       * they were assigned -- swapping sky and ground changed nothing,
+       * which is exactly what the test caught. */
+      s += "  lit += mix(hemiGround, hemiSky, dot(n, hemiUp) * 0.5 + 0.5);\n";
       s += `  for (int i = 0; i < ${MAX_DIR_LIGHTS}; i++) {\n`;
       s += "    if (i >= dirLightCount) break;\n";
       s += "    lit += dirLightColors[i] * max(dot(n, dirLightDirections[i]), 0.0);\n";
@@ -297,7 +387,47 @@ export class WebGLRenderer {
       s += "    }\n";
       s += "    lit += pointLightColors[i] * max(dot(n, toLight / dist), 0.0) * atten;\n";
       s += "  }\n";
-      s += "  base.rgb *= lit;\n";
+
+      if ((features & FEAT_STANDARD) !== 0) {
+      /* Blinn-Phong, driven by roughness.
+       *
+       * Not Cook-Torrance: no IBL, no Fresnel, not energy-conserving. The
+       * exponent is derived from roughness so the two numbers behave the
+       * way a three user expects -- low roughness gives a tight bright
+       * highlight, high roughness spreads it into nothing.
+       *
+       * metalness tints the highlight with the albedo, which is the whole
+       * visual difference between metal and plastic; a dielectric keeps a
+       * white one. */
+      s += "  vec3 viewDir = normalize(vViewPosition);\n";
+      s += "  float shininess = mix(128.0, 2.0, clamp(roughness, 0.0, 1.0));\n";
+      s += "  vec3 specTint = mix(vec3(1.0), base.rgb, clamp(metalness, 0.0, 1.0));\n";
+      s += "  vec3 spec = vec3(0.0);\n";
+      s += `  for (int i = 0; i < ${MAX_DIR_LIGHTS}; i++) {\n`;
+      s += "    if (i >= dirLightCount) break;\n";
+      s += "    vec3 h = normalize(dirLightDirections[i] + viewDir);\n";
+      s += "    spec += dirLightColors[i] * pow(max(dot(n, h), 0.0), shininess);\n";
+      s += "  }\n";
+      s += `  for (int i = 0; i < ${MAX_POINT_LIGHTS}; i++) {\n`;
+      s += "    if (i >= pointLightCount) break;\n";
+      s += "    vec3 toL = pointLightPositions[i] + vViewPosition;\n";
+      s += "    float d = length(toL);\n";
+      s += "    vec3 h = normalize(toL / d + viewDir);\n";
+      s += "    float att = 1.0 / max(pow(max(d, 0.01), pointLightFalloff[i].y), 0.0001);\n";
+      s += "    if (pointLightFalloff[i].x > 0.0) {\n";
+      s += "      float w = clamp(1.0 - pow(d / pointLightFalloff[i].x, 4.0), 0.0, 1.0);\n";
+      s += "      att *= w * w;\n";
+      s += "    }\n";
+      s += "    spec += pointLightColors[i] * pow(max(dot(n, h), 0.0), shininess) * att;\n";
+      s += "  }\n";
+      /* A metal has almost no diffuse: its light comes back as
+       * reflection. Scaling the diffuse down by metalness is the cheapest
+       * approximation of that. */
+      s += "  base.rgb *= mix(lit, lit * 0.25, clamp(metalness, 0.0, 1.0));\n";
+      s += "  base.rgb += spec * specTint * (1.0 - clamp(roughness, 0.0, 1.0) * 0.85);\n";
+      } else {
+        s += "  base.rgb *= lit;\n";
+      }
     }
     if ((features & FEAT_EMISSIVE) !== 0) s += "  base.rgb += emissive;\n";
 
@@ -384,7 +514,12 @@ export class WebGLRenderer {
     p.uFogColor = loc("fogColor");
     p.uFogParams = loc("fogParams");
     p.uEmissive = loc("emissive");
+    p.uRoughness = loc("roughness");
+    p.uMetalness = loc("metalness");
     p.uAmbient = loc("ambientLightColor");
+    p.uHemiSky = loc("hemiSky");
+    p.uHemiGround = loc("hemiGround");
+    p.uHemiUp = loc("hemiUp");
     p.uDirCount = loc("dirLightCount");
     p.uDirDirections = loc("dirLightDirections[0]");
     p.uDirColors = loc("dirLightColors[0]");
@@ -477,6 +612,9 @@ export class WebGLRenderer {
       tex.needsUpdate = true;
     }
 
+    /* A render target's texture is drawn INTO, so there is nothing to
+     * upload. Its storage was allocated by setupRenderTarget. */
+    if (tex.isRenderTarget) return;
     if (!tex.needsUpdate) return;
     gl.bindTexture(TEXTURE_2D, tex.glTexture);
     if (tex.image !== null && tex.image.complete) {
@@ -501,6 +639,8 @@ export class WebGLRenderer {
     this.dirLights.splice(0, this.dirLights.length);
     this.pointLights.splice(0, this.pointLights.length);
     this.ambient.setRGB(0, 0, 0);
+    this.hemiSky.setRGB(0, 0, 0);
+    this.hemiGround.setRGB(0, 0, 0);
 
     /* Walked by hand rather than through traverseVisible + a downcast:
      * narrowing an Object3D to a Mesh is SC1090 ("values where Mesh is
@@ -523,6 +663,15 @@ export class WebGLRenderer {
         amb.r = amb.r + light.color.r * light.intensity;
         amb.g = amb.g + light.color.g * light.intensity;
         amb.b = amb.b + light.color.b * light.intensity;
+      } else if (light.lightType === LIGHT_HEMISPHERE) {
+        const s = this.hemiSky;
+        s.r = s.r + light.color.r * light.intensity;
+        s.g = s.g + light.color.g * light.intensity;
+        s.b = s.b + light.color.b * light.intensity;
+        const gc = this.hemiGround;
+        gc.r = gc.r + light.groundColor.r * light.intensity;
+        gc.g = gc.g + light.groundColor.g * light.intensity;
+        gc.b = gc.b + light.groundColor.b * light.intensity;
       } else if (light.lightType === LIGHT_DIRECTIONAL) {
         if (this.dirLights.length < MAX_DIR_LIGHTS) this.dirLights.push(light);
       } else if (light.lightType === LIGHT_POINT) {
@@ -703,6 +852,11 @@ export class WebGLRenderer {
       gl.uniform3f(program.uFogColor, f.color.r, f.color.g, f.color.b);
       gl.uniform4f(program.uFogParams, f.near, f.far, f.density,
                    f.fogType === FOG_EXP2 ? 1 : 0);
+    }
+    if ((program.features & FEAT_STANDARD) !== 0 &&
+        material instanceof MeshStandardMaterial) {
+      gl.uniform1f(program.uRoughness, material.roughness);
+      gl.uniform1f(program.uMetalness, material.metalness);
     }
     if ((program.features & FEAT_EMISSIVE) !== 0) {
       gl.uniform3f(program.uEmissive,
@@ -972,6 +1126,14 @@ export class WebGLRenderer {
   private bindLights(program: Program, camera: PerspectiveCamera): void {
     const gl = this.gl;
     gl.uniform3f(program.uAmbient, this.ambient.r, this.ambient.g, this.ambient.b);
+    gl.uniform3f(program.uHemiSky, this.hemiSky.r, this.hemiSky.g, this.hemiSky.b);
+    gl.uniform3f(program.uHemiGround,
+                 this.hemiGround.r, this.hemiGround.g, this.hemiGround.b);
+    /* World up (0,1,0) rotated into view space: the view matrix's 3x3
+     * second column, which for a rigid view transform is its second row
+     * transposed. Reading it off the matrix avoids a per-frame transform. */
+    const e = camera.matrixWorldInverse.elements;
+    gl.uniform3f(program.uHemiUp, e[1], e[5], e[9]);
 
     gl.uniform1i(program.uDirCount, this.dirLights.length);
     for (let i = 0; i < this.dirLights.length; i++) {

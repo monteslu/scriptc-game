@@ -490,6 +490,18 @@ export class WebGL2RenderingContext {
     gl.texImageFromSurface(target, level, ctx.surfaceHandle());
   }
 
+  /* Allocate texture storage with NO pixels.
+   *
+   * A render target's colour attachment is drawn into rather than
+   * uploaded, so it needs storage but has no image. The web spells this
+   * as texImage2D with a null source; format 1 has no null-bytes class,
+   * so it is its own entry point. */
+  texImage2DEmpty(target: number, level: number, internalformat: number,
+                  width: number, height: number,
+                  format: number, type: number): void {
+    gl.texImageEmpty(target, level, internalformat, width, height, format, type);
+  }
+
   /* ---- framebuffers and renderbuffers ---- */
 
   createFramebuffer(): WebGLFramebuffer {

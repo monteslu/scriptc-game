@@ -601,3 +601,20 @@ extern "C" int32_t sg_gl_fit_viewport(int32_t logical_w, int32_t logical_h) {
   glEnable(GL_SCISSOR_TEST);
   return SG_OK;
 }
+
+/* Allocate texture storage with NO pixel data.
+ *
+ * A render target's texture is drawn INTO, so it needs storage but has no
+ * image to upload. glTexImage2D with a null pointer does exactly that, but
+ * FFI format 1 has no way to express "a bytes parameter that is null" --
+ * the existing upload entry points all require real data. Hence a
+ * dedicated binding.
+ */
+extern "C" int32_t sg_gl_tex_image_empty(uint32_t target, int32_t level,
+                                         int32_t internalformat,
+                                         int32_t width, int32_t height,
+                                         uint32_t format, uint32_t type) {
+  glTexImage2D(target, level, internalformat, width, height, 0,
+               format, type, nullptr);
+  return SG_OK;
+}

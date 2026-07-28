@@ -49,6 +49,8 @@ export const FEAT_SPRITE = 64;
  * featureBits(). three has a per-material `fog` flag as well, which is
  * honoured here -- a HUD or a skybox sets fog=false to opt out. */
 export const FEAT_FOG = 128;
+/** Metal/rough shading rather than Lambert. */
+export const FEAT_STANDARD = 256;
 
 export class Material {
   color: Color = new Color(0xffffff);
@@ -166,5 +168,39 @@ export class SpriteMaterial extends Material {
 
   override featureBits(): number {
     return super.featureBits() | FEAT_SPRITE;
+  }
+}
+
+/* MeshStandardMaterial, LITE.
+ *
+ * three's is a full Cook-Torrance PBR model with IBL, clearcoat and a
+ * dozen texture slots. This is the part a game without an environment map
+ * actually gets value from: a Lambert diffuse term plus a Blinn-Phong
+ * specular lobe whose tightness comes from `roughness`, and a `metalness`
+ * that tints the highlight with the base colour instead of leaving it
+ * white.
+ *
+ * The plan calls it "Standard-lite (albedo/metal-rough, no IBL in v0)" and
+ * that is exactly the scope: it is NOT energy-conserving and it will not
+ * match three pixel for pixel. What it does give is the thing Lambert
+ * cannot -- a surface that reads as metal or as plastic depending on two
+ * numbers, which is what a game needs from a material.
+ */
+export class MeshStandardMaterial extends Material {
+  readonly isMeshStandardMaterial = true;
+  /** 0 = mirror-sharp highlight, 1 = fully diffuse. three's meaning. */
+  roughness = 1;
+  /** 0 = dielectric (white highlight), 1 = metal (highlight takes the albedo). */
+  metalness = 0;
+
+  constructor(color: number = 0xffffff) {
+    super();
+    this.color.setHex(color);
+  }
+
+  override featureBits(): number {
+    let bits = super.featureBits() | FEAT_LAMBERT | FEAT_STANDARD;
+    if (this.emissive.getHex() !== 0) bits |= FEAT_EMISSIVE;
+    return bits;
   }
 }
