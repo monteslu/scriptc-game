@@ -68,13 +68,14 @@ const TILE = 1 * SCALE;
 const WALL_H = 1 * SCALE;
 const HALL_LEN = 26;      // tiles down the corridor
 /* Two wall courses tall, so the ceiling sits on top of the second one. */
-/* THREE wall courses per level: 9m of headroom.
+/* FIVE wall courses per level: 15m of headroom.
  *
- * Two courses (6m) was still tight for a ship that banks and pitches --
- * the chase camera kept clipping the roof and it read as claustrophobic
- * however wide the tunnels got. Height is what makes a tunnel feel flyable
- * rather than crawled through. */
-const WALL_COURSES = 3;
+ * Two courses (6m) and then three (9m) both still read as claustrophobic:
+ * a ship that banks and pitches needs room ABOVE and BELOW it, not just
+ * ahead. At 15m the tunnel is taller than it is wide, which is what makes
+ * it feel like a shaft you fly through rather than a hallway you drive
+ * down. */
+const WALL_COURSES = 5;
 const LEVEL_H = WALL_COURSES * SCALE;
 /* Grid <-> world. Pure functions of the constants above, so they live at
  * module scope and anything in the game can use them. */
@@ -213,7 +214,7 @@ window.addEventListener("load", () => {
   hudMat.transparent = true;
   hudMat.depthTest = false;      // always on top of the world
   if (hudTexture !== null) hudMat.map = hudTexture;
-  const hud = new Mesh(makeQuad(1.15, 0.575), hudMat);
+  const hud = new Mesh(makeQuad(0.86, 0.43), hudMat);
   scene.add(hud);
 
   /* ---- lighting ----
@@ -221,7 +222,7 @@ window.addEventListener("load", () => {
    * A station interior wants to feel enclosed and artificial: a low
    * ambient so nothing is pure black, one cool overhead fill, and warm
    * point lights that actually travel the corridor. */
-  scene.add(new AmbientLight(0x1e2740, 1));
+  scene.add(new AmbientLight(0x39456b, 1));
   const fill = new DirectionalLight(0x7f9fd8, 0.32);
   fill.position.set(0.3, 1, 0.25);
   scene.add(fill);
@@ -229,7 +230,7 @@ window.addEventListener("load", () => {
   /* A second, DOWNWARD fill. The first points up, which lights floors and
    * leaves the new ceiling unlit -- it rendered as a black lid with a few
    * blown-out hotspots. This one catches the underside. */
-  const roofFill = new DirectionalLight(0x6d86bd, 0.26);
+  const roofFill = new DirectionalLight(0x6d86bd, 0.34);
   roofFill.position.set(-0.2, -1, -0.15);
   scene.add(roofFill);
 
@@ -242,7 +243,7 @@ window.addEventListener("load", () => {
      * contributed 4.5, summing to 18 where 1.0 is already full white: the
      * whole station rendered as a white silhouette with the texture
      * completely washed out. Lit surfaces should peak near 1. */
-    const lamp = new PointLight(0xffd9a8, 2.6, 26, 1);
+    const lamp = new PointLight(0xffd9a8, 5, 50, 1);
     lamps.push(lamp);
     scene.add(lamp);
   }
@@ -252,7 +253,7 @@ window.addEventListener("load", () => {
    * A branching three-level map cannot be lit by a handful of travelling
    * lamps: wherever the player actually is would be dark. This is the
    * headlight, and it is what makes a tunnel readable while flying it. */
-  const headlight = new PointLight(0xbfd8ff, 2.2, 30, 1);
+  const headlight = new PointLight(0xbfd8ff, 5.5, 60, 1);
   scene.add(headlight);
 
   /* ---- ship state ----
@@ -419,6 +420,16 @@ window.addEventListener("load", () => {
   const chair = piece("chair", 30);
   const railPiece = piece("rail", 80);
   const pipeRing = piece("pipe-ring-colored", 80);
+  /* Variety pieces. A corridor built from ONE wall model reads as a
+   * texture repeat however good the texture is; the eye needs silhouette
+   * changes to believe a place was built rather than tiled. */
+  const wallDetail = piece("wall-detail", 500);
+  const displayWall = piece("display-wall", 200);
+  const displayWide = piece("display-wall-wide", 120);
+  const wallDoor = piece("wall-door", 120);
+  const wallSwitch = piece("wall-switch", 100);
+  const pipeBend = piece("pipe-bend", 120);
+  const pipeEnd = piece("pipe-end-colored", 120);
 
   /* Deterministic layout: the same station every run, so a screenshot is
    * reproducible and a visual change is a real change. */
@@ -470,7 +481,7 @@ window.addEventListener("load", () => {
 
   /* The spine: a wide main tunnel on the middle level, running the length
    * of the map. */
-  carveRun(MID - 1, 1, 0, MID + 1, 1, GZ - 1);
+  carveRun(MID - 2, 1, 0, MID + 2, 1, GZ - 1);
 
   /* THE START HANGAR.
    *
@@ -486,9 +497,10 @@ window.addEventListener("load", () => {
   for (let b = 0; b < 5; b++) {
     const bz = 5 + b * 7;
     const left = b % 2 === 0;
-    const x0 = left ? 0 : MID + 2;
-    const x1 = left ? MID - 2 : GX - 1;
-    carveRun(x0, 1, bz, x1, 1, bz);
+    const x0 = left ? 0 : MID + 3;
+    const x1 = left ? MID - 3 : GX - 1;
+    // Two cells deep, so a branch is a passage rather than a slot.
+    carveRun(x0, 1, bz - 1, x1, 1, bz);
     // A room at the end, two cells deep so it reads as a place.
     if (left) carveRun(0, 1, bz - 1, 2, 1, bz + 1);
     else carveRun(GX - 3, 1, bz - 1, GX - 1, 1, bz + 1);
@@ -501,23 +513,26 @@ window.addEventListener("load", () => {
   for (let s = 0; s < shafts.length; s++) {
     const sz = shafts[s];
     const sx = s % 2 === 0 ? MID : MID;
-    carveRun(sx, 0, sz, sx, GY - 1, sz);
+    carveRun(sx - 1, 0, sz - 1, sx + 1, GY - 1, sz);
     // Upper and lower galleries running off each shaft.
-    carveRun(sx - 2, 2, sz, sx + 2, 2, sz);
-    carveRun(sx - 2, 0, sz, sx + 2, 0, sz);
+    carveRun(sx - 3, 2, sz - 1, sx + 3, 2, sz);
+    carveRun(sx - 3, 0, sz - 1, sx + 3, 0, sz);
   }
 
   /* Upper and lower spines, shorter than the main one, so the alternate
    * levels are routes rather than dead ends. */
-  carveRun(MID, 2, 8, MID, 2, 32);
-  carveRun(MID, 0, 8, MID, 0, 32);
+  carveRun(MID - 1, 2, 8, MID + 1, 2, 32);
+  carveRun(MID - 1, 0, 8, MID + 1, 0, 32);
 
   /* One wall face. `outer` means nothing lies beyond it, so it gets a
    * window: the inside of a maze should read as solid, and the hull
    * should look out at space. Two courses, since a level is 2 walls tall. */
   function placeWall(wx: number, wy: number, wz: number, yaw: number,
                      outer: boolean, variant: number): void {
-    const kind = variant % 6;
+    /* Ten variants rather than six, and the extras carry SILHOUETTE: a
+     * screen that stands proud of the wall, a door recess, a switch
+     * panel. Flat variants alone still read as one repeating wall. */
+    const kind = variant % 12;
     /* One course per SCALE of level height, so raising WALL_COURSES makes
      * the tunnels taller without leaving a gap between the top course and
      * the ceiling. */
@@ -529,6 +544,17 @@ window.addEventListener("load", () => {
         place(wallPillar, wx, cy, wz, yaw, 1);
       } else if (outer && kind === 3 && c === 0) {
         place(wallBanner, wx, cy, wz, yaw, 1);
+      } else if (kind === 5 && c === 1) {
+        // A screen at eye height, where a screen would actually be.
+        place(displayWall, wx, cy, wz, yaw, 1);
+      } else if (kind === 7 && c === 1) {
+        place(displayWide, wx, cy, wz, yaw, 1);
+      } else if (kind === 6 && c === 0) {
+        place(wallDoor, wx, cy, wz, yaw, 1);
+      } else if (kind === 8 && c === 1) {
+        place(wallSwitch, wx, cy, wz, yaw, 1);
+      } else if (kind === 9 && c === 2) {
+        place(wallDetail, wx, cy, wz, yaw, 1);
       } else {
         place(wall, wx, cy, wz, yaw, 1);
       }
@@ -558,6 +584,11 @@ window.addEventListener("load", () => {
         // Ceiling, unless the cell above is open.
         if (!isOpen(x, y + 1, z)) {
           placeRolled(ceiling, wx, wy + LEVEL_H, wz, 0, 1, Math.PI);
+          /* Pipework under the roof. Runs in short stretches rather than
+           * everywhere, so it reads as plumbing following a route. */
+          if (y === 1 && (z % 6) === 0 && x === MID) {
+            place(pipeBend, wx, wy + LEVEL_H - 0.9, wz, 0, 1);
+          }
         }
 
         /* Side walls. Windows on the OUTER hull only (a wall with nothing
@@ -825,7 +856,11 @@ window.addEventListener("load", () => {
       const ly = pad.axes[1];
       const rx = pad.axes[2];
       if (ly > DEADZONE || ly < -DEADZONE) { fwd -= ly; touring = false; }
-      if (lx > DEADZONE || lx < -DEADZONE) { strafe += lx; touring = false; }
+      /* Left stick X TURNS the ship. Spaceships do not strafe sideways
+       * down a corridor: they point where they are going and the camera
+       * follows the nose. Strafe is still available on the shoulders for
+       * fine adjustment. */
+      if (lx > DEADZONE || lx < -DEADZONE) { turn -= lx; touring = false; }
       if (rx > DEADZONE || rx < -DEADZONE) { turn -= rx; touring = false; }
       /* Right stick Y pitches the nose. Positive is DOWN on a gamepad, and
        * pitching the nose UP when the stick goes up is the inverted
@@ -879,8 +914,8 @@ window.addEventListener("load", () => {
       if (pad.buttons.length > BTN_DPAD_RIGHT) {
         if (pad.buttons[BTN_DPAD_UP].pressed) { fwd += 1; touring = false; }
         if (pad.buttons[BTN_DPAD_DOWN].pressed) { fwd -= 1; touring = false; }
-        if (pad.buttons[BTN_DPAD_LEFT].pressed) { strafe -= 1; touring = false; }
-        if (pad.buttons[BTN_DPAD_RIGHT].pressed) { strafe += 1; touring = false; }
+        if (pad.buttons[BTN_DPAD_LEFT].pressed) { turn += 1; touring = false; }
+        if (pad.buttons[BTN_DPAD_RIGHT].pressed) { turn -= 1; touring = false; }
       }
 
       /* Shoulders also strafe, for players who prefer the stick for
@@ -1271,8 +1306,12 @@ function placeHUD(hud: Mesh, camera: PerspectiveCamera): void {
   /* Pinned along the camera's ACTUAL view axis. The chase camera now aims
    * far ahead of the ship, so a HUD placed on the old axis ended up
    * outside the frustum and vanished. */
+  /* Up and to the LEFT: centred over the nose it sat exactly where the
+   * tunnel ahead needs to be readable. */
   hud.position.addScaledVector(_fwd, 2.4);
-  hud.position.addScaledVector(_up, 0.86);
+  hud.position.addScaledVector(_up, 1.02);
+  _right.set(1, 0, 0).applyQuaternion(camera.quaternion);
+  hud.position.addScaledVector(_right, -0.92);
   hud.quaternion.copy(camera.quaternion);
 }
 
@@ -1348,6 +1387,7 @@ const _bankQ = new Quaternion();
 /* Bank is a roll about the ship's OWN forward axis. */
 const _fwdAxis = new Vector3(0, 0, 1);
 const _fwd = new Vector3();
+const _right = new Vector3();
 const _up = new Vector3();
 const _pos = new Vector3();
 const _scl = new Vector3(1, 1, 1);
