@@ -253,8 +253,22 @@ int32_t sg_gl_tex_image_from_surface(uint32_t target, int32_t level,
 
   const int w = (int)skiac_surface_get_width(surf);
   const int h = (int)skiac_surface_get_height(surf);
+
+  /* A Skia surface is top-down; GL texture space is bottom-up. Uploading
+   * the rows as-is puts the first row at v=0 and the image arrives upside
+   * down, which on a UV-mapped quad reads as mirrored text. The browser
+   * does this flip too, via UNPACK_FLIP_Y_WEBGL. */
+  const size_t stride = (size_t)w * 4;
+  uint8_t* flipped = (uint8_t*)malloc(stride * (size_t)h);
+  if (!flipped) { sg_mail_set("texImage2D: out of memory flipping rows"); return SG_ERANGE; }
+  const uint8_t* src = (const uint8_t*)data.ptr;
+  for (int row = 0; row < h; row++) {
+    memcpy(flipped + (size_t)row * stride,
+           src + (size_t)(h - 1 - row) * stride, stride);
+  }
   glTexImage2D(target, level, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE,
-               data.ptr);
+               flipped);
+  free(flipped);
   return SG_OK;
 }
 
