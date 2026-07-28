@@ -190,15 +190,33 @@ const vendor = `../vendor/${target}`;
  * symbols at link time, not as a clean error. */
 function systemLibraries(t) {
   if (t.startsWith("macos")) {
-    return [
-      "SDL2", "m", "pthread",
-      // libc++ is the system default on macOS; c++abi is inside it.
-      "c++",
-      // Skia's macOS backend: CoreGraphics/CoreText for fonts and images,
-      // OpenGL for the GL surface. Frameworks, not -l libraries.
-      "framework:CoreFoundation", "framework:CoreGraphics", "framework:CoreText",
-      "framework:CoreServices", "framework:OpenGL",
-    ];
+    /* NOT WIRED UP YET, and this list is a placeholder.
+     *
+     * Skia's macOS archives need CoreText (SkFontMgr_New_CoreText is a real
+     * symbol in libskia.a), which is a FRAMEWORK: it links with
+     * -framework CoreText, not -lCoreText. scriptc's manifest cannot say
+     * that -- system_libraries is validated against /^[A-Za-z0-9_+.-]+$/
+     * and every entry becomes -l<name> -- so a macOS build stops at
+     * "SC5001: 'system_libraries[4]' is not a library name".
+     *
+     * The fix does NOT need an upstream compiler change. Mach-O objects can
+     * carry their own framework requirements as LC_LINKER_OPTION load
+     * commands:
+     *
+     *   __asm__(".linker_option \"-framework\", \"CoreText\"");
+     *
+     * in a macOS-only shim TU puts the requirement inside libsggfx.a, where
+     * the linker finds it and the -l-only manifest never has to know. This
+     * is what Rust's #[link(kind = "framework")] emits, and how
+     * @napi-rs/canvas links the same Skia without the caller passing
+     * framework flags.
+     *
+     * GL is separate and already solved by prior art: native-gles links
+     * ANGLE as plain -lEGL -lGLESv2 on macOS, with no frameworks at all.
+     *
+     * Untested: the directive is Mach-O-only and cannot be compiled, let
+     * alone linked, from the Linux box this was written on. */
+    return ["SDL2", "m", "pthread", "c++"];
   }
   if (t.startsWith("windows")) {
     return [

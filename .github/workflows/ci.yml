@@ -26,9 +26,16 @@ jobs:
             runner: ubuntu-24.04
           - target: linux-aarch64
             runner: ubuntu-24.04-arm
-          - target: macos-aarch64
-            runner: macos-14
-
+          # macos-aarch64 and windows-x86_64 are NOT here yet, deliberately
+          # rather than quietly:
+          #
+          # macOS needs Skia's platform frameworks (Metal, OpenGL, CoreText
+          # are all referenced by libskia.a), and scriptc's FFI manifest
+          # cannot express them: system_libraries matches /^[A-Za-z0-9_+.-]+$/
+          # and every entry becomes -l<name>, so there is no -framework path.
+          # Making it work needs an upstream change to scriptc, not a matrix
+          # entry.
+          #
           # windows-x86_64 is NOT here yet, deliberately rather than
           # quietly: build-libcanvas ships that platform as MSVC .lib
           # archives with a libcanvas.lib, while fetch-archives.sh and the

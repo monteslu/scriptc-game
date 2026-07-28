@@ -79,13 +79,18 @@ real URLs rather than filenames.
 
 Not yet: WebGL and 3D.
 
-Builds on linux-x86_64, linux-aarch64 and macos-aarch64, each on its own CI
-runner. Cross-compiling is not used: scriptc can, but Skia, SDL2 and the audio
-graph are per-platform binaries, so only a native runner links a real result.
+Builds on linux-x86_64 and linux-aarch64, each on its own CI runner.
+Cross-compiling is not used: scriptc can, but Skia, SDL2 and the audio graph
+are per-platform binaries, so only a native runner links a real result.
 
-Windows is not wired up yet. build-libcanvas publishes it as MSVC `.lib`
-archives, while the vendor step and the FFI manifest both assume Unix `.a`
-naming and `ar`.
+Two targets are not wired up yet, both blocked on something real rather than
+unfinished:
+
+- **macOS** needs Skia's platform frameworks (Metal, OpenGL, CoreText). Those
+  link with `-framework Foo`, and scriptc's FFI manifest only emits `-l<name>`,
+  so this needs an upstream compiler change.
+- **Windows** is published by build-libcanvas as MSVC `.lib` archives, while
+  the vendor step and the manifest both assume Unix `.a` naming and `ar`.
 
 ### Verified
 
