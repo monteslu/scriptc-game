@@ -66,6 +66,12 @@ import { Color } from "../math/Color.js";
 const MAX_DIR_LIGHTS = 4;
 const MAX_POINT_LIGHTS = 8;
 
+/* How many meshes sharing a geometry and a program before instancing them
+ * as one draw is worth the buffer upload. Below this the upload costs more
+ * than the draws it replaces, so a scene of distinct objects takes the
+ * ordinary path and pays nothing for this feature existing. */
+const BATCH_MIN = 24;
+
 /** One compiled program plus the uniform locations it uses. */
 class Program {
   features = 0;
@@ -147,6 +153,19 @@ export class WebGLRenderer {
    * a bind that changes nothing is pure cost. */
   private currentProgram: Program | null = null;
   private currentVAO: WebGLVertexArrayObject | null = null;
+
+  /* Auto-instancing scratch. Grow-only and reused across frames: a fresh
+   * allocation per batch per frame would give back most of the saving. */
+  private batchGeo: (BufferGeometry | null)[] = [];
+  private batchFeat: number[] = [];
+  private batchCount: number[] = [];
+  /** Which batch slot each mesh in the current list belongs to, or -1. */
+  private batchOf: number[] = [];
+  private batchMatrixData: Buffer | null = null;
+  private batchColorData: Buffer | null = null;
+  private batchVAO: WebGLVertexArrayObject | null = null;
+  private batchMatrixBuffer: WebGLBuffer | null = null;
+  private batchColorBuffer: WebGLBuffer | null = null;
 
   constructor(gl: WebGL2RenderingContext) {
     this.gl = gl;
@@ -808,6 +827,25 @@ export class WebGLRenderer {
       gl.depthMask(true);
     }
 
+    /* AUTO-INSTANCING.
+     *
+     * Meshes that share a geometry and a program differ only in their
+     * transform and their colour -- exactly what an instanced draw
+     * expresses. Drawing them one at a time cost four FFI crossings each
+     * (modelView, normalScaled, colour, draw), and at 10000 meshes that
+     * was 40000 crossings and the bulk of a 124ms frame.
+     *
+     * Batching them into one instanced call makes it ONE draw plus two
+     * buffer uploads, whatever the count. Users see nothing: the pixels
+     * are identical, which is what the instancing-parity gate proves.
+     *
+     * Only for OPAQUE lists. Transparent geometry must be drawn in its
+     * submitted order for blending to be correct, and an instanced batch
+     * has no order at all. */
+    if (!isTransparent && this.tryBatch(list, camera)) {
+      return;
+    }
+
     for (let i = 0; i < list.length; i++) {
       this.renderMesh(list[i], camera);
     }
@@ -838,6 +876,230 @@ export class WebGLRenderer {
     } else {
       gl.drawArrays(TRIANGLES, 0, count);
     }
+  }
+
+  /* Draw a whole list as instanced batches, or report that it is not
+   * worth it and let the caller fall back.
+   *
+   * Groups by (geometry, program). A group of one is not worth batching --
+   * the upload would cost more than the draw it saves -- so a scene of
+   * distinct meshes takes the normal path with no penalty. */
+  private tryBatch(list: Mesh[], camera: PerspectiveCamera): boolean {
+    if (list.length < BATCH_MIN) return false;
+
+    /* One pass to group. The key is the geometry identity plus the
+     * feature bits: two meshes can share a geometry and still need
+     * different shaders (one textured, one not). */
+    this.batchGeo.splice(0, this.batchGeo.length);
+    this.batchFeat.splice(0, this.batchFeat.length);
+    this.batchCount.splice(0, this.batchCount.length);
+    this.batchOf.splice(0, this.batchOf.length);
+
+    for (let i = 0; i < list.length; i++) {
+      const mesh = list[i];
+      /* A textured or emissive material carries per-mesh uniforms the
+       * instanced shader has no attribute for, so those are never
+       * batched -- they fall through to the normal path. */
+      if (mesh.material.map !== null) { this.batchOf.push(-1); continue; }
+      const feat = this.featuresFor(mesh.material);
+      if ((feat & FEAT_EMISSIVE) !== 0) { this.batchOf.push(-1); continue; }
+
+      let slot = -1;
+      for (let k = 0; k < this.batchGeo.length; k++) {
+        if (this.batchGeo[k] === mesh.geometry && this.batchFeat[k] === feat) {
+          slot = k;
+          break;
+        }
+      }
+      if (slot < 0) {
+        slot = this.batchGeo.length;
+        this.batchGeo.push(mesh.geometry);
+        this.batchFeat.push(feat);
+        this.batchCount.push(0);
+      }
+      this.batchCount[slot] = this.batchCount[slot] + 1;
+      this.batchOf.push(slot);
+    }
+
+    /* Worth it only if some group is big enough to pay for its upload. */
+    let biggest = 0;
+    for (let k = 0; k < this.batchCount.length; k++) {
+      if (this.batchCount[k] > biggest) biggest = this.batchCount[k];
+    }
+    if (biggest < BATCH_MIN) return false;
+
+    for (let k = 0; k < this.batchGeo.length; k++) {
+      if (this.batchCount[k] >= BATCH_MIN) this.drawBatch(k, list, camera);
+    }
+    /* Anything not batched -- too few of its kind, textured, emissive --
+     * still has to be drawn. */
+    for (let i = 0; i < list.length; i++) {
+      const slot = this.batchOf[i];
+      if (slot < 0 || this.batchCount[slot] < BATCH_MIN) {
+        this.renderMesh(list[i], camera);
+      }
+    }
+    return true;
+  }
+
+  /* One instanced draw for every mesh in a batch slot.
+   *
+   * The instanced shader already reads a per-instance matrix and colour,
+   * so this reuses that path exactly rather than adding a second one --
+   * which is also why the output is pixel-identical to drawing them
+   * individually.
+   *
+   * The buffers are grow-only and reused across frames; a fresh
+   * allocation per batch per frame would give back most of what batching
+   * saves. */
+  private drawBatch(slot: number, list: Mesh[], camera: PerspectiveCamera): void {
+    const gl = this.gl;
+    const geo = this.batchGeo[slot];
+    const n = this.batchCount[slot];
+    const program = this.getProgram(this.batchFeat[slot] | FEAT_INSTANCED);
+    if (program === null || geo === null) return;
+
+    const need = n * 16 * 4;
+    if (this.batchMatrixData === null || this.batchMatrixData.length < need) {
+      this.batchMatrixData = Buffer.alloc(need);
+      this.batchColorData = Buffer.alloc(n * 3 * 4);
+    }
+    const mdata = this.batchMatrixData;
+    const cdata = this.batchColorData;
+    if (cdata === null) return;
+
+    /* Pack the world matrices and colours. The matrix goes in as-is:
+     * the instanced shader multiplies modelView * instanceMatrix, and
+     * modelView is bound to the VIEW matrix below, so instanceMatrix is
+     * each mesh's world transform. */
+    let w = 0;
+    let c = 0;
+    for (let i = 0; i < list.length; i++) {
+      if (this.batchOf[i] !== slot) continue;
+      const mesh = list[i];
+      const e = mesh.matrixWorld.elements;
+      for (let k = 0; k < 16; k++) {
+        mdata.writeFloatLE(e[k], w);
+        w += 4;
+      }
+      cdata.writeFloatLE(mesh.material.color.r, c);
+      cdata.writeFloatLE(mesh.material.color.g, c + 4);
+      cdata.writeFloatLE(mesh.material.color.b, c + 8);
+      c += 12;
+    }
+
+    this.prepareGeometry(geo);
+    this.prepareBatchBuffers(geo, mdata, cdata, w, c);
+
+    this.useProgram(program);
+    this.bindVAO(this.batchVAO);
+
+    /* modelView is the VIEW matrix alone: the world transform arrives per
+     * instance. Everything else binds exactly as a normal draw. */
+    this.bindCommonBatch(program, list, camera);
+
+    const count = geo.getDrawCount();
+    if (geo.index !== null) {
+      gl.drawElementsInstanced(TRIANGLES, count, UNSIGNED_SHORT, 0, n);
+    } else {
+      gl.drawArraysInstanced(TRIANGLES, 0, count, n);
+    }
+  }
+
+  /* Build (once) and fill the VAO the batch draws through.
+   *
+   * One VAO reused for every batch: it is rebound to whichever geometry's
+   * buffers the current batch needs, which costs four attribute pointer
+   * calls rather than a fresh VAO per geometry per frame. */
+  private prepareBatchBuffers(geo: BufferGeometry, mdata: Buffer,
+                              cdata: Buffer, mlen: number, clen: number): void {
+    const gl = this.gl;
+    if (this.batchVAO === null) {
+      this.batchVAO = gl.createVertexArray();
+      this.batchMatrixBuffer = gl.createBuffer();
+      this.batchColorBuffer = gl.createBuffer();
+    }
+    gl.bindVertexArray(this.batchVAO);
+    this.currentVAO = this.batchVAO;
+
+    if (geo.glPositionBuffer !== null) {
+      gl.bindBuffer(ARRAY_BUFFER, geo.glPositionBuffer);
+      gl.enableVertexAttribArray(0);
+      gl.vertexAttribPointer(0, 3, FLOAT, false, 0, 0);
+    }
+    if (geo.glNormalBuffer !== null) {
+      gl.bindBuffer(ARRAY_BUFFER, geo.glNormalBuffer);
+      gl.enableVertexAttribArray(1);
+      gl.vertexAttribPointer(1, 3, FLOAT, false, 0, 0);
+    }
+    if (geo.glUVBuffer !== null) {
+      gl.bindBuffer(ARRAY_BUFFER, geo.glUVBuffer);
+      gl.enableVertexAttribArray(2);
+      gl.vertexAttribPointer(2, 2, FLOAT, false, 0, 0);
+    }
+    if (geo.glIndexBuffer !== null) {
+      gl.bindBuffer(ELEMENT_ARRAY_BUFFER, geo.glIndexBuffer);
+    }
+
+    /* The matrix occupies attribute locations 4..7, one per column, each
+     * with a divisor of 1 so it advances per instance. */
+    gl.bindBuffer(ARRAY_BUFFER, this.batchMatrixBuffer);
+    gl.bufferData(ARRAY_BUFFER, mlen === mdata.length ? mdata : mdata.subarray(0, mlen),
+                  DYNAMIC_DRAW);
+    for (let k = 0; k < 4; k++) {
+      gl.enableVertexAttribArray(4 + k);
+      gl.vertexAttribPointer(4 + k, 4, FLOAT, false, 64, k * 16);
+      gl.vertexAttribDivisor(4 + k, 1);
+    }
+
+    gl.bindBuffer(ARRAY_BUFFER, this.batchColorBuffer);
+    gl.bufferData(ARRAY_BUFFER, clen === cdata.length ? cdata : cdata.subarray(0, clen),
+                  DYNAMIC_DRAW);
+    gl.enableVertexAttribArray(8);
+    gl.vertexAttribPointer(8, 3, FLOAT, false, 0, 0);
+    gl.vertexAttribDivisor(8, 1);
+
+    /* Vertex colours would fight the per-instance colour for location 3,
+     * and a batch's colour is per instance by definition. */
+    gl.disableVertexAttribArray(3);
+    gl.vertexAttrib3f(3, 1, 1, 1);
+  }
+
+  /* The per-draw uniforms for a batch.
+   *
+   * modelView is the VIEW matrix alone: the instanced shader computes
+   * modelView * instanceMatrix, and the world transform arrives per
+   * instance. diffuseOpacity is white so the per-instance colour passes
+   * through the shader's multiply unchanged. */
+  private bindCommonBatch(program: Program, list: Mesh[],
+                          camera: PerspectiveCamera): void {
+    const gl = this.gl;
+
+    camera.matrixWorldInverse.toBuffer(this.mat4Buf, 0);
+    gl.uniformMatrix4fv(program.uModelViewMatrix, false, this.mat4Buf);
+
+    const fresh = program.frameStamp !== this.frameStamp;
+    if (fresh) {
+      program.frameStamp = this.frameStamp;
+      camera.projectionMatrix.toBuffer(this.mat4Buf, 0);
+      gl.uniformMatrix4fv(program.uProjectionMatrix, false, this.mat4Buf);
+    }
+    if (fresh && (program.features & FEAT_LAMBERT) !== 0) {
+      this.bindLights(program, camera);
+    }
+    if (fresh && (program.features & FEAT_FOG) !== 0 && this.fog !== null) {
+      const f = this.fog;
+      gl.uniform3f(program.uFogColor, f.color.r, f.color.g, f.color.b);
+      gl.uniform4f(program.uFogParams, f.near, f.far, f.density,
+                   f.fogType === FOG_EXP2 ? 1 : 0);
+    }
+
+    gl.uniform4f(program.uColor, 1, 1, 1, 1);
+    gl.uniform1f(program.uNormalScaled, 0);
+
+    gl.enable(CULL_FACE);
+    gl.cullFace(BACK);
+    gl.enable(DEPTH_TEST);
   }
 
   /** useProgram, skipped when it is already current. */
