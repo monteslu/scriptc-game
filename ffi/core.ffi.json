@@ -84,6 +84,15 @@
       "returns": "i32"
     },
     {
+      "name": "sgGlFitViewport",
+      "symbol": "sg_gl_fit_viewport",
+      "params": [
+        "i32",
+        "i32"
+      ],
+      "returns": "i32"
+    },
+    {
       "name": "sgGlSavePng",
       "symbol": "sg_gl_save_png",
       "params": [

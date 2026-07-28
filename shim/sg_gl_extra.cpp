@@ -547,3 +547,57 @@ uint32_t sg_gl_hash_pixels(int32_t x, int32_t y, int32_t w, int32_t h) {
 }
 
 }  // extern "C"
+
+/* Fit the GL viewport to the window, preserving the game's aspect ratio.
+ *
+ * The 2D path gets this free from SDL_RenderSetLogicalSize, which scales a
+ * fixed logical surface into whatever the window became. A GL frame is
+ * drawn straight into the window's back buffer, so nothing was scaling it:
+ * the viewport stayed at its startup size, and maximising the window just
+ * revealed more empty framebuffer around an unchanged image.
+ *
+ * LETTERBOX rather than stretch. Filling the window with a stretched image
+ * distorts every sprite and turns a circle into an ellipse; the projection
+ * would also need its aspect fixed up in game code, which is not something
+ * a game should have to think about. Bars are honest, and the game scales
+ * to any window size at its original ratio.
+ *
+ * The drawable size comes from sg_core (which owns the SDL window) packed
+ * into one u32, because FFI format 1 has no out-parameter class.
+ */
+extern "C" uint32_t sg_drawable_size(int32_t);
+
+extern "C" int32_t sg_gl_fit_viewport(int32_t logical_w, int32_t logical_h) {
+  if (logical_w <= 0 || logical_h <= 0) return SG_OK;
+
+  const uint32_t packed = sg_drawable_size(0);
+  const int dw = (int)(packed >> 16);
+  const int dh = (int)(packed & 0xffffu);
+  if (dw <= 0 || dh <= 0) return SG_OK;
+
+  /* Largest rect with the logical aspect that fits inside the drawable. */
+  const double want = (double)logical_w / (double)logical_h;
+  const double have = (double)dw / (double)dh;
+  int vw = dw, vh = dh;
+  if (have > want) {
+    vw = (int)((double)dh * want + 0.5);   /* window too wide: side bars */
+  } else {
+    vh = (int)((double)dw / want + 0.5);   /* too tall: top/bottom bars */
+  }
+  const int vx = (dw - vw) / 2;
+  const int vy = (dh - vh) / 2;
+
+  /* The bars must be cleared with the scissor OFF, then the letterbox
+   * region scissored: otherwise the renderer's own glClear paints the
+   * whole drawable and the bars fill with the scene background, which
+   * reads as the image being off-centre rather than letterboxed. */
+  glDisable(GL_SCISSOR_TEST);
+  glViewport(0, 0, dw, dh);
+  glClearColor(0.f, 0.f, 0.f, 1.f);
+  glClear(GL_COLOR_BUFFER_BIT);
+
+  glViewport(vx, vy, vw, vh);
+  glScissor(vx, vy, vw, vh);
+  glEnable(GL_SCISSOR_TEST);
+  return SG_OK;
+}

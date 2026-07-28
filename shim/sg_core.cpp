@@ -248,6 +248,24 @@ extern "C" int32_t sg_gl_present(int32_t unused) {
   return SG_OK;
 }
 
+/* The window's DRAWABLE size, packed as (width << 16) | height.
+ *
+ * Lives here because only sg_core owns the SDL window, and it is read by
+ * the GL tier (a separate archive) to fit its viewport. Packing avoids an
+ * out-parameter, which FFI format 1 has no class for.
+ *
+ * The drawable size is NOT the window size on a HiDPI display: SDL reports
+ * points for the window and pixels for the drawable, and a viewport wants
+ * pixels. */
+extern "C" uint32_t sg_drawable_size(int32_t unused) {
+  (void)unused;
+  if (!g_window) return (g_width << 16) | (g_height & 0xffffu);
+  int dw = 0, dh = 0;
+  SDL_GL_GetDrawableSize(g_window, &dw, &dh);
+  if (dw <= 0 || dh <= 0) { dw = (int)g_width; dh = (int)g_height; }
+  return ((uint32_t)dw << 16) | ((uint32_t)dh & 0xffffu);
+}
+
 /* ---- present ----
  * One full-frame copy: Skia raster pixels -> streaming texture -> GPU blit.
  * At 1280x720 this is ~3.7MB/frame; measured cost lives in SPIKE-RESULTS.

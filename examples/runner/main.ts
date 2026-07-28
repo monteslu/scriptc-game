@@ -390,6 +390,8 @@ window.addEventListener("load", () => {
    * camera offset is derived from it, so one number drives the whole
    * effect and it can never get stuck on. */
   let shake = 0;
+  /** Seconds since the last impact; the shake oscillates on THIS. */
+  let shakeTime = 0;
   let nextSpawnZ = -30;
   let spin = 0;
   /** Seconds since the run started; drives shake and pulse phases. */
@@ -765,7 +767,8 @@ window.addEventListener("load", () => {
         sfx(hit, 0.7);
         debris.burst(o.mesh.position.x, o.mesh.position.y,
                      o.mesh.position.z, 34, crashBurst);
-        shake = 0.55;   // the camera kick that sells an impact
+        shake = 1;      // a full-strength kick; see the decay in draw()
+        shakeTime = 0;  // restart the oscillation so the hit starts at full swing
         if (lives <= 0) {
           over = true;
           if (score > best) best = score;
@@ -818,16 +821,50 @@ window.addEventListener("load", () => {
     camera.fov = 62 + speedT * 12;
     camera.updateProjectionMatrix();
 
-    /* Shake decays exponentially and is applied as a camera OFFSET, not a
-     * rotation: rotating the camera swings the whole corridor and reads as
-     * a stumble rather than an impact. */
-    shake *= Math.pow(0.02, dt);
-    if (shake < 0.001) shake = 0;
-    const sx = shake * Math.sin(elapsed * 62) * 0.5;
-    const sy = shake * Math.sin(elapsed * 87 + 1.7) * 0.38;
+    /* Screen shake.
+     *
+     * Three things make a kick land, and the first version had none of
+     * them at usable strength:
+     *
+     *   AMPLITUDE. Peak offset was 0.275 world units against a corridor
+     *   5 units wide -- roughly a two-pixel nudge on screen. It is now
+     *   1.15 across and 0.85 up, which is a real displacement.
+     *
+     *   DURATION. Decaying to 2% per second meant the whole event was
+     *   over in ~4 frames, so it read as a glitch rather than an impact.
+     *   0.09 per second gives it about a third of a second to sell.
+     *
+     *   ROLL. Pure translation reads as the camera being bumped. A small
+     *   counter-rotating roll reads as the PLAYER being hit, which is the
+     *   feeling wanted. It is small (4 degrees at peak) because a large
+     *   one swings the corridor and becomes a stumble.
+     *
+     * The frequencies are deliberately not harmonically related, so the
+     * two axes never sync into a clean diagonal line. */
+    shake *= Math.pow(0.09, dt);
+    shakeTime += dt;
+    if (shake < 0.002) shake = 0;
+    /* Squared falloff on top of the decay: the first few frames stay near
+     * full strength and then it drops away, which is what an impact does.
+     * A linear ramp-down feels like a wobble. */
+    const kick = shake * shake;
+    /* Phased on shakeTime, not elapsed: locked to wall-clock, an impact
+     * lands wherever the sine happens to be, and a hit that arrives near a
+     * zero crossing opens with no kick at all (measured: sx started at
+     * -0.002 on one crash). Starting the clock at the impact means every
+     * hit opens at full swing.
+     *
+     * cos for x so it peaks IMMEDIATELY at t=0; sin for the others, offset,
+     * so the axes do not sync into a clean diagonal. */
+    const sx = kick * Math.cos(shakeTime * 71) * 1.15;
+    const sy = kick * Math.sin(shakeTime * 97 + 1.7) * 0.85;
+    const roll = kick * Math.cos(shakeTime * 83 + 0.6) * 0.07;
 
     camera.position.set(laneX * 0.72 + sx, 2.15 + playerY * 0.25 + sy, 5.6);
     camera.lookAt(_camTarget.set(laneX * 0.86, 1.0 + playerY * 0.35, -9));
+    /* Roll AFTER lookAt: lookAt overwrites the whole orientation, so a
+     * roll applied before it is silently discarded. */
+    if (roll !== 0) camera.rotateZ(roll);
 
     // A light that follows the player, so the near ground stays readable.
     rim.position.set(laneX, 2.4 + playerY, 2.4);
