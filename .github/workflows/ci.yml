@@ -38,17 +38,21 @@ jobs:
             runner: macos-14
           - target: macos-x86_64
             runner: macos-15-intel
-          # windows-x86_64 is blocked on an ABI mismatch, not on anything
-          # in this repo. scriptc targets Windows ONLY as
-          # x86_64-windows-gnu -- mingw-w64 headers and CRT through zig
-          # (backend/cc.ts) -- while build-libcanvas publishes Skia as MSVC
-          # COFF .lib archives. Those two ABIs cannot link together, and
-          # scriptc's runtime uses POSIX calls (clock_gettime, nanosleep)
-          # that only mingw provides, so building it MSVC-side is not a
-          # workaround either. Unblocking needs a mingw Skia build upstream.
-          #
-          # Everything on this side is ready: fetch-archives.sh vendors the
-          # Windows archives (204 skiac symbols) and build-shim.sh merges
+          - target: windows-x86_64
+            runner: windows-2022
+            # scriptc's own CI cross-compiles Windows with zig, and the
+            # triple is passed straight through to `zig cc -target`
+            # (backend/cc.ts), so the MSVC triple works as well as the gnu
+            # one. It has to be MSVC here: build-libcanvas builds Skia
+            # against MSVC (skia's own gn/BUILDCONFIG.gn hard-asserts a VC
+            # installation for target_os="win", so a mingw Skia is not
+            # something we can produce), and mingw cannot supply the MSVC
+            # CRT those objects import. Verified locally: lld-link READS the
+            # MSVC Skia objects fine under -target x86_64-windows-gnu and
+            # fails only on libcmt/oldnames/libcpmt, which the MSVC triple
+            # resolves from the runner's Visual Studio install.
+            scriptc_cc: zigcc
+            scriptc_target: x86_64-windows-msvc
           # them, both verified against the real tarball.
           # android-aarch64 gets as far as VENDORING and compiling the
           # shim, then stops at the final link, and the wall is upstream:
@@ -121,6 +125,26 @@ jobs:
           sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-18 100
           clang --version
 
+      # scriptc cross-compiles through zig; its own CI uses this action.
+      - uses: vercel-labs/setup-zig@v1
+        if: matrix.scriptc_cc == 'zigcc'
+        with:
+          version: 0.16.0
+
+      - name: Windows deps
+        if: startsWith(matrix.target, 'windows')
+        shell: bash
+        run: |
+          choco install -y ffmpeg
+          # SDL2 development libraries. The VC release ships the import
+          # library and headers, which is all the shim and the link need.
+          curl -fsSL -o /tmp/sdl.zip \
+            https://github.com/libsdl-org/SDL/releases/download/release-2.32.10/SDL2-devel-2.32.10-VC.zip
+          unzip -q /tmp/sdl.zip -d "$GITHUB_WORKSPACE/sdl2"
+          SDLDIR="$(find "$GITHUB_WORKSPACE/sdl2" -maxdepth 1 -type d -name 'SDL2-*' | head -1)"
+          echo "SDL2_INCLUDE=$SDLDIR/include" >> "$GITHUB_ENV"
+          echo "SDL2_LIB=$SDLDIR/lib/x64" >> "$GITHUB_ENV"
+
       - name: macOS deps
         if: startsWith(matrix.target, 'macos')
         env:
@@ -160,6 +184,8 @@ jobs:
         shell: bash
         env:
           SCRIPTC_BIN: ${{ github.workspace }}/scriptc/packages/cli/dist/main.js
+          SCRIPTC_CC: ${{ matrix.scriptc_cc }}
+          SCRIPTC_TARGET: ${{ matrix.scriptc_target }}
         run: |
           for g in examples/*/; do
             [ -f "$g/main.ts" ] || continue
@@ -172,6 +198,8 @@ jobs:
         env:
           SCRIPTC_BIN: ${{ github.workspace }}/scriptc/packages/cli/dist/main.js
           SG_TARGET: ${{ matrix.target }}
+          SCRIPTC_CC: ${{ matrix.scriptc_cc }}
+          SCRIPTC_TARGET: ${{ matrix.scriptc_target }}
         run: |
           # Headless: SDL's dummy drivers, and xvfb on Linux for the browser
           # proof (Firefox headless still wants a display on some runners).

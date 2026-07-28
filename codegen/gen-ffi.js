@@ -214,11 +214,14 @@ function systemLibraries(t) {
     ];
   }
   if (t.startsWith("windows")) {
+    /* SDL2 is NOT here: the VC release is unpacked to a workspace path the
+     * linker does not search, so -lSDL2 fails the same way it does on
+     * macOS. SDL2.lib joins `libraries` by full path instead
+     * (windowsSdl2Lib), via SDL2_LIB from the CI step that unpacks it. */
     /* Skia on Windows uses GDI for fonts and opengl32 for the GL surface;
      * the rest are the usual Win32 support libraries its codecs and
      * threading pull in. No libc++: the MSVC toolchain supplies its own. */
     return [
-      "SDL2", "m",
       "gdi32", "user32", "opengl32", "ole32", "oleaut32", "uuid",
       "advapi32", "shell32", "winmm", "imm32", "setupapi", "version",
     ];
@@ -270,6 +273,22 @@ function sdl2DylibPath() {
   return dylib;
 }
 
+/* Windows SDL2, linked by full path for the same reason macOS is: the
+ * import library sits wherever CI unpacked the VC release, which is not a
+ * default search path. SDL2_LIB is set by the workflow step that unpacks
+ * it. */
+function windowsSdl2Lib() {
+  const dir = process.env.SDL2_LIB;
+  if (!dir) {
+    throw new Error("gen-ffi: SDL2_LIB is unset (the Windows lane unpacks the SDL2 VC release)");
+  }
+  const lib = join(dir, "SDL2.lib");
+  if (!existsSync(lib)) {
+    throw new Error(`gen-ffi: no SDL2.lib in '${dir}'`);
+  }
+  return lib;
+}
+
 /* Skia ships ~28 MUTUALLY dependent archives (libsvg needs SkColorMatrix
  * and SkParse from libskia; libskia pulls codec/image archives back), and
  * GNU ld resolves each static archive exactly once, left to right. The
@@ -291,6 +310,7 @@ const manifest = {
     `${vendor}/libsggfx.a`,
     `${vendor}/libwebaudio.a`,
     ...(target.startsWith("macos") ? [sdl2DylibPath()] : []),
+    ...(target.startsWith("windows") ? [windowsSdl2Lib()] : []),
   ],
   system_libraries: systemLibraries(target),
 };

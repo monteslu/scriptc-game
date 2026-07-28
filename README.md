@@ -90,17 +90,16 @@ Each target builds on its own runner rather than cross-compiling. scriptc
 can cross-compile, but Skia, SDL2 and the audio graph are per-platform
 binaries, so only a native runner links a real result.
 
-**Windows and Android are blocked upstream**, not here. This side is ready
-for both: `fetch-archives.sh` vendors either target and `build-shim.sh`
-merges the archives, verified against the real release tarballs.
+Windows cross-compiles with zig (`SCRIPTC_TARGET=x86_64-windows-msvc`),
+which is how scriptc's own CI builds for Windows. The MSVC triple rather
+than the mingw one, because build-libcanvas builds Skia against MSVC and
+Skia's GN hard-asserts a Visual Studio installation for any Windows target,
+so a mingw Skia is not something we can produce.
 
-- **Windows** is an ABI mismatch. scriptc targets Windows only as
-  `x86_64-windows-gnu` (mingw-w64 through zig), and its runtime calls POSIX
-  functions like `clock_gettime` that only mingw provides. build-libcanvas
-  publishes Skia as MSVC COFF `.lib`. The two ABIs cannot link together, so
-  this needs a mingw Skia build.
-- **Android** has no scriptc support at all: cross-compiling goes through
-  `zig cc`, which cannot be pointed at an NDK sysroot.
+**Android is blocked upstream**: scriptc has no Android support, and its
+cross path goes through `zig cc`, which cannot be pointed at an NDK
+sysroot. This side is ready, since `fetch-archives.sh` vendors the target
+today.
 
 macOS needs Skia's platform frameworks (CoreText for fonts), which link with
 `-framework Foo` while scriptc's manifest only emits `-l<name>`.
