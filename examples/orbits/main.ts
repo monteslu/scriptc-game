@@ -21,7 +21,7 @@
 import {
   window, document, navigator, requestAnimationFrame, KeyboardEvent,
   AudioContext, FontFace, fetch, AudioBuffer, Image, Math, Gamepad,
-  performance,
+  performance, MouseEvent,
 } from "../../web/globals.js";
 import { pickup, hit, dash as dashSfx, gameOver } from "../../engine/sfx.js";
 import { Context2D } from "../../web/canvas/context.js";
@@ -31,6 +31,7 @@ import { PerspectiveCamera } from "../../three/core/PerspectiveCamera.js";
 import { Mesh } from "../../three/objects/Mesh.js";
 import { InstancedMesh } from "../../three/objects/InstancedMesh.js";
 import { Sprite, LineSegments, Points } from "../../three/objects/Sprite.js";
+import { Raycaster } from "../../three/core/Raycaster.js";
 import { BoxGeometry } from "../../three/geometries/BoxGeometry.js";
 import { SphereGeometry } from "../../three/geometries/SphereGeometry.js";
 import { BufferGeometry } from "../../three/core/BufferGeometry.js";
@@ -82,6 +83,12 @@ class Mote {
 
 class Mine {
   sprite: Sprite | null = null;
+  /* An invisible box that follows the sprite, so the mine can be PICKED.
+   * The Raycaster tests triangles, and a Sprite is a camera-facing quad
+   * built in the vertex shader with no world-space geometry to hit -- so
+   * pickable sprites need a collider. This is that collider: never
+   * rendered, only raycast against. */
+  collider: Mesh | null = null;
   x = 0; y = 0; z = 0;
   vx = 0; vy = 0;
   alive = false;
@@ -236,6 +243,10 @@ window.addEventListener("load", () => {
     motes.push(m);
   }
 
+  /* Shared by every collider: never drawn, so its appearance is irrelevant
+   * and one instance keeps the material count down. */
+  const colliderMat = new MeshBasicMaterial();
+  const colliders: Mesh[] = [];
   const mines: Mine[] = [];
   for (let i = 0; i < MINE_COUNT; i++) {
     const m = new Mine();
@@ -246,6 +257,15 @@ window.addEventListener("load", () => {
     sp.scale.set(2.3, 2.3, 1);
     m.sprite = sp;
     scene.addSprite(sp);
+
+    /* The collider is added to the scene's mesh list but kept invisible:
+     * the renderer skips it, the Raycaster still finds it. */
+    const col = new Mesh(new BoxGeometry(2.2, 2.2, 2.2), colliderMat);
+    col.visible = false;
+    m.collider = col;
+    scene.addMesh(col);
+    colliders.push(col);
+
     mines.push(m);
   }
 
@@ -317,6 +337,32 @@ window.addEventListener("load", () => {
     if (keys.indexOf(e.key) < 0) keys.push(e.key);
     if ((e.key === "Enter") && over) restart();
   });
+  /* Click a mine to detonate it: the Raycaster in a real game.
+   *
+   * The mouse position is converted to NORMALISED DEVICE coordinates
+   * (-1..1, +y UP, hence the flip on y) exactly as in three, then
+   * setFromCamera builds the world ray. */
+  const picker = new Raycaster();
+  window.addEventListener("mousedown", (e: MouseEvent) => {
+    if (over) return;
+    const ndcX = (e.clientX / W) * 2 - 1;
+    const ndcY = -(e.clientY / H) * 2 + 1;
+    picker.setFromCamera(ndcX, ndcY, camera);
+    /* firstHitOnly: this only needs to know WHAT was clicked, not the full
+     * sorted list, so the triangle loop can stop at the first hit. */
+    picker.firstHitOnly = true;
+    const picked = picker.intersectObjects(colliders);
+    if (picked.length === 0) return;
+    for (let i = 0; i < mines.length; i++) {
+      const m = mines[i];
+      if (!m.alive || m.collider !== picked[0].object) continue;
+      spawnMine(m);
+      score += 5;
+      sfx(pickup, 0.4);
+      break;
+    }
+  });
+
   window.addEventListener("keyup", (e: KeyboardEvent) => {
     const i = keys.indexOf(e.key);
     if (i >= 0) keys.splice(i, 1);
@@ -525,6 +571,14 @@ window.addEventListener("load", () => {
       if (sp === null) continue;
       sp.visible = m.alive;
       sp.position.set(m.x, m.y, m.z);
+      const col = m.collider;
+      if (col !== null) {
+        col.position.set(m.x, m.y, m.z);
+        /* `raycastable`, not `visible`: the collider must never be drawn
+         * (setting visible would render a white box over the mine) but a
+         * dead mine must not be clickable either. */
+        col.raycastable = m.alive;
+      }
     }
 
     /* ---- trail: integrate the ship forward under the same gravity ---- */

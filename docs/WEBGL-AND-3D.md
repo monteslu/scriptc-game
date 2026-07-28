@@ -302,6 +302,77 @@ intensity in the hundreds to be visible, and anything near it then blows
 out. `examples/orbits` uses `decay = 1`, which is exactly what the parameter
 is exposed for.
 
+### Raycaster
+
+`setFromCamera(ndcX, ndcY, camera)`, `intersectObject`, `intersectObjects`,
+results sorted nearest-first with `distance`, `point`, `normal` and
+barycentric-interpolated `uv`. Two tiers, as in three: a bounding-sphere
+reject, then triangles tested in the mesh's LOCAL space (one matrix inverse
+per mesh, rather than transforming every triangle to world space).
+
+three takes a `Vector2` for the NDC coordinate; this takes the two numbers,
+because that is what every call site actually has. Converting a mouse event
+is the caller's job, exactly as in three:
+
+```ts
+const ndcX = (e.clientX / canvas.width) * 2 - 1;
+const ndcY = -(e.clientY / canvas.height) * 2 + 1;   // note the y flip
+raycaster.setFromCamera(ndcX, ndcY, camera);
+```
+
+**`mesh.raycastable`, not `mesh.visible`.** These are different questions.
+A collider box that follows a billboard sprite has to be pickable without
+ever being drawn, and gating the raycaster on `visible` means every collider
+renders as a solid block over the thing it stands in for (which is exactly
+what happened in `examples/orbits`: white boxes covering every mine).
+Sprites need colliders at all because a `Sprite` is built in the vertex
+shader and has no world-space geometry for a ray to hit.
+
+`firstHitOnly` skips the sort and returns on the first triangle found, for
+"is anything in the way?" queries.
+
+Not covered: Sprite/Points/Line intersection (three tests those against a
+threshold) and per-instance hits on an InstancedMesh.
+
+A hit count can surprise you: a centre ray through a `PlaneGeometry` reports
+**two** hits, because a plane is two triangles sharing the diagonal the ray
+runs down. three reports both, and so does this. `test/raytest.ts` checks 64
+values against real three.js output.
+
+### Loaders: bake, do not parse
+
+`codegen/bake-mesh.js` converts glTF/GLB/OBJ into a `.sgm` binary at BUILD
+time; `three/loaders/SGMLoader.ts` loads it at runtime.
+
+```
+node codegen/bake-mesh.js model.glb game/public/model.sgm [--scale N]
+```
+
+```ts
+new SGMLoader().load("model.sgm").then((geometry) => {
+  scene.addMesh(new Mesh(geometry, material));
+});
+```
+
+Everything variable about glTF (accessor component types, interleaved
+`byteStride`, normalized integer attributes, base64 data URIs, the scene
+graph) is resolved on the build machine. What ships is a 20-byte header
+followed by exactly the buffers the GPU wants, so the loader is a header
+read and four loops rather than a JSON parser and an accessor engine.
+
+The baker is zero-dependency, matching every other tool in `codegen/`:
+`node:` builtins only. OBJ gets real de-duplication on the v/vt/vn triple
+(a shared position with three different normals becomes three vertices) and
+fan triangulation for quads and n-gons.
+
+Refusals are loud on both sides: a sparse accessor is rejected by the baker
+by name, and a truncated or wrong-magic `.sgm` throws from the loader rather
+than yielding an empty geometry that renders as nothing and reads as a
+shader bug.
+
+Out of scope, deliberately: materials, cameras, lights, skins and
+animations. A game builds its scene in code; this is a geometry pipe.
+
 ## Benchmark: spinfield
 
 Identical per-cube math both ways, so the only difference measured is how
