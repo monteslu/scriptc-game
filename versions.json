@@ -7,7 +7,8 @@
     "note": "integration branch: merges the topic branches below, which are kept SEPARATE and each self-contained so any one can be sent upstream as its own PR without dragging the others along",
     "topic_branches": {
       "fix/ffi-const-binding": "a manifest-bound FFI call is dropped when its result initializes a never-reassigned local (upstream issue vercel-labs/scriptc#21)",
-      "fix/msvc-ssize-t": "scr_runtime.h declares ssize_t function pointers; MSVC has no ssize_t, so any Windows build through that header fails to parse"
+      "fix/msvc-ssize-t": "scr_runtime.h declares ssize_t function pointers; MSVC has no ssize_t, so any Windows build through that header fails to parse",
+      "fix/msvc-posix-time": "clock_gettime and nanosleep are called by five runtime TUs; mingw ships both, MSVC ships neither, so an x86_64-windows-msvc build fails to compile"
     }
   },
   "canvas": {

@@ -157,6 +157,7 @@ separate and self-contained so any one can go upstream on its own:
 | --- | --- |
 | `fix/ffi-const-binding` | An FFI-bound call is silently dropped when its result initializes a never-reassigned local: the build succeeds and the program dies at load ([vercel-labs/scriptc#21](https://github.com/vercel-labs/scriptc/issues/21)) |
 | `fix/msvc-ssize-t` | `scr_runtime.h` declares `ssize_t` function pointers, which MSVC does not define, so any Windows build through that header fails to parse |
+| `fix/msvc-posix-time` | Five runtime TUs call `clock_gettime` / `nanosleep`; mingw-w64 ships both, MSVC ships neither, so an `x86_64-windows-msvc` build does not compile |
 | [build-libcanvas](https://github.com/monteslu/build-libcanvas) output | `~/code/cliemu/build-libcanvas/out/<target>` | `LIBCANVAS_OUT` |
 | [webaudio-node](https://github.com/monteslu/webaudio-node) source | `~/code/cliemu/webaudio-node` | `WEBAUDIO_SRC` |
 
@@ -198,6 +199,7 @@ and the rest are worked around here.
 | --- | --- |
 | FFI call not dropped when its result initializes a `const` | fixed on `fix/ffi-const-binding`, filed as [#21](https://github.com/vercel-labs/scriptc/issues/21) |
 | `ssize_t` on MSVC | fixed on `fix/msvc-ssize-t` |
+| `clock_gettime` / `nanosleep` on MSVC | fixed on `fix/msvc-posix-time`. Needed because Windows here must use the **MSVC** triple: Skia is MSVC-built and mingw cannot supply the CRT its objects import |
 | An **`f32`** FFI class | worked around. `f64` is the only float class, so every `float`-taking C function needs a narrowing wrapper. Free at runtime (one `cvtsd2ss`, measured as noise) but pure code volume: the GLES3 surface alone has 18 such entry points. See [docs/FFI-SHIM.md](docs/FFI-SHIM.md) |
 | **Ambient globals** (a value, not just `declare function`) | worked around. Games import their browser globals from one module instead of getting them ambiently; that import line is the single thing separating this source from literal browser code. See [docs/WRITING-GAMES.md](docs/WRITING-GAMES.md) |
 | **Function overloads** in the dialect | worked around. `drawImage` handles its three spec arities with a rest parameter; `addEventListener` cannot, so `KeyboardEvent` and `MouseEvent` are one record. See [docs/WRITING-GAMES.md](docs/WRITING-GAMES.md) |
