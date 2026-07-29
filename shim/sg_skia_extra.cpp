@@ -420,6 +420,23 @@ static int32_t text_run(uint32_t hc, uint32_t hp, double x, double y,
   }
 
   memset(&g_metrics, 0, sizeof(g_metrics));
+
+  /* An EMPTY run never reaches Skia: skiac_canvas_get_line_metrics_or_draw_text
+   * segfaults on a zero-length string (verified under gdb, crash inside the
+   * skiac function itself), and under wasm the same call hangs instead.
+   *
+   * measureText("") is not an exotic input. Every text field measures one
+   * before the first keystroke -- that is how a caret gets positioned -- so
+   * this crashed a cart on frame 2 of a text-entry screen and looked like an
+   * asyncify bug for as long as it took to bisect.
+   *
+   * All-zero metrics are the correct answer, not a fallback: an empty string
+   * draws nothing, occupies no width, and has no bounding box. g_metrics was
+   * just zeroed, so returning here IS that answer. Drawing is a no-op for the
+   * same reason, which is why this is ahead of the hc split rather than
+   * inside the measure branch. */
+  if (g_text.text_len == 0) return SG_OK;
+
   skiac_canvas_get_line_metrics_or_draw_text(
       g_text.text, g_text.text_len, g_text.max_width, (float)x, (float)y,
       (float)canvas_width, fc, g_text.size, g_text.weight,
