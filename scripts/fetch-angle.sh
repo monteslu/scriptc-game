@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Download prebuilt ANGLE for macOS into vendor/<target>/angle/
+# Download prebuilt ANGLE for macOS and Windows into vendor/<target>/angle/
 #
 # WHY. Apple deprecated OpenGL and never shipped GLES3 headers or
 # libraries, so a 3D game cannot link on macOS at all: every macOS CI run
@@ -24,11 +24,43 @@ DEST="$ROOT/vendor/$TARGET/angle"
 case "$TARGET" in
   macos-aarch64) ARCH=arm64 ;;
   macos-x86_64)  ARCH=x64 ;;
+  windows-x86_64) ARCH=x64 ;;
   *)
     echo "fetch-angle.sh: $TARGET uses system GLES; nothing to fetch"
     exit 0
     ;;
 esac
+
+if [ "$TARGET" = "windows-x86_64" ]; then
+  TAG="2026-03-01"
+  URL="https://github.com/mmozeiko/build-angle/releases/download/${TAG}/angle-${ARCH}-${TAG}.zip"
+
+  if [ -f "$DEST/lib/libGLESv2.lib" ] &&
+     [ -f "$DEST/lib/libEGL.lib" ] &&
+     [ -f "$DEST/lib/libGLESv2.dll" ] &&
+     [ -f "$DEST/lib/libEGL.dll" ]; then
+    echo "angle: already present in $DEST"
+    exit 0
+  fi
+
+  echo "angle: fetching $URL"
+  TMP="$(mktemp -d)"
+  trap 'rm -rf "$TMP"' EXIT
+  curl -fsSL --retry 3 --max-time 600 -o "$TMP/angle.zip" "$URL"
+  unzip -q "$TMP/angle.zip" -d "$TMP/x"
+  SRC="$TMP/x/angle-${ARCH}"
+
+  mkdir -p "$DEST/lib" "$DEST/include"
+  cp "$SRC"/bin/*.dll "$DEST/lib/"
+  cp "$SRC"/lib/libEGL.dll.lib "$DEST/lib/libEGL.lib"
+  cp "$SRC"/lib/libGLESv2.dll.lib "$DEST/lib/libGLESv2.lib"
+  cp -R "$SRC/include/." "$DEST/include/"
+
+  echo "angle: installed into $DEST"
+  echo "  export ANGLE_LIB=$DEST/lib"
+  echo "  export GLES_INCLUDE=$DEST/include"
+  exit 0
+fi
 
 # Pinned, matching native-gles's package.json config.angle.kivy_tag: a
 # floating tag would make a green build silently become a red one.
