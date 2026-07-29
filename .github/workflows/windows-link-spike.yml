@@ -10,7 +10,7 @@ on:
 
 jobs:
   hybrid-link:
-    runs-on: windows-latest
+    runs-on: windows-2025
     timeout-minutes: 30
 
     steps:
@@ -21,7 +21,7 @@ jobs:
           node-version: 22
 
       - name: Enable the MSVC build environment
-        uses: TheMrMilchmann/setup-msvc-dev@v4
+        uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x64
 
