@@ -48,7 +48,8 @@ import { queueTask } from "../host/tasks.js";
  * Defined in host/tasks.ts so web modules that need to defer (audio decode,
  * image load) can import it without importing this file -- globals imports
  * THEM, and a cycle is a hard compiler error (SC1016). */
-export { queueTask, drainTasks as __drainTasks, hasTasks as __hasTasks } from "../host/tasks.js";
+export { queueTask, drainTasks as __drainTasks, hasTasks as __hasTasks,
+         setInlineTasks as __setInlineTasks } from "../host/tasks.js";
 import { setGLPresent } from "../host/tasks.js";
 
 /* ---- requestAnimationFrame ----
