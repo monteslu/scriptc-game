@@ -188,7 +188,12 @@ if (existsSync(extraPath)) {
    * lifecycle lives (window context, present, screenshot). Emitting them
    * here too would declare the same native symbol twice, which the manifest
    * rejects outright. */
-  const seen = new Set(["sg_gl_init_window", "sg_gl_present", "sg_gl_save_png"]);
+  const seen = new Set([
+    "sg_gl_init_window", "sg_gl_present", "sg_gl_save_png",
+    /* sg_gl_init_auto is the entry point host/ffi.ts declares; the two it
+     * dispatches to are internal to the archive. */
+    "sg_gl_init_auto",
+  ]);
   tsLines.push("");
   tsLines.push("/* Hand-written shim (shim/sg_gl_extra.cpp): pointers, out-params,");
   tsLines.push(" * strings and bulk uploads -- everything FFI format 1 cannot express");

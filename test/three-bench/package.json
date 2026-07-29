@@ -1,0 +1,9 @@
+{
+  "name": "three-bench",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "three": "^0.180.0",
+    "webgl-node": "file:../../../webgl-node"
+  }
+}

@@ -302,6 +302,28 @@ window.addEventListener("load", () => {
   const headlight = new PointLight(0xbfd8ff, 5.5, 60, 1);
   scene.add(headlight);
 
+  /* Engine ports: two additive quads sitting ON the exhausts.
+   *
+   * Sprites so they always face the camera, and additive so they read as
+   * emitted light rather than painted-on colour. Measured from the model:
+   * the rear face is at local z 1.013 with nozzles at x +/-0.15, y 0.30,
+   * which at scale 0.95 is +/-0.142 out and 0.285 up. */
+  const portMat = new SpriteMaterial(0xff8a3a);
+  portMat.transparent = true;
+  portMat.blending = AdditiveBlending;
+  portMat.depthWrite = false;
+  portMat.fog = false;
+  if (glowTex !== null) portMat.map = glowTex;
+  const portL = new Sprite(portMat);
+  const portR = new Sprite(portMat);
+  scene.add(portL);
+  scene.add(portR);
+
+  /* A DIM light at the tail. The particle version used 1.6-3.4 and blew
+   * the hull out to white; this is a hint of colour on the wall behind. */
+  const engineLight = new PointLight(0xff7a30, 0, 5, 1);
+  scene.add(engineLight);
+
   /* ---- ship state ----
    *
    * Position and VELOCITY: a flying ship carries momentum, so input
@@ -368,6 +390,9 @@ window.addEventListener("load", () => {
 
   let boltCursor = 0;
   let fireCooldown = 0;
+  /** Throttles exhaust emission; a per-frame burst floods the pool. */
+  /** 0..1 forward throttle, drives the port glow. */
+  let glowLevel = 0;
   /** Alternates the muzzle between wingtips, as a twin-cannon ship does. */
   let fireSide = 1;
 
@@ -756,6 +781,8 @@ window.addEventListener("load", () => {
   shipMat.vertexColors = true;
   const playerShip = new Mesh(new BoxGeometry(0.001, 0.001, 0.001), shipMat);
   playerShip.scale.set(0.95, 0.95, 0.95);
+  /* Half the model's height, scaled: the model spans local y 0..0.75. */
+  const HULL_HALF = 0.375 * 0.95;
   playerShip.position.set(0, 0, 0);
   scene.add(playerShip);
 
@@ -999,6 +1026,8 @@ window.addEventListener("load", () => {
       shipYaw = Math.PI + Math.sin(elapsed * 0.25) * 0.22;
       shipPitch = Math.sin(elapsed * 0.19) * 0.12;
       velX = 0; velY = 0; velZ = 0;
+      glowLevel = 1;
+
       /* The attract mode shoots too, so an unattended demo shows the
        * weapon rather than a ship drifting silently. */
       const cpT = Math.cos(shipPitch);
@@ -1090,6 +1119,18 @@ window.addEventListener("load", () => {
       /* Fire on a cooldown rather than per frame: at 500fps an
        * uncooled trigger empties the whole pool in one tick and the
        * bolts arrive as a single blob. */
+      /* ---- engine glow ----
+       *
+       * Two small additive quads on the exhaust ports, brightening with
+       * forward throttle. No particles: a trail of tumbling cubes behind
+       * the ship read as debris, not thrust, and the light needed to make
+       * it visible blew the hull out to white.
+       *
+       * Only FORWARD thrust lights them. Coasting or reversing leaves them
+       * dark, which is the whole tell -- a glow that is always on conveys
+       * nothing. */
+      glowLevel = fwd > 0.05 ? fwd * run : 0;
+
       fireCooldown -= dt;
       if (firing && fireCooldown <= 0 && !won && !lost) {
         fireCooldown = 0.11;
@@ -1103,10 +1144,90 @@ window.addEventListener("load", () => {
      * camera trails on a spring rather than rigidly: a hard-mounted
      * camera transmits every collision jolt straight to the player's eye
      * and is unreadable in a tight tunnel. */
-    playerShip.position.set(shipX, shipY, shipZ);
+    /* The mesh is SUNK by half the model's height.
+     *
+     * The model spans local y 0..0.75, so its origin is at its BASE: put
+     * at shipY it floats entirely above the ship point and, worse, rolls
+     * about its base rather than its centre. Anything positioned relative
+     * to it then swings wildly with bank -- which is exactly why the
+     * engine glows kept sliding off the ports.
+     *
+     * Sinking it by half the height puts the hull's centre at shipY, so
+     * roll happens about the middle of the ship as it should. */
+    _portOff.set(0, -HULL_HALF, 0).applyQuaternion(playerShip.quaternion);
+    playerShip.position.set(shipX + _portOff.x, shipY + _portOff.y,
+                            shipZ + _portOff.z);
     playerShip.quaternion.setFromEuler(-shipPitch, shipYaw + Math.PI, 0);
     _bankQ.setFromAxisAngle(_fwdAxis, bank);
     playerShip.quaternion.multiply(_bankQ);
+
+    /* The ports ride the hull, positioned by the SHIP'S OWN QUATERNION.
+     *
+     * The previous version rebuilt the offset from shipYaw with
+     * hand-written trig -- a horizontal right vector and a world-up
+     * offset -- which silently ignored BANK and PITCH. At only 10 degrees
+     * of bank the port had already moved 0.052m, 18% of the spacing
+     * between them, so the glows drifted off the ports whenever the ship
+     * was doing anything but flying dead level.
+     *
+     * Transforming the local offset by the quaternion is what a
+     * quaternion is FOR, and it cannot fall out of step with however the
+     * hull is oriented. The offsets are the model's real port centres:
+     * two rectangles at local x -0.20..-0.10 and +0.10..+0.20, y
+     * 0.10..0.50, on the rear face at z 1.013 -- so centres at
+     * (+/-0.15, 0.30, 1.013), scaled by 0.95. */
+    /* The REAL exhaust ports, found by isolating the model's DARK
+     * material in the rear half rather than reading the flat rear face:
+     *
+     *   x -0.40..-0.25 and +0.25..+0.40   -> centres +/-0.325
+     *   y  0.15..0.35                     -> centre   0.25
+     *   z  0.813..0.913                   -> face at  0.913
+     *
+     * The earlier +/-0.15 at z 1.013 was the fuselage vent between them,
+     * which is why the glows kept landing inboard of the actual engines. */
+    const SC = 0.95;
+    const PORT_X = 0.325 * SC;
+    const PORT_Y = (0.25 - 0.375) * SC;   // from the sunk hull centre
+    const PORT_Z = 0.93 * SC;
+    _portOff.set(PORT_X, PORT_Y, PORT_Z)
+            .applyQuaternion(playerShip.quaternion);
+    portL.position.set(shipX + _portOff.x, shipY + _portOff.y,
+                       shipZ + _portOff.z);
+    _portOff.set(-PORT_X, PORT_Y, PORT_Z)
+            .applyQuaternion(playerShip.quaternion);
+    portR.position.set(shipX + _portOff.x, shipY + _portOff.y,
+                       shipZ + _portOff.z);
+
+    const g = Math.min(1, glowLevel);
+    /* The ports sit only 0.285 apart, so an oversized glow makes the two
+     * sprites OVERLAP and additive blending turns the overlap into the
+     * brightest point -- a single blob on the fuselage centre, which is
+     * exactly what it looked like at 0.42. The quad has to stay narrower
+     * than the gap between the ports. */
+    /* Barely larger than the port itself (0.14 x 0.19 world). The glow
+     * texture's falloff then sits INSIDE the recess rather than spilling
+     * across the tail. */
+    const ps = 0.13 + g * 0.06;
+    portL.scale.set(ps, ps, 1);
+    portR.scale.set(ps, ps, 1);
+    /* Never reaches 1. An additive quad at full opacity saturates to
+     * white and loses the amber entirely; a soft glow wants to stay a
+     * colour, not become a light source. */
+    portMat.opacity = 0.14 + g * 0.34;
+    portL.visible = g > 0.02;
+    portR.visible = g > 0.02;
+
+    /* The tail light sits behind BOTH ports, again via the quaternion. */
+    _portOff.set(0, PORT_Y, 1.5).applyQuaternion(playerShip.quaternion);
+
+    /* A HINT on the wall behind, not a lamp on the hull.
+     *
+     * At 1.1 with decay 1 this contributed 2.2 at half a metre -- more
+     * than full white -- so it lit the entire back of the ship instead of
+     * tinting the tunnel behind it. */
+    engineLight.intensity = g * 0.16;
+    engineLight.position.set(shipX + _portOff.x, shipY + _portOff.y,
+                             shipZ + _portOff.z);
 
     const cpz = Math.cos(shipPitch);
     const camBackX = -Math.sin(shipYaw) * cpz;
@@ -1383,10 +1504,22 @@ function placeHUD(hud: Mesh, camera: PerspectiveCamera): void {
    * outside the frustum and vanished. */
   /* Up and to the LEFT: centred over the nose it sat exactly where the
    * tunnel ahead needs to be readable. */
-  hud.position.addScaledVector(_fwd, 2.4);
-  hud.position.addScaledVector(_up, 1.18);
+  /* Anchored to the TOP-LEFT CORNER of the frustum.
+   *
+   * Derived rather than dialled in: at distance d the half-width of the
+   * view is tan(fov/2)*d, so offsetting by that puts the quad's centre on
+   * the frame edge. Backing off by the quad's own half-width leaves it
+   * flush inside the corner, which is where a HUD belongs and where
+   * nudging a magic number never quite got it. */
+  const HUD_D = 2.4;
+  const halfH = 1.68;             // tan(70/2 deg) * 2.4  -- fov is VERTICAL
+  const halfW = halfH * (1280 / 720);
+  /* The quad is makeQuad(0.72, 0.36), whose arguments are HALF-extents, so
+   * pulling in by exactly those puts it flush in the corner. */
+  hud.position.addScaledVector(_fwd, HUD_D);
+  hud.position.addScaledVector(_up, halfH - 0.36);
   _right.set(1, 0, 0).applyQuaternion(camera.quaternion);
-  hud.position.addScaledVector(_right, -1.34);
+  hud.position.addScaledVector(_right, -(halfW - 0.72));
   hud.quaternion.copy(camera.quaternion);
 }
 
@@ -1461,6 +1594,7 @@ function drawHUD(ctx: Context2D, air: number, maxAir: number,
 const _bankQ = new Quaternion();
 /* Bank is a roll about the ship's OWN forward axis. */
 const _fwdAxis = new Vector3(0, 0, 1);
+const _portOff = new Vector3();
 const _fwd = new Vector3();
 const _right = new Vector3();
 const _up = new Vector3();

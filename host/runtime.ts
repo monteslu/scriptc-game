@@ -30,6 +30,14 @@ export class HostOptions {
   width = 640;
   height = 360;
   vsync = true;
+  /**
+   * Render into an offscreen EGL pbuffer instead of a window.
+   *
+   * A GL game on a box with a display server but no interactive session
+   * creates its window fine and then never has it mapped, so the process
+   * blocks in poll() forever. Headless skips the window entirely.
+   */
+  headless = false;
   /** 0 = run until quit; >0 = stop after N frames (harness). */
   maxFrames = 0;
   /** When set, the frame at shotFrame is written here as a PNG. */
@@ -68,6 +76,12 @@ export function optionsFromEnv(base: HostOptions): HostOptions {
   const shotFrame = process.env["SG_SHOT_FRAME"];
   if (shotFrame !== undefined) base.shotFrame = parseInt(shotFrame, 10);
   if (process.env["SG_NO_VSYNC"] !== undefined) base.vsync = false;
+  /* Headless implies no vsync: there is no display to sync to, and leaving
+   * it on would pace the benchmark against a refresh that does not exist. */
+  if (process.env["SG_HEADLESS"] !== undefined) {
+    base.headless = true;
+    base.vsync = false;
+  }
   return base;
 }
 
@@ -97,7 +111,7 @@ export function hostInput(): Input { return input; }
 export function boot(opts: HostOptions): number {
   setGameDir(opts.gameDir);
 
-  /* Bit 0 resizable, bit 1 no-vsync.
+  /* Bit 0 resizable, bit 1 no-vsync, bit 2 headless GL.
    *
    * Resizable by default: the canvas keeps its logical size and the renderer
    * integer-scales it with letterboxing, so a game never sees the window
@@ -105,6 +119,7 @@ export function boot(opts: HostOptions): number {
    * dimensions, which on a high-DPI display can be a postage stamp. */
   let flags = 1;
   if (!opts.vsync) flags += 2;
+  if (opts.headless) flags += 4;
 
   const rc = ffi.init(opts.width, opts.height, flags);
   if (rc !== 0) {
@@ -213,6 +228,19 @@ export async function run(opts: HostOptions): Promise<number> {
     /* End the turn so promise continuations run before the next frame. This
      * one line is what makes `fetch().then()` and `img.decode()` work. */
     await Promise.resolve(0);
+  }
+
+  /* Frame stats on the way out, when asked for.
+   *
+   * These were collected every frame and never reported, so measuring any
+   * game meant editing its source. SG_STATS prints them instead, which is
+   * what makes a before/after comparison possible on a real scene rather
+   * than only on the benchmark example. */
+  if (process.env["SG_STATS"] !== undefined && stats.frames > 0) {
+    const mean = stats.totalMs / stats.frames;
+    console.log(`frames ${stats.frames}  mean ${mean.toFixed(3)} ms` +
+                `  min ${stats.minMs.toFixed(3)}  max ${stats.maxMs.toFixed(3)}` +
+                `  hitches ${stats.hitches}`);
   }
 
   ffi.inputQuit();

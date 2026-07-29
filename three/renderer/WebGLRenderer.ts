@@ -29,10 +29,13 @@ import {
   RGBA, UNSIGNED_BYTE, TEXTURE_MIN_FILTER, TEXTURE_MAG_FILTER, LINEAR,
   CLAMP_TO_EDGE, REPEAT, TEXTURE_WRAP_S, TEXTURE_WRAP_T, COMPILE_STATUS,
   LINK_STATUS, BLEND, SRC_ALPHA, ONE_MINUS_SRC_ALPHA, ONE, LEQUAL, DEPTH_FUNC,
+  FRAMEBUFFER, COLOR_ATTACHMENT0, DEPTH_ATTACHMENT, RENDERBUFFER,
+  DEPTH_COMPONENT16,
   POINTS as GL_POINTS, LINES, LINE_LOOP, LINE_STRIP, DYNAMIC_DRAW,
 } from "../../web/webgl/constants.js";
 import { Scene } from "../core/Scene.js";
 import { Fog, FOG_EXP2 } from "../scenes/Fog.js";
+import { WebGLRenderTarget } from "../textures/WebGLRenderTarget.js";
 import { PerspectiveCamera } from "../core/PerspectiveCamera.js";
 import { Object3D } from "../core/Object3D.js";
 
@@ -41,20 +44,23 @@ import { BufferGeometry } from "../core/BufferGeometry.js";
 import {
   Material, MeshLambertMaterial, AdditiveBlending,
   FEAT_MAP, FEAT_VERTEX_COLORS, FEAT_LAMBERT, FEAT_FOG,
-  FEAT_EMISSIVE, FEAT_INSTANCED, FEAT_POINTS, FEAT_SPRITE,
+  FEAT_EMISSIVE, FEAT_INSTANCED, FEAT_POINTS, FEAT_SPRITE, FEAT_STANDARD,
+  MeshStandardMaterial,
   PointsMaterial, SpriteMaterial, DoubleSide, BackSide,
 } from "../materials/Material.js";
 import { InstancedMesh } from "../objects/InstancedMesh.js";
 import { Sprite, Line, LineSegments, LineLoop, Points } from "../objects/Sprite.js";
 import {
-  Light, AmbientLight, DirectionalLight, PointLight,
-  LIGHT_AMBIENT, LIGHT_DIRECTIONAL, LIGHT_POINT,
+  Light, AmbientLight, DirectionalLight, PointLight, HemisphereLight,
+  LIGHT_AMBIENT, LIGHT_DIRECTIONAL, LIGHT_POINT, LIGHT_HEMISPHERE,
 } from "../lights/Light.js";
 import { Texture } from "../textures/Texture.js";
 import { Matrix4 } from "../math/Matrix4.js";
 import { Matrix3 } from "../math/Matrix3.js";
 import { Vector3 } from "../math/Vector3.js";
 import { Color } from "../math/Color.js";
+import { Frustum } from "../math/Frustum.js";
+import { Sphere } from "../math/Sphere.js";
 
 /* Fixed light maxima. A game-sized budget keeps the shader branch-free and
  * the uniform block small; three's unbounded arrays are what force its
@@ -62,24 +68,42 @@ import { Color } from "../math/Color.js";
 const MAX_DIR_LIGHTS = 4;
 const MAX_POINT_LIGHTS = 8;
 
+/* How many meshes sharing a geometry and a program before instancing them
+ * as one draw is worth the buffer upload. Below this the upload costs more
+ * than the draws it replaces, so a scene of distinct objects takes the
+ * ordinary path and pays nothing for this feature existing. */
+const BATCH_MIN = 24;
+
 /** One compiled program plus the uniform locations it uses. */
 class Program {
   features = 0;
+  /* Which frame the PER-FRAME uniforms were last uploaded for.
+   *
+   * Projection, lights and fog do not change between draws, but they were
+   * being re-uploaded for every mesh: at 10000 meshes that is 10000
+   * redundant uploads of the same matrices and the same light arrays.
+   * Stamping the frame lets a program upload them once and skip the rest,
+   * which is the bulk of what three's own state caching buys. */
+  frameStamp = -1;
   /* The spec objects, not raw GL names: gl.useProgram takes a WebGLProgram
    * and gl.uniform*  take a WebGLUniformLocation. Keeping the wrappers here
    * means the renderer calls the same API a browser exposes. */
   glProgram: WebGLProgram | null = null;
   uModelViewMatrix: WebGLUniformLocation | null = null;
   uProjectionMatrix: WebGLUniformLocation | null = null;
-  uNormalMatrix: WebGLUniformLocation | null = null;
+  uNormalScaled: WebGLUniformLocation | null = null;
   uColor: WebGLUniformLocation | null = null;
-  uOpacity: WebGLUniformLocation | null = null;
   uMap: WebGLUniformLocation | null = null;
   uMapTransform: WebGLUniformLocation | null = null;
   uFogColor: WebGLUniformLocation | null = null;
   uFogParams: WebGLUniformLocation | null = null;
   uEmissive: WebGLUniformLocation | null = null;
+  uRoughness: WebGLUniformLocation | null = null;
+  uMetalness: WebGLUniformLocation | null = null;
   uAmbient: WebGLUniformLocation | null = null;
+  uHemiSky: WebGLUniformLocation | null = null;
+  uHemiGround: WebGLUniformLocation | null = null;
+  uHemiUp: WebGLUniformLocation | null = null;
   uDirCount: WebGLUniformLocation | null = null;
   uDirDirections: WebGLUniformLocation | null = null;
   uDirColors: WebGLUniformLocation | null = null;
@@ -117,8 +141,40 @@ export class WebGLRenderer {
   private dirLights: Light[] = [];
   private pointLights: Light[] = [];
   private ambient: Color = new Color(0x000000);
+  /* Summed hemisphere contribution. Several hemisphere lights add, the
+   * same way several ambients do. */
+  private hemiSky: Color = new Color(0x000000);
+  private hemiGround: Color = new Color(0x000000);
   /** The scene's fog, captured at the start of each render. */
   private fog: Fog | null = null;
+  /** The target currently bound, or null for the screen. */
+  private renderTarget: WebGLRenderTarget | null = null;
+  /** Increments each render; programs stamp it to skip redundant uploads. */
+  private frameStamp = 0;
+
+  /* View-frustum culling. On by default, as in three, and switchable so a
+   * game (or the benchmark) can measure with it off. */
+  frustumCulling = true;
+  readonly frustum = new Frustum();
+  /** Meshes rejected by the frustum last frame; diagnostic only. */
+  culledCount = 0;
+  /* What is currently bound. GL state is global and sticky, so re-issuing
+   * a bind that changes nothing is pure cost. */
+  private currentProgram: Program | null = null;
+  private currentVAO: WebGLVertexArrayObject | null = null;
+
+  /* Auto-instancing scratch. Grow-only and reused across frames: a fresh
+   * allocation per batch per frame would give back most of the saving. */
+  private batchGeo: (BufferGeometry | null)[] = [];
+  private batchFeat: number[] = [];
+  private batchCount: number[] = [];
+  /** Which batch slot each mesh in the current list belongs to, or -1. */
+  private batchOf: number[] = [];
+  private batchMatrixData: Buffer | null = null;
+  private batchColorData: Buffer | null = null;
+  private batchVAO: WebGLVertexArrayObject | null = null;
+  private batchMatrixBuffer: WebGLBuffer | null = null;
+  private batchColorBuffer: WebGLBuffer | null = null;
 
   constructor(gl: WebGL2RenderingContext) {
     this.gl = gl;
@@ -131,6 +187,62 @@ export class WebGLRenderer {
     this.width = width;
     this.height = height;
     this.gl.viewport(0, 0, width, height);
+  }
+
+  /* Direct subsequent renders into a texture, or back to the screen.
+   *
+   * three's signature. Passing null restores the default framebuffer AND
+   * the screen viewport -- forgetting the viewport is the classic bug
+   * here, because a 512x512 target leaves the viewport at 512x512 and the
+   * next screen frame draws into a corner. */
+  setRenderTarget(target: WebGLRenderTarget | null): void {
+    const gl = this.gl;
+    if (target === null) {
+      gl.bindFramebuffer(FRAMEBUFFER, null);
+      gl.viewport(0, 0, this.width, this.height);
+      this.renderTarget = null;
+      return;
+    }
+
+    if (target.glFramebuffer === null) this.setupRenderTarget(target);
+    gl.bindFramebuffer(FRAMEBUFFER, target.glFramebuffer);
+    gl.viewport(0, 0, target.width, target.height);
+    this.renderTarget = target;
+  }
+
+  /* Allocate the framebuffer, its colour texture and its depth buffer.
+   *
+   * The depth attachment matters: without it a 3D scene drawn into the
+   * target has NO depth test, so triangles land in submission order and
+   * the result looks like a shattered mesh rather than a view. */
+  private setupRenderTarget(target: WebGLRenderTarget): void {
+    const gl = this.gl;
+    const tex = target.texture;
+
+    if (tex.glTexture === null) {
+      tex.glTexture = gl.createTexture();
+      gl.bindTexture(TEXTURE_2D, tex.glTexture);
+      gl.texImage2DEmpty(TEXTURE_2D, 0, RGBA, target.width, target.height,
+                         RGBA, UNSIGNED_BYTE);
+      gl.texParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, LINEAR);
+      gl.texParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, LINEAR);
+      gl.texParameteri(TEXTURE_2D, TEXTURE_WRAP_S, CLAMP_TO_EDGE);
+      gl.texParameteri(TEXTURE_2D, TEXTURE_WRAP_T, CLAMP_TO_EDGE);
+    }
+
+    target.glFramebuffer = gl.createFramebuffer();
+    gl.bindFramebuffer(FRAMEBUFFER, target.glFramebuffer);
+    gl.framebufferTexture2D(FRAMEBUFFER, COLOR_ATTACHMENT0, TEXTURE_2D,
+                            tex.glTexture, 0);
+
+    if (target.depthBuffer) {
+      target.glDepthBuffer = gl.createRenderbuffer();
+      gl.bindRenderbuffer(RENDERBUFFER, target.glDepthBuffer);
+      gl.renderbufferStorage(RENDERBUFFER, DEPTH_COMPONENT16,
+                             target.width, target.height);
+      gl.framebufferRenderbuffer(FRAMEBUFFER, DEPTH_ATTACHMENT, RENDERBUFFER,
+                                 target.glDepthBuffer);
+    }
   }
 
   setClearColor(color: number): void {
@@ -154,7 +266,16 @@ export class WebGLRenderer {
     if ((features & FEAT_INSTANCED) !== 0) s += "in vec3 instanceColor;\n";
     s += "uniform mat4 modelViewMatrix;\n";
     s += "uniform mat4 projectionMatrix;\n";
-    s += "uniform mat3 normalMatrix;\n";
+    /* No separate normalMatrix uniform.
+     *
+     * It is the inverse-transpose of modelView's 3x3, and computing it on
+     * the CPU cost a 3x3 inverse plus a second uniform crossing per mesh
+     * -- 10000 extra crossings a frame at 10000 meshes, and the inverse
+     * itself is the expensive half. mat3(modelViewMatrix) is EXACT for the rigid and
+     * uniformly-scaled transforms games actually use; `normalScaled`
+     * switches to a shader-side inverse-transpose only when a non-uniform
+     * scale makes that necessary. */
+    s += "uniform float normalScaled;\n";
     if ((features & FEAT_POINTS) !== 0) {
       s += "uniform float pointSize;\n";
       s += "uniform float sizeAttenuation;\n";
@@ -196,10 +317,12 @@ export class WebGLRenderer {
        * is correct for the rigid + uniform-scale transforms instancing is
        * used for; non-uniform per-instance scale would need a per-instance
        * inverse-transpose, which is not worth the bandwidth here. */
-      s += "  vNormal = normalize(normalMatrix * mat3(instanceMatrix) * normal);\n";
+      s += "  vNormal = normalize(mat3(modelViewMatrix) * mat3(instanceMatrix) * normal);\n";
     } else {
       s += "  vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);\n";
-      s += "  vNormal = normalize(normalMatrix * normal);\n";
+      s += "  mat3 nm = mat3(modelViewMatrix);\n";
+      s += "  if (normalScaled > 0.5) nm = transpose(inverse(nm));\n";
+      s += "  vNormal = normalize(nm * normal);\n";
     }
 
     s += "  vViewPosition = -mvPosition.xyz;\n";
@@ -226,8 +349,18 @@ export class WebGLRenderer {
     if ((features & FEAT_MAP) !== 0) s += "in vec2 vUv;\n";
     if ((features & FEAT_VERTEX_COLORS) !== 0) s += "in vec3 vColor;\n";
     if ((features & FEAT_INSTANCED) !== 0) s += "in vec3 vInstanceColor;\n";
-    s += "uniform vec3 diffuse;\n";
-    s += "uniform float opacity;\n";
+    /* diffuse.rgb and opacity in ONE vec4.
+     *
+     * Every uniform call crosses the FFI, and at 10000 meshes the per-draw
+     * uniforms alone were 40000 crossings. Packing what the shader reads
+     * together is the cheapest way to cut that count.
+     *
+     * The cost is NOT the C boundary: a bare FFI call measured 32ns, so
+     * 40000 of them is ~1.3ms, not the ~2us/call this comment used to
+     * claim. What is expensive is the scriptc-side work per call plus the
+     * per-object scene walk feeding it -- see "Where the remaining gap
+     * actually is" in docs/WEBGL-AND-3D.md. */
+    s += "uniform vec4 diffuseOpacity;\n";
     if ((features & FEAT_MAP) !== 0) {
       s += "uniform sampler2D map;\n";
       s += "uniform vec4 mapTransform;\n";   // xy = repeat, zw = offset
@@ -235,6 +368,14 @@ export class WebGLRenderer {
     if ((features & FEAT_EMISSIVE) !== 0) s += "uniform vec3 emissive;\n";
     if ((features & FEAT_LAMBERT) !== 0) {
       s += "uniform vec3 ambientLightColor;\n";
+      /* Hemisphere: sky above, ground below, blended by the normal's Y.
+       * One vec3 pair and one mix -- the cheapest believable ambient. */
+      s += "uniform vec3 hemiSky;\n";
+      s += "uniform vec3 hemiGround;\n";
+      /* WORLD up, expressed in VIEW space. Hemisphere lighting is a
+       * world-space effect: which way is "up" cannot depend on where the
+       * camera is looking. */
+      s += "uniform vec3 hemiUp;\n";
       s += `uniform int dirLightCount;\n`;
       s += `uniform vec3 dirLightDirections[${MAX_DIR_LIGHTS}];\n`;
       s += `uniform vec3 dirLightColors[${MAX_DIR_LIGHTS}];\n`;
@@ -243,6 +384,10 @@ export class WebGLRenderer {
       s += `uniform vec3 pointLightColors[${MAX_POINT_LIGHTS}];\n`;
       /* x = distance (0 = no cutoff), y = decay exponent. */
       s += `uniform vec2 pointLightFalloff[${MAX_POINT_LIGHTS}];\n`;
+    }
+    if ((features & FEAT_STANDARD) !== 0) {
+      s += "uniform float roughness;\n";
+      s += "uniform float metalness;\n";
     }
     if ((features & FEAT_FOG) !== 0) {
       s += "uniform vec3 fogColor;\n";
@@ -253,7 +398,7 @@ export class WebGLRenderer {
     }
     s += "out vec4 fragColor;\n";
     s += "void main() {\n";
-    s += "  vec4 base = vec4(diffuse, opacity);\n";
+    s += "  vec4 base = diffuseOpacity;\n";
     /* A point sprite has no uv attribute: gl_PointCoord gives the position
      * within the point, which is the only sensible texture coordinate. It
      * runs top-down like a texture source, so v is flipped to match. */
@@ -268,6 +413,13 @@ export class WebGLRenderer {
     if ((features & FEAT_LAMBERT) !== 0) {
       s += "  vec3 n = normalize(vNormal);\n";
       s += "  vec3 lit = ambientLightColor;\n";
+      /* dot against world-up-in-view-space, NOT the view normal's y.
+       *
+       * Using n.y made the term rotate with the camera, and on a
+       * symmetric object the two colours summed to the same image however
+       * they were assigned -- swapping sky and ground changed nothing,
+       * which is exactly what the test caught. */
+      s += "  lit += mix(hemiGround, hemiSky, dot(n, hemiUp) * 0.5 + 0.5);\n";
       s += `  for (int i = 0; i < ${MAX_DIR_LIGHTS}; i++) {\n`;
       s += "    if (i >= dirLightCount) break;\n";
       s += "    lit += dirLightColors[i] * max(dot(n, dirLightDirections[i]), 0.0);\n";
@@ -297,7 +449,47 @@ export class WebGLRenderer {
       s += "    }\n";
       s += "    lit += pointLightColors[i] * max(dot(n, toLight / dist), 0.0) * atten;\n";
       s += "  }\n";
-      s += "  base.rgb *= lit;\n";
+
+      if ((features & FEAT_STANDARD) !== 0) {
+      /* Blinn-Phong, driven by roughness.
+       *
+       * Not Cook-Torrance: no IBL, no Fresnel, not energy-conserving. The
+       * exponent is derived from roughness so the two numbers behave the
+       * way a three user expects -- low roughness gives a tight bright
+       * highlight, high roughness spreads it into nothing.
+       *
+       * metalness tints the highlight with the albedo, which is the whole
+       * visual difference between metal and plastic; a dielectric keeps a
+       * white one. */
+      s += "  vec3 viewDir = normalize(vViewPosition);\n";
+      s += "  float shininess = mix(128.0, 2.0, clamp(roughness, 0.0, 1.0));\n";
+      s += "  vec3 specTint = mix(vec3(1.0), base.rgb, clamp(metalness, 0.0, 1.0));\n";
+      s += "  vec3 spec = vec3(0.0);\n";
+      s += `  for (int i = 0; i < ${MAX_DIR_LIGHTS}; i++) {\n`;
+      s += "    if (i >= dirLightCount) break;\n";
+      s += "    vec3 h = normalize(dirLightDirections[i] + viewDir);\n";
+      s += "    spec += dirLightColors[i] * pow(max(dot(n, h), 0.0), shininess);\n";
+      s += "  }\n";
+      s += `  for (int i = 0; i < ${MAX_POINT_LIGHTS}; i++) {\n`;
+      s += "    if (i >= pointLightCount) break;\n";
+      s += "    vec3 toL = pointLightPositions[i] + vViewPosition;\n";
+      s += "    float d = length(toL);\n";
+      s += "    vec3 h = normalize(toL / d + viewDir);\n";
+      s += "    float att = 1.0 / max(pow(max(d, 0.01), pointLightFalloff[i].y), 0.0001);\n";
+      s += "    if (pointLightFalloff[i].x > 0.0) {\n";
+      s += "      float w = clamp(1.0 - pow(d / pointLightFalloff[i].x, 4.0), 0.0, 1.0);\n";
+      s += "      att *= w * w;\n";
+      s += "    }\n";
+      s += "    spec += pointLightColors[i] * pow(max(dot(n, h), 0.0), shininess) * att;\n";
+      s += "  }\n";
+      /* A metal has almost no diffuse: its light comes back as
+       * reflection. Scaling the diffuse down by metalness is the cheapest
+       * approximation of that. */
+      s += "  base.rgb *= mix(lit, lit * 0.25, clamp(metalness, 0.0, 1.0));\n";
+      s += "  base.rgb += spec * specTint * (1.0 - clamp(roughness, 0.0, 1.0) * 0.85);\n";
+      } else {
+        s += "  base.rgb *= lit;\n";
+      }
     }
     if ((features & FEAT_EMISSIVE) !== 0) s += "  base.rgb += emissive;\n";
 
@@ -376,15 +568,19 @@ export class WebGLRenderer {
     const loc = (n: string): WebGLUniformLocation | null => gl.getUniformLocation(prog, n);
     p.uModelViewMatrix = loc("modelViewMatrix");
     p.uProjectionMatrix = loc("projectionMatrix");
-    p.uNormalMatrix = loc("normalMatrix");
-    p.uColor = loc("diffuse");
-    p.uOpacity = loc("opacity");
+    p.uNormalScaled = loc("normalScaled");
+    p.uColor = loc("diffuseOpacity");
     p.uMap = loc("map");
     p.uMapTransform = loc("mapTransform");
     p.uFogColor = loc("fogColor");
     p.uFogParams = loc("fogParams");
     p.uEmissive = loc("emissive");
+    p.uRoughness = loc("roughness");
+    p.uMetalness = loc("metalness");
     p.uAmbient = loc("ambientLightColor");
+    p.uHemiSky = loc("hemiSky");
+    p.uHemiGround = loc("hemiGround");
+    p.uHemiUp = loc("hemiUp");
     p.uDirCount = loc("dirLightCount");
     p.uDirDirections = loc("dirLightDirections[0]");
     p.uDirColors = loc("dirLightColors[0]");
@@ -419,6 +615,8 @@ export class WebGLRenderer {
 
     const vao = gl.createVertexArray();
     gl.bindVertexArray(vao);
+    /* Built by binding directly, so the cache no longer reflects GL. */
+    this.currentVAO = vao;
     geo.glVAO = vao;
 
     if (geo.position !== null) {
@@ -477,9 +675,18 @@ export class WebGLRenderer {
       tex.needsUpdate = true;
     }
 
+    /* A render target's texture is drawn INTO, so there is nothing to
+     * upload. Its storage was allocated by setupRenderTarget. */
+    if (tex.isRenderTarget) return;
     if (!tex.needsUpdate) return;
     gl.bindTexture(TEXTURE_2D, tex.glTexture);
-    if (tex.image !== null && tex.image.complete) {
+    const data = tex.data;
+    if (tex.isDataTexture && data !== null) {
+      /* Raw RGBA8 bytes: a procedural texture or a shader lookup table. */
+      gl.texImage2D(TEXTURE_2D, 0, RGBA, tex.width, tex.height, 0,
+                    RGBA, UNSIGNED_BYTE, data);
+      tex.needsUpdate = false;
+    } else if (tex.image !== null && tex.image.complete) {
       gl.texImage2DFromImage(TEXTURE_2D, 0, tex.image);
       tex.needsUpdate = false;
     } else if (tex.canvas !== null) {
@@ -501,17 +708,82 @@ export class WebGLRenderer {
     this.dirLights.splice(0, this.dirLights.length);
     this.pointLights.splice(0, this.pointLights.length);
     this.ambient.setRGB(0, 0, 0);
+    this.hemiSky.setRGB(0, 0, 0);
+    this.hemiGround.setRGB(0, 0, 0);
 
     /* Walked by hand rather than through traverseVisible + a downcast:
      * narrowing an Object3D to a Mesh is SC1090 ("values where Mesh is
      * expected"). Object3D keeps typed self-references instead, which the
      * subclass constructors fill in, so this reads the concrete object
      * without a cast. */
-    for (let i = 0; i < scene.meshes.length; i++) {
-      const mesh = scene.meshes[i];
-      if (!mesh.visible || !mesh.material.visible) continue;
-      if (mesh.material.transparent) this.transparent.push(mesh);
-      else this.opaque.push(mesh);
+    /* Refresh the flat flag mirror, then scan THAT.
+     *
+     * The refresh still reads through the fat objects, but it writes one
+     * number per mesh into a contiguous array; the scan that follows --
+     * and every later pass that only needs "is this drawable" -- touches
+     * 4 bytes per mesh instead of chasing pointers through two Matrix4s
+     * and four separately-allocated math objects.
+     *
+     * `visible` and `material.visible` are plain public fields a game
+     * assigns whenever it likes, so there is no flag to trust: the mirror
+     * is rebuilt each frame. That still wins, because it turns N random
+     * reads spread over megabytes into N sequential writes over 40KB. */
+    const meshes = scene.meshes;
+    const flags = scene.meshFlags;
+    const n = meshes.length;
+    while (flags.length < n) flags.push(0);
+
+    /* VIEW-FRUSTUM CULLING.
+     *
+     * Built once per frame from the camera's viewProjection, then each
+     * mesh's origin-centred bounding radius is tested against it. A mesh
+     * that fails is not drawn AND not walked further, which is the point:
+     * the benchmark shows the per-object work dominating a large frame, so
+     * the win is skipping objects rather than drawing them faster.
+     *
+     * The sphere is conservative (a corner case can pass and still be off
+     * screen). That is deliberate and matches three: a false accept costs
+     * one draw, a false reject is a visibly missing object.
+     *
+     * `mesh.frustumCulled` opts out per object, as in three. Anything
+     * whose vertex shader moves geometry away from its transform -- and
+     * the sprites/lines/points paths, which are collected elsewhere --
+     * must keep it off or it will vanish when its origin leaves view. */
+    const doCull = this.frustumCulling;
+    let culled = 0;
+    if (doCull) {
+      _viewProj.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+      this.frustum.setFromProjectionMatrix(_viewProj);
+    }
+
+    for (let i = 0; i < n; i++) {
+      const mesh = meshes[i];
+      const mat = mesh.material;
+      /* bit 0 drawable, bit 1 transparent. */
+      let f = 0;
+      if (mesh.visible && mat.visible) {
+        f = 1;
+        if (mat.transparent) f = 3;
+      }
+      if (f !== 0 && doCull && mesh.frustumCulled) {
+        const geo = mesh.geometry;
+        if (geo.boundingRadius < 0) geo.computeBoundingRadius();
+        _cullSphere.center.set(0, 0, 0);
+        _cullSphere.radius = geo.boundingRadius;
+        if (!this.frustum.intersectsSphereTransformed(_cullSphere, mesh.matrixWorld)) {
+          f = 0;
+          culled = culled + 1;
+        }
+      }
+      flags[i] = f;
+    }
+    this.culledCount = culled;
+
+    for (let i = 0; i < n; i++) {
+      const f = flags[i];
+      if (f === 0) continue;
+      if (f === 3) this.transparent.push(meshes[i]);
+      else this.opaque.push(meshes[i]);
     }
     for (let i = 0; i < scene.lights.length; i++) {
       const light = scene.lights[i];
@@ -523,6 +795,15 @@ export class WebGLRenderer {
         amb.r = amb.r + light.color.r * light.intensity;
         amb.g = amb.g + light.color.g * light.intensity;
         amb.b = amb.b + light.color.b * light.intensity;
+      } else if (light.lightType === LIGHT_HEMISPHERE) {
+        const s = this.hemiSky;
+        s.r = s.r + light.color.r * light.intensity;
+        s.g = s.g + light.color.g * light.intensity;
+        s.b = s.b + light.color.b * light.intensity;
+        const gc = this.hemiGround;
+        gc.r = gc.r + light.groundColor.r * light.intensity;
+        gc.g = gc.g + light.groundColor.g * light.intensity;
+        gc.b = gc.b + light.groundColor.b * light.intensity;
       } else if (light.lightType === LIGHT_DIRECTIONAL) {
         if (this.dirLights.length < MAX_DIR_LIGHTS) this.dirLights.push(light);
       } else if (light.lightType === LIGHT_POINT) {
@@ -561,6 +842,9 @@ export class WebGLRenderer {
     const gl = this.gl;
 
     this.fog = scene.fog;
+    /* Bumped once per render so per-frame uniforms upload once per
+     * program rather than once per mesh. */
+    this.frameStamp += 1;
     scene.updateMatrixWorld(false);
     camera.updateMatrixWorld(false);
     this.collect(scene, camera);
@@ -626,6 +910,25 @@ export class WebGLRenderer {
       gl.depthMask(true);
     }
 
+    /* AUTO-INSTANCING.
+     *
+     * Meshes that share a geometry and a program differ only in their
+     * transform and their colour -- exactly what an instanced draw
+     * expresses. Drawing them one at a time cost four FFI crossings each
+     * (modelView, normalScaled, colour, draw), and at 10000 meshes that
+     * was 40000 crossings and the bulk of a 124ms frame.
+     *
+     * Batching them into one instanced call makes it ONE draw plus two
+     * buffer uploads, whatever the count. Users see nothing: the pixels
+     * are identical, which is what the instancing-parity gate proves.
+     *
+     * Only for OPAQUE lists. Transparent geometry must be drawn in its
+     * submitted order for blending to be correct, and an instanced batch
+     * has no order at all. */
+    if (!isTransparent && this.tryBatch(list, camera)) {
+      return;
+    }
+
     for (let i = 0; i < list.length; i++) {
       this.renderMesh(list[i], camera);
     }
@@ -639,8 +942,15 @@ export class WebGLRenderer {
     if (program === null) return;
 
     this.prepareGeometry(mesh.geometry);
-    gl.useProgram(program.glProgram);
-    gl.bindVertexArray(mesh.geometry.glVAO);
+    /* REDUNDANT STATE ELIMINATION.
+     *
+     * A long per-mesh draw list is mostly the same program and, when
+     * meshes share a geometry, the same VAO. Calling useProgram and
+     * bindVertexArray unconditionally meant thousands of driver round
+     * trips per frame that changed nothing. Tracking what is already
+     * bound is the single biggest win available on this path. */
+    this.useProgram(program);
+    this.bindVAO(mesh.geometry.glVAO);
     this.bindCommon(program, mesh.material, mesh.matrixWorld, camera);
 
     const count = mesh.geometry.getDrawCount();
@@ -649,6 +959,244 @@ export class WebGLRenderer {
     } else {
       gl.drawArrays(TRIANGLES, 0, count);
     }
+  }
+
+  /* Draw a whole list as instanced batches, or report that it is not
+   * worth it and let the caller fall back.
+   *
+   * Groups by (geometry, program). A group of one is not worth batching --
+   * the upload would cost more than the draw it saves -- so a scene of
+   * distinct meshes takes the normal path with no penalty. */
+  private tryBatch(list: Mesh[], camera: PerspectiveCamera): boolean {
+    if (list.length < BATCH_MIN) return false;
+
+    /* One pass to group. The key is the geometry identity plus the
+     * feature bits: two meshes can share a geometry and still need
+     * different shaders (one textured, one not). */
+    this.batchGeo.splice(0, this.batchGeo.length);
+    this.batchFeat.splice(0, this.batchFeat.length);
+    this.batchCount.splice(0, this.batchCount.length);
+    this.batchOf.splice(0, this.batchOf.length);
+
+    for (let i = 0; i < list.length; i++) {
+      const mesh = list[i];
+      /* A textured or emissive material carries per-mesh uniforms the
+       * instanced shader has no attribute for, so those are never
+       * batched -- they fall through to the normal path. */
+      if (mesh.material.map !== null) { this.batchOf.push(-1); continue; }
+      const feat = this.featuresFor(mesh.material);
+      if ((feat & FEAT_EMISSIVE) !== 0) { this.batchOf.push(-1); continue; }
+
+      let slot = -1;
+      for (let k = 0; k < this.batchGeo.length; k++) {
+        if (this.batchGeo[k] === mesh.geometry && this.batchFeat[k] === feat) {
+          slot = k;
+          break;
+        }
+      }
+      if (slot < 0) {
+        slot = this.batchGeo.length;
+        this.batchGeo.push(mesh.geometry);
+        this.batchFeat.push(feat);
+        this.batchCount.push(0);
+      }
+      this.batchCount[slot] = this.batchCount[slot] + 1;
+      this.batchOf.push(slot);
+    }
+
+    /* Worth it only if some group is big enough to pay for its upload. */
+    let biggest = 0;
+    for (let k = 0; k < this.batchCount.length; k++) {
+      if (this.batchCount[k] > biggest) biggest = this.batchCount[k];
+    }
+    if (biggest < BATCH_MIN) return false;
+
+    for (let k = 0; k < this.batchGeo.length; k++) {
+      if (this.batchCount[k] >= BATCH_MIN) this.drawBatch(k, list, camera);
+    }
+    /* Anything not batched -- too few of its kind, textured, emissive --
+     * still has to be drawn. */
+    for (let i = 0; i < list.length; i++) {
+      const slot = this.batchOf[i];
+      if (slot < 0 || this.batchCount[slot] < BATCH_MIN) {
+        this.renderMesh(list[i], camera);
+      }
+    }
+    return true;
+  }
+
+  /* One instanced draw for every mesh in a batch slot.
+   *
+   * The instanced shader already reads a per-instance matrix and colour,
+   * so this reuses that path exactly rather than adding a second one --
+   * which is also why the output is pixel-identical to drawing them
+   * individually.
+   *
+   * The buffers are grow-only and reused across frames; a fresh
+   * allocation per batch per frame would give back most of what batching
+   * saves. */
+  private drawBatch(slot: number, list: Mesh[], camera: PerspectiveCamera): void {
+    const gl = this.gl;
+    const geo = this.batchGeo[slot];
+    const n = this.batchCount[slot];
+    const program = this.getProgram(this.batchFeat[slot] | FEAT_INSTANCED);
+    if (program === null || geo === null) return;
+
+    const need = n * 16 * 4;
+    if (this.batchMatrixData === null || this.batchMatrixData.length < need) {
+      this.batchMatrixData = Buffer.alloc(need);
+      this.batchColorData = Buffer.alloc(n * 3 * 4);
+    }
+    const mdata = this.batchMatrixData;
+    const cdata = this.batchColorData;
+    if (cdata === null) return;
+
+    /* Pack the world matrices and colours. The matrix goes in as-is:
+     * the instanced shader multiplies modelView * instanceMatrix, and
+     * modelView is bound to the VIEW matrix below, so instanceMatrix is
+     * each mesh's world transform. */
+    let w = 0;
+    let c = 0;
+    for (let i = 0; i < list.length; i++) {
+      if (this.batchOf[i] !== slot) continue;
+      const mesh = list[i];
+      const e = mesh.matrixWorld.elements;
+      for (let k = 0; k < 16; k++) {
+        mdata.writeFloatLE(e[k], w);
+        w += 4;
+      }
+      cdata.writeFloatLE(mesh.material.color.r, c);
+      cdata.writeFloatLE(mesh.material.color.g, c + 4);
+      cdata.writeFloatLE(mesh.material.color.b, c + 8);
+      c += 12;
+    }
+
+    this.prepareGeometry(geo);
+    this.prepareBatchBuffers(geo, mdata, cdata, w, c);
+
+    this.useProgram(program);
+    this.bindVAO(this.batchVAO);
+
+    /* modelView is the VIEW matrix alone: the world transform arrives per
+     * instance. Everything else binds exactly as a normal draw. */
+    this.bindCommonBatch(program, list, camera);
+
+    const count = geo.getDrawCount();
+    if (geo.index !== null) {
+      gl.drawElementsInstanced(TRIANGLES, count, UNSIGNED_SHORT, 0, n);
+    } else {
+      gl.drawArraysInstanced(TRIANGLES, 0, count, n);
+    }
+  }
+
+  /* Build (once) and fill the VAO the batch draws through.
+   *
+   * One VAO reused for every batch: it is rebound to whichever geometry's
+   * buffers the current batch needs, which costs four attribute pointer
+   * calls rather than a fresh VAO per geometry per frame. */
+  private prepareBatchBuffers(geo: BufferGeometry, mdata: Buffer,
+                              cdata: Buffer, mlen: number, clen: number): void {
+    const gl = this.gl;
+    if (this.batchVAO === null) {
+      this.batchVAO = gl.createVertexArray();
+      this.batchMatrixBuffer = gl.createBuffer();
+      this.batchColorBuffer = gl.createBuffer();
+    }
+    gl.bindVertexArray(this.batchVAO);
+    this.currentVAO = this.batchVAO;
+
+    if (geo.glPositionBuffer !== null) {
+      gl.bindBuffer(ARRAY_BUFFER, geo.glPositionBuffer);
+      gl.enableVertexAttribArray(0);
+      gl.vertexAttribPointer(0, 3, FLOAT, false, 0, 0);
+    }
+    if (geo.glNormalBuffer !== null) {
+      gl.bindBuffer(ARRAY_BUFFER, geo.glNormalBuffer);
+      gl.enableVertexAttribArray(1);
+      gl.vertexAttribPointer(1, 3, FLOAT, false, 0, 0);
+    }
+    if (geo.glUVBuffer !== null) {
+      gl.bindBuffer(ARRAY_BUFFER, geo.glUVBuffer);
+      gl.enableVertexAttribArray(2);
+      gl.vertexAttribPointer(2, 2, FLOAT, false, 0, 0);
+    }
+    if (geo.glIndexBuffer !== null) {
+      gl.bindBuffer(ELEMENT_ARRAY_BUFFER, geo.glIndexBuffer);
+    }
+
+    /* The matrix occupies attribute locations 4..7, one per column, each
+     * with a divisor of 1 so it advances per instance. */
+    gl.bindBuffer(ARRAY_BUFFER, this.batchMatrixBuffer);
+    gl.bufferData(ARRAY_BUFFER, mlen === mdata.length ? mdata : mdata.subarray(0, mlen),
+                  DYNAMIC_DRAW);
+    for (let k = 0; k < 4; k++) {
+      gl.enableVertexAttribArray(4 + k);
+      gl.vertexAttribPointer(4 + k, 4, FLOAT, false, 64, k * 16);
+      gl.vertexAttribDivisor(4 + k, 1);
+    }
+
+    gl.bindBuffer(ARRAY_BUFFER, this.batchColorBuffer);
+    gl.bufferData(ARRAY_BUFFER, clen === cdata.length ? cdata : cdata.subarray(0, clen),
+                  DYNAMIC_DRAW);
+    gl.enableVertexAttribArray(8);
+    gl.vertexAttribPointer(8, 3, FLOAT, false, 0, 0);
+    gl.vertexAttribDivisor(8, 1);
+
+    /* Vertex colours would fight the per-instance colour for location 3,
+     * and a batch's colour is per instance by definition. */
+    gl.disableVertexAttribArray(3);
+    gl.vertexAttrib3f(3, 1, 1, 1);
+  }
+
+  /* The per-draw uniforms for a batch.
+   *
+   * modelView is the VIEW matrix alone: the instanced shader computes
+   * modelView * instanceMatrix, and the world transform arrives per
+   * instance. diffuseOpacity is white so the per-instance colour passes
+   * through the shader's multiply unchanged. */
+  private bindCommonBatch(program: Program, list: Mesh[],
+                          camera: PerspectiveCamera): void {
+    const gl = this.gl;
+
+    camera.matrixWorldInverse.toBuffer(this.mat4Buf, 0);
+    gl.uniformMatrix4fv(program.uModelViewMatrix, false, this.mat4Buf);
+
+    const fresh = program.frameStamp !== this.frameStamp;
+    if (fresh) {
+      program.frameStamp = this.frameStamp;
+      camera.projectionMatrix.toBuffer(this.mat4Buf, 0);
+      gl.uniformMatrix4fv(program.uProjectionMatrix, false, this.mat4Buf);
+    }
+    if (fresh && (program.features & FEAT_LAMBERT) !== 0) {
+      this.bindLights(program, camera);
+    }
+    if (fresh && (program.features & FEAT_FOG) !== 0 && this.fog !== null) {
+      const f = this.fog;
+      gl.uniform3f(program.uFogColor, f.color.r, f.color.g, f.color.b);
+      gl.uniform4f(program.uFogParams, f.near, f.far, f.density,
+                   f.fogType === FOG_EXP2 ? 1 : 0);
+    }
+
+    gl.uniform4f(program.uColor, 1, 1, 1, 1);
+    gl.uniform1f(program.uNormalScaled, 0);
+
+    gl.enable(CULL_FACE);
+    gl.cullFace(BACK);
+    gl.enable(DEPTH_TEST);
+  }
+
+  /** useProgram, skipped when it is already current. */
+  private useProgram(program: Program): void {
+    if (this.currentProgram === program) return;
+    this.currentProgram = program;
+    this.gl.useProgram(program.glProgram);
+  }
+
+  /** bindVertexArray, skipped when it is already bound. */
+  private bindVAO(vao: WebGLVertexArrayObject | null): void {
+    if (this.currentVAO === vao) return;
+    this.currentVAO = vao;
+    this.gl.bindVertexArray(vao);
   }
 
   /* A material's own features, plus FOG when the scene has fog and the
@@ -673,17 +1221,26 @@ export class WebGLRenderer {
     this.modelView.toBuffer(this.mat4Buf, 0);
     gl.uniformMatrix4fv(program.uModelViewMatrix, false, this.mat4Buf);
 
-    camera.projectionMatrix.toBuffer(this.mat4Buf, 0);
-    gl.uniformMatrix4fv(program.uProjectionMatrix, false, this.mat4Buf);
+    /* PER-FRAME uniforms, uploaded once per program per frame.
+     *
+     * The projection, the light rig and the fog are identical for every
+     * mesh in a frame; re-sending them per draw was pure overhead and is
+     * the main reason a long per-mesh draw list lagged three's. */
+    const freshProgram = program.frameStamp !== this.frameStamp;
+    if (freshProgram) {
+      program.frameStamp = this.frameStamp;
+      camera.projectionMatrix.toBuffer(this.mat4Buf, 0);
+      gl.uniformMatrix4fv(program.uProjectionMatrix, false, this.mat4Buf);
+    }
 
-    /* The normal matrix is the inverse-transpose of modelView's 3x3, which
-     * is what keeps normals correct under non-uniform scale. */
-    this.normalMatrix.getNormalMatrix(this.modelView.elements);
-    this.normalMatrix.toBuffer(this.mat3Buf, 0);
-    gl.uniformMatrix3fv(program.uNormalMatrix, false, this.mat3Buf);
+    /* Tell the shader whether the transform has NON-UNIFORM scale, which
+     * is the only case where mat3(modelView) is not a valid normal basis.
+     * Comparing squared axis lengths is far cheaper than the 3x3 inverse
+     * this replaces, and the common answer is "no". */
+    gl.uniform1f(program.uNormalScaled, isNonUniform(worldMatrix) ? 1 : 0);
 
-    gl.uniform3f(program.uColor, material.color.r, material.color.g, material.color.b);
-    gl.uniform1f(program.uOpacity, material.opacity);
+    gl.uniform4f(program.uColor, material.color.r, material.color.g,
+                 material.color.b, material.opacity);
 
     if (material.map !== null) {
       this.prepareTexture(material.map);
@@ -695,14 +1252,19 @@ export class WebGLRenderer {
                    material.map.offsetY);
     }
 
-    if ((program.features & FEAT_LAMBERT) !== 0) {
+    if (freshProgram && (program.features & FEAT_LAMBERT) !== 0) {
       this.bindLights(program, camera);
     }
-    if ((program.features & FEAT_FOG) !== 0 && this.fog !== null) {
+    if (freshProgram && (program.features & FEAT_FOG) !== 0 && this.fog !== null) {
       const f = this.fog;
       gl.uniform3f(program.uFogColor, f.color.r, f.color.g, f.color.b);
       gl.uniform4f(program.uFogParams, f.near, f.far, f.density,
                    f.fogType === FOG_EXP2 ? 1 : 0);
+    }
+    if ((program.features & FEAT_STANDARD) !== 0 &&
+        material instanceof MeshStandardMaterial) {
+      gl.uniform1f(program.uRoughness, material.roughness);
+      gl.uniform1f(program.uMetalness, material.metalness);
     }
     if ((program.features & FEAT_EMISSIVE) !== 0) {
       gl.uniform3f(program.uEmissive,
@@ -755,8 +1317,8 @@ export class WebGLRenderer {
     this.prepareGeometry(mesh.geometry);
     this.prepareInstanceBuffers(mesh);
 
-    gl.useProgram(program.glProgram);
-    gl.bindVertexArray(mesh.glInstancedVAO);
+    this.useProgram(program);
+    this.bindVAO(mesh.glInstancedVAO);
     this.bindCommon(program, mesh.material, mesh.matrixWorld, camera);
 
     const count = mesh.geometry.getDrawCount();
@@ -790,6 +1352,7 @@ export class WebGLRenderer {
       mesh.glVAOGeometry = geo;
       mesh.glInstancedVAO = gl.createVertexArray();
       gl.bindVertexArray(mesh.glInstancedVAO);
+      this.currentVAO = mesh.glInstancedVAO;
 
       /* Re-point this VAO at the geometry's EXISTING buffers. The buffers
        * are shared (uploaded once by prepareGeometry); only the attribute
@@ -869,6 +1432,7 @@ export class WebGLRenderer {
        * attribute may not exist yet even though the VAO does. */
       if (mesh.glColorBuffer === null) {
         gl.bindVertexArray(mesh.glInstancedVAO);
+        this.currentVAO = mesh.glInstancedVAO;
         mesh.glColorBuffer = gl.createBuffer();
         gl.bindBuffer(ARRAY_BUFFER, mesh.glColorBuffer);
         gl.bufferData(ARRAY_BUFFER, mesh.instanceColor.prefixFloat32Buffer(mesh.count), DYNAMIC_DRAW);
@@ -892,8 +1456,8 @@ export class WebGLRenderer {
     if (program === null) return;
 
     this.prepareGeometry(sprite.geometry);
-    gl.useProgram(program.glProgram);
-    gl.bindVertexArray(sprite.geometry.glVAO);
+    this.useProgram(program);
+    this.bindVAO(sprite.geometry.glVAO);
     this.bindCommon(program, material, sprite.matrixWorld, camera);
 
     gl.uniform2f(program.uSpriteCenter, sprite.center.x, sprite.center.y);
@@ -920,8 +1484,8 @@ export class WebGLRenderer {
     if (program === null) return;
 
     this.prepareGeometry(line.geometry);
-    gl.useProgram(program.glProgram);
-    gl.bindVertexArray(line.geometry.glVAO);
+    this.useProgram(program);
+    this.bindVAO(line.geometry.glVAO);
     this.bindCommon(program, line.material, line.matrixWorld, camera);
 
     /* LineSegments is disconnected pairs, LineLoop closes back to the
@@ -946,8 +1510,8 @@ export class WebGLRenderer {
     if (program === null) return;
 
     this.prepareGeometry(points.geometry);
-    gl.useProgram(program.glProgram);
-    gl.bindVertexArray(points.geometry.glVAO);
+    this.useProgram(program);
+    this.bindVAO(points.geometry.glVAO);
     this.bindCommon(program, material, points.matrixWorld, camera);
 
     let size = 1;
@@ -972,6 +1536,14 @@ export class WebGLRenderer {
   private bindLights(program: Program, camera: PerspectiveCamera): void {
     const gl = this.gl;
     gl.uniform3f(program.uAmbient, this.ambient.r, this.ambient.g, this.ambient.b);
+    gl.uniform3f(program.uHemiSky, this.hemiSky.r, this.hemiSky.g, this.hemiSky.b);
+    gl.uniform3f(program.uHemiGround,
+                 this.hemiGround.r, this.hemiGround.g, this.hemiGround.b);
+    /* World up (0,1,0) rotated into view space: the view matrix's 3x3
+     * second column, which for a rigid view transform is its second row
+     * transposed. Reading it off the matrix avoids a per-frame transform. */
+    const e = camera.matrixWorldInverse.elements;
+    gl.uniform3f(program.uHemiUp, e[1], e[5], e[9]);
 
     gl.uniform1i(program.uDirCount, this.dirLights.length);
     for (let i = 0; i < this.dirLights.length; i++) {
@@ -1013,6 +1585,9 @@ export class WebGLRenderer {
 }
 
 const _v = new Vector3();
+/* Culling scratch: rebuilt per frame, never allocated per mesh. */
+const _viewProj = new Matrix4();
+const _cullSphere = new Sphere();
 
 /* How much a point light matters from here: brighter and nearer wins.
  *
@@ -1024,6 +1599,22 @@ const _v = new Vector3();
  * taking the first eight ADDED gave every slot to whatever was constructed
  * earliest (static lamps), so transient lights -- a muzzle flash, a laser
  * bolt -- usually got nothing and appeared to light only at random. */
+/* Does this matrix scale its axes unequally?
+ *
+ * Only then does mat3(modelView) stop being a valid normal basis. Three
+ * dot products and two comparisons, against a 3x3 inverse-transpose
+ * every mesh every frame. */
+function isNonUniform(m: Matrix4): boolean {
+  const e = m.elements;
+  const sx = e[0] * e[0] + e[1] * e[1] + e[2] * e[2];
+  const sy = e[4] * e[4] + e[5] * e[5] + e[6] * e[6];
+  const sz = e[8] * e[8] + e[9] * e[9] + e[10] * e[10];
+  const tol = 0.0001;
+  const dxy = sx - sy;
+  const dxz = sx - sz;
+  return (dxy > tol || dxy < -tol) || (dxz > tol || dxz < -tol);
+}
+
 function lightScore(light: Light, pos: Vector3,
                     camera: PerspectiveCamera): number {
   const dx = pos.x - camera.position.x;

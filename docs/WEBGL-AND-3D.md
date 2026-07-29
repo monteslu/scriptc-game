@@ -1,4 +1,57 @@
-# WebGL Tier and threeTS-lite (3D Roadmap)
+# WebGL Tier and threeTS-lite
+
+**Status: both phases shipped.** This document is now the reference for the
+3D tier as built, and keeps the design reasoning that produced it.
+
+## Why threeTS-lite exists
+
+**It is a stopgap for three.js, not a replacement for it.**
+
+[three.js](https://threejs.org) is the reason 3D on the web is approachable
+at all. It is twenty years of accumulated work by
+[mrdoob](https://github.com/mrdoob) and hundreds of contributors, it is the
+library essentially every web 3D developer already knows, and its API is so
+well shaped that copying it is the highest-value thing a small library can
+do. Everything good about the ergonomics here was designed by them. We are
+borrowing a vocabulary that took a very long time to get right.
+
+The only reason this library exists is that **three.js cannot compile under
+scriptc today**. Not because of any deficiency in three: it is plain
+JavaScript written for a JIT, and it uses exactly the dynamic patterns a
+static AOT compiler cannot see through (`any` throughout, string-keyed
+uniform and material access, prototype extension points, sparse semantics).
+The dialect fences those. That is a limitation on our side of the fence,
+not theirs.
+
+So threeTS-lite implements the slice of three's API that games actually
+use, with the same names and the same composition, so that:
+
+- code written against it reads like three code, and a three developer is
+  productive immediately;
+- the same game source runs in a browser, where it can be pointed at real
+  three.js instead;
+- **when scriptc can compile three.js, this tier should be replaced by it.**
+  That is the intended end state, not a fallback. Every deliberate
+  divergence from three's API is a future migration cost, which is why the
+  compatibility bar is held as hard as it is and why layout changes that
+  would be faster but would break `mesh.position.set(...)` are refused.
+
+Where the benchmarks below show this tier ahead of three.js on some
+configurations, that is a narrow AOT-versus-JIT result on one scene, not a
+claim of superiority. three.js does vastly more than this library does:
+shadow maps, skinning and animation, post-processing, IBL, a loader
+ecosystem, WebGPU, and an editor. The comparison exists to size the gap and
+find our own bottlenecks, and the honest summary of the browser numbers
+further down is that the same source in a page is faster than we are.
+
+three.js is MIT licensed and credited in the README's Credits table. Its
+source plus `@types/three` are the behavioral reference this library is
+checked against: `test/threetest.ts` verifies our math against real three
+values, and `test/three-bench/reference.mjs` runs the benchmark scene
+through actual three.js rather than against remembered numbers.
+
+No three.js code is copied into this repository. What is borrowed is the
+API shape, deliberately and with credit.
 
 Two stacked phases, added after the v0.1 (2D) plan:
 
@@ -175,25 +228,29 @@ onto the FFI surface.
 
 ## threeTS-lite (Phase 9)
 
-**Positioning: three-shaped, not three-compatible** (the gtlua rule
-applied to 3D). Familiar names (`Scene`, `PerspectiveCamera`, `Mesh`,
-`BufferGeometry`, `MeshStandardMaterial`), familiar composition, but a
-from-scratch dialect-TS implementation sized for games, written against
-the WebGL2 tier. three.js remains MIT (attribution in NOTICE), and its
-source plus `@types/three` are the behavioral reference; as of this
-research three.js itself still ships plain JS (types live in
-DefinitelyTyped), so there is no upstream TS source to lean on, which is
-why this library exists.
+**Positioning: three-shaped, not three-complete.** Familiar names (`Scene`,
+`PerspectiveCamera`, `Mesh`, `BufferGeometry`, `MeshStandardMaterial`),
+familiar composition, but a from-scratch dialect-TS implementation sized
+for games, written against the WebGL2 tier. The names match on purpose: see
+"Why threeTS-lite exists" at the top of this document. Where behaviour
+differs from three, that is a gap to close or a documented cost, never a
+preference.
 
 ### Why not port three.js mechanically
 
-Re-stating the original research conclusion for this doc's readers:
-three.js hits every major fence: `any` throughout, string-keyed dynamic
-property access (uniforms, material props), generic-ish containers,
-optional class fields everywhere, prototype extension points, sparse
-semantics. A mechanical port fights the dialect line by line for ~150k
-lines. A shaped rewrite of the ~15% games use wins on every axis,
-including binary size.
+Re-stating the original research conclusion for this doc's readers. Under
+the dialect, three.js hits every major fence: `any` throughout,
+string-keyed dynamic property access (uniforms, material props),
+generic-ish containers, optional class fields everywhere, prototype
+extension points, sparse semantics.
+
+None of that is bad JavaScript. It is idiomatic, well-tested code written
+for a runtime with a JIT and dynamic property lookup, which is what the web
+has. The mismatch is entirely with our compiler: a mechanical port would
+fight the dialect line by line across ~150k lines and produce something
+neither three-compatible nor maintainable. A shaped rewrite of the ~15%
+games actually use is the smaller, more honest object, and it keeps the
+migration path open for when scriptc closes the gap.
 
 ### Scope tiers
 
@@ -289,6 +346,58 @@ conveniences (`Vector3.projectOnPlane`, `Color.setHSL`, `Matrix4.decompose`).
 What is present is the part a game touches every frame. Judge it by the
 example above rather than by the percentage.
 
+**The v0 scope is now complete.** The gaps that stood open after the first
+pass have been closed:
+
+| Was missing | Now |
+| --- | --- |
+| `Vector4` | Shipped. |
+| `Box3`, `Sphere`, `Plane`, `Frustum` | Shipped, in `three/math/`. |
+| **Frustum culling** | Shipped and on by default. `renderer.frustumCulling` toggles it; `mesh.frustumCulled` opts a single object out, as in three. |
+| `MathUtils` | Shipped as plain exported functions (`clamp`, `lerp`, `damp`, `smoothstep`, ...) rather than a namespace object, since the dialect resolves imported functions statically. |
+| `OrthographicCamera` | Shipped. |
+| `DataTexture` | Shipped: RGBA8 bytes straight to `texImage2D`, for procedural textures and shader lookup tables. |
+
+`CubeTexture` is the one v0 item deliberately still out: it needs the cube
+map target plumbed through the texture path, and nothing in the tree wants
+it yet. Everything else in the v0 list shipped.
+
+### Culling, measured
+
+Culling is only worth having if it is invisible and if it pays. Both are
+checked in `test/frustumtest.ts` (32 checks): the same frame rendered with
+culling on and off must hash IDENTICALLY, and a control that hides a visible
+mesh must change the hash -- without that control, "identical" and "the
+harness is broken" look the same.
+
+What it buys depends entirely on how much of the scene is off screen:
+
+| scene | culling off | culling on | |
+| --- | ---: | ---: | --- |
+| `examples/station` (tunnel network) | 0.807 ms | 0.753 ms | ~7% |
+| `examples/spinfield` | no change | no change | see below |
+
+spinfield shows nothing, and that is correct rather than a failure: its
+field is a sphere of radius 26 viewed from 96 units back, so the whole
+scene is always inside the frustum and there is nothing to reject. A
+benchmark that cannot exercise a feature is not evidence against it. The
+station number is the honest one, and it is modest because station's frames
+are already cheap.
+
+### A test that was passing without running
+
+Found while wiring the culling test in, and worth recording because the
+failure was silent. `test/phase9test.ts` hung its entire body off
+`window.addEventListener("load", ...)`. A bare `.ts` entry is compiled
+AS-IS by `scripts/build.sh` -- no generated entry, so the host's
+`boot()`/`run()` never execute and `load` never fires. The process did
+nothing and exited 0, and `test.sh` checks only the exit code, so every
+Phase 9 closeout check reported PASS from the day it landed without ever
+executing.
+
+It now runs at top level through `initHeadless`, like `webgltest.ts`, and
+reports 11/11 for real. A scan of the other suites found no second case.
+
 ### InstancedMesh
 
 One draw call for N transforms. `setMatrixAt(i, matrix)` /
@@ -342,6 +451,43 @@ assumes real-world distances. At game scale a light 35 units away needs an
 intensity in the hundreds to be visible, and anything near it then blows
 out. `examples/orbits` uses `decay = 1`, which is exactly what the parameter
 is exposed for.
+
+### MeshStandardMaterial, lite
+
+`roughness` and `metalness`, three's names and meanings. NOT
+Cook-Torrance: a Lambert diffuse term plus a Blinn-Phong specular lobe
+whose tightness comes from roughness, with metalness tinting the highlight
+by the albedo and cutting the diffuse. No IBL, no Fresnel, not
+energy-conserving -- the plan scopes it as "albedo/metal-rough, no IBL in
+v0" and it will not match three pixel for pixel. What it gives that
+Lambert cannot is a surface that reads as metal or plastic from two
+numbers.
+
+### HemisphereLight
+
+Sky colour from above, ground colour from below, blended by the surface
+normal against WORLD up. The cheapest believable ambient: a flat
+AmbientLight makes every face equally bright regardless of orientation, so
+a scene lit only by it looks pasted-on.
+
+World up specifically, passed into view space as a uniform. A first
+version used the view-space normal's y, which rotates with the camera --
+and on a symmetric object the two colours then summed to the same image
+however they were assigned.
+
+### WebGLRenderTarget
+
+`renderer.setRenderTarget(rt)` / `setRenderTarget(null)`, with
+`rt.texture` usable anywhere a Texture is. Colour texture plus a depth
+renderbuffer; the depth attachment is not optional in practice, since
+without it a 3D scene drawn into the target has no depth test and the
+result looks like a shattered mesh.
+
+`setRenderTarget(null)` restores the screen VIEWPORT as well as the
+framebuffer -- forgetting that is the classic bug here, because a 512x512
+target otherwise leaves the next screen frame drawing into a corner.
+
+MSAA (`samples`) and stencil attachments are not implemented.
 
 ### Raycaster
 
@@ -414,25 +560,130 @@ shader bug.
 Out of scope, deliberately: materials, cameras, lights, skins and
 animations. A game builds its scene in code; this is a geometry pipe.
 
-## Benchmark: spinfield
+## Benchmark: spinfield, head to head with three.js
 
-Identical per-cube math both ways, so the only difference measured is how
-transforms reach the GPU. `SG_NO_VSYNC=1 ./build/spinfield`:
+`examples/spinfield` and `test/three-bench/reference.mjs` render the SAME
+scene -- same cube count, geometry, material class, light rig, camera,
+per-cube math, fixed timestep and warmup -- one through threeTS-lite
+natively, the other through real three.js on Node + webgl-node. Both report
+CPU submit time in milliseconds per frame.
+
+| path | n | threeTS-lite | three.js | ratio |
+| --- | ---: | ---: | ---: | ---: |
+| instanced | 250 | 0.124 | 0.235 | **0.53x** |
+| per-mesh | 250 | 0.305 | 1.115 | **0.27x** |
+| instanced | 1000 | 0.640 | 0.590 | 1.08x |
+| per-mesh | 1000 | 2.100 | 6.201 | **0.34x** |
+| instanced | 2500 | 2.303 | 1.683 | 1.37x |
+| per-mesh | 2500 | 9.749 | 18.206 | **0.54x** |
+| instanced | 10000 | 9.873 | 6.951 | 1.42x |
+| per-mesh | 10000 | 126.125 | 74.455 | 1.69x |
+
+Faster on four of eight, slower on four. The pattern is consistent and
+worth stating plainly rather than cherry-picking: this tier wins at low
+object counts, where its thinner per-draw path costs less than three's
+material and uniform machinery, and LOSES at high counts, where three's
+render-list sorting and state caching pay for themselves. The worst case
+is 10000 per-mesh at 1.69x slower -- three batches state changes across a
+long draw list far better than a straight loop does.
+
+### Where the remaining gap actually is
+
+Profiled rather than guessed, at 10000 per-mesh cubes:
 
 ```
-  instanced n=  250  mean    0.121 ms   p95    0.146   8268 fps
-  per-mesh  n=  250  mean    0.700 ms   p95    0.760   1429 fps
-  instanced n= 1000  mean    0.604 ms   p95    0.655   1655 fps
-  per-mesh  n= 1000  mean    3.465 ms   p95    3.686    289 fps
-  instanced n= 2500  mean    2.199 ms   p95    2.787    455 fps
-  per-mesh  n= 2500  mean   12.872 ms   p95   18.587     78 fps
-  instanced n=10000  mean    9.147 ms   p95   13.137    109 fps
-  per-mesh  n=10000  mean  125.158 ms   p95  146.503      8 fps
+mesh.visible read x10000        9.1 ms   (910 ns per read)
++ material.visible hop         18.0 ms
+flat-array scan of the same    0.15 ms
 ```
 
-Instancing wins at every count, by 5.8x at 250 and 13.7x at 10000. The
-per-mesh path is not a strawman: it is the same renderer, the same
-geometry and the same material, drawn one object at a time.
+910ns to read one boolean field is roughly ten DRAM misses per object.
+Each Mesh touches its own allocation, its Object3D base (which carries TWO
+Matrix4s at 128 bytes each plus separately-allocated Vector3, Quaternion
+and Euler), and its Material -- all heap objects in allocation order. Ten
+thousand of them span megabytes and the scan is entirely cache-bound.
+
+The renderer caches what it can: `Scene.meshFlags` mirrors "drawable" and
+"transparent" into one number per mesh, so every pass after the first
+touches 40KB of contiguous memory instead of chasing pointers, and that
+scan drops to 0.15 ms. But the mirror itself has to read the objects once,
+and `visible` is a plain public field a game may assign at any moment, so
+there is no flag that would let it be skipped.
+
+Closing the rest means changing Object3D's memory layout -- packing
+transforms into shared typed arrays rather than per-object Matrix4s. That
+is a real option and it is how a data-oriented engine would be built, but
+it would stop `mesh.position.set(...)` and `mesh.matrixWorld` from being
+what a three user expects, and API compatibility is the point of this
+tier. **It is not being done, and that is a settled decision.**
+
+### Phase attribution, and what is NOT the cause
+
+Instrumenting `render()` splits a per-mesh 10000 frame (133ms total) into:
+
+```
+matrix   39.0 ms   recompose 10000 transforms
+collect  32.9 ms   walk the scene graph
+draw     57.3 ms   submission
+```
+
+Instanced 10000 on the same GPU, same driver, same draw count is 10.7ms
+total. The entire difference is per-object CPU work, and none of it is GL.
+
+Two plausible causes were tested and ruled out, which is worth recording so
+they are not re-investigated:
+
+- **Not the offscreen target.** Bare draw calls into the EGL pbuffer cost
+  **27ns each**; 10000 of them total 0.267ms. Headless rendering is not slow.
+- **Not the FFI boundary.** A C-side FFI call measured **32ns**, so the
+  40000 crossings a 10000-mesh frame makes are ~1.3ms. Earlier comments in
+  the renderer claimed ~2us per crossing and ~80ms; that was wrong and has
+  been corrected at both sites.
+
+### Native vs the same source in a browser
+
+The same spinfield source, same GPU (pinned with `SG_GL_DEVICE`), mean
+ms/frame. Firefox clamps `performance.now()` to 1ms, so its p50/p95 are
+quantised to whole milliseconds and unusable; mean survives because the
+rounding is unbiased over 240 frames, and both columns therefore report
+mean.
+
+| path | n | native | browser | |
+| --- | ---: | ---: | ---: | --- |
+| instanced | 250 | 0.149 | 0.113 | 1.32x slower |
+| instanced | 1000 | 0.696 | 0.400 | 1.74x slower |
+| instanced | 2500 | 2.550 | 0.554 | 4.60x slower |
+| instanced | 10000 | 12.698 | 2.087 | 6.08x slower |
+| per-mesh | 250 | 0.359 | 0.188 | 1.91x slower |
+| per-mesh | 1000 | 2.353 | 0.575 | 4.09x slower |
+| per-mesh | 2500 | 10.618 | 1.317 | 8.06x slower |
+| per-mesh | 10000 | 137.882 | 5.142 | 26.81x slower |
+
+Native is slower everywhere, and the gap grows with object count. On the
+per-object scene walk a JIT beats this AOT output badly, and the instanced
+path -- which does almost no per-object work -- stays closest. This does not
+change the compatibility decision above; it says where the cost is.
+
+Caveat on these figures: the browser column is a single run against a
+native median, and the two harnesses were not proven to define a frame
+identically. The direction is unambiguous, the exact multipliers are not.
+
+An earlier version of this comparison was worse than useless: EGL's
+`devices[0]` was an integrated 890M while the browser used the discrete
+RX 7600, so it compared two stacks across two GPUs. `SG_GL_DEVICE` exists
+to pin that.
+
+Both sides measure CPU SUBMIT TIME, deliberately without `glFinish`. An
+earlier attempt called finish() to "measure the real work" and produced an
+identical 33.2ms for every configuration from 250 to 10000 cubes: the
+native game presents every frame, finish blocks until the presented frame
+retires, so it was timing the display refresh. The reference renders
+offscreen and never presents, so a finish there would block on nothing
+comparable. Submit time is the quantity both stacks can report honestly.
+
+That investigation also found a real bug: `SDL_GL_SetSwapInterval` was
+never called, so `SG_NO_VSYNC` only ever affected the 2D renderer's
+`PRESENTVSYNC` flag and a 3D game was paced by the driver default.
 
 **D (post-v0):** shadow maps (directional first), fog, skinning + 
 animation clips, IBL/environment, post-processing chain, GLTFLoader at

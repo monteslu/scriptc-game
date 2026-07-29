@@ -161,6 +161,20 @@ jobs:
           brew install sdl2 pkg-config ffmpeg webp
           brew install llvm || true
 
+      # ANGLE, macOS only. Apple deprecated OpenGL and never shipped GLES3,
+      # so a 3D example cannot link at all without it -- every macOS run
+      # failed here even after the Khronos headers were vendored. ANGLE
+      # translates GLES3 onto Metal and is what native-gles uses for the
+      # same problem.
+      - name: Fetch ANGLE (macOS)
+        if: startsWith(matrix.target, 'macos')
+        shell: bash
+        run: |
+          ./scripts/fetch-angle.sh ${{ matrix.target }}
+          A="${{ github.workspace }}/vendor/${{ matrix.target }}/angle"
+          echo "ANGLE_LIB=$A/lib" >> "$GITHUB_ENV"
+          echo "GLES_INCLUDE=$A/include" >> "$GITHUB_ENV"
+
       - name: Fetch Skia archives
         shell: bash
         run: ./scripts/fetch-archives.sh ${{ matrix.target }}

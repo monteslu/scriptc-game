@@ -85,6 +85,9 @@ window.addEventListener("load", () => {
     return;
   }
 
+  /* A non-null alias: the null check above does not narrow inside the
+   * frame closure. */
+  const glc = gl;
   const renderer = new WebGLRenderer(gl);
   renderer.setSize(W, H);
   renderer.setClearColor(0x0b1020);
@@ -317,6 +320,26 @@ window.addEventListener("load", () => {
 
     renderer.render(scene, camera);
 
+    /* glFinish before stopping the clock.
+     *
+     * GL is asynchronous: without this the timer measures how fast the
+     * frame can be QUEUED, not how long the driver takes to draw it, and
+     * the numbers flatter whichever side queues faster. The three.js
+     * reference in test/three-bench does the same, so the two are
+     * measuring the same quantity. */
+    /* CPU SUBMIT TIME, deliberately without glFinish.
+     *
+     * A first attempt called finish() here to "measure the real work".
+     * Measured: the draw itself is 1-3ms and finish() added ~30ms, because
+     * this game PRESENTS every frame and finish blocks until the presented
+     * frame retires -- it was timing the swap chain, and every
+     * configuration reported an identical 33.2ms whether it drew 250 cubes
+     * or 10000.
+     *
+     * The three.js reference renders offscreen and never presents, so a
+     * finish() there waits for nothing comparable. Submit time is the
+     * quantity BOTH stacks can report honestly, and it is also the one a
+     * game cares about: the CPU cost of getting a frame to the driver. */
     const frameMs = performance.now() - t0;
     frames += 1;
 

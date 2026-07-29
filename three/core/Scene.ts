@@ -32,6 +32,23 @@ export class Scene extends Object3D {
 
   /** Everything drawable, in insertion order. */
   meshes: Mesh[] = [];
+  /* A FLAT MIRROR of the two flags the render loop tests per mesh.
+   *
+   * `visible && material.visible && !material.transparent` is three reads
+   * through fat objects: an Object3D carries two Matrix4s (128 bytes
+   * each) plus separately-allocated Vector3/Quaternion/Euler, so 10000
+   * meshes span megabytes and the loop is dominated by cache misses --
+   * measured at 20ms for a loop that reads nothing else.
+   *
+   * Packed into one number per mesh, the same scan touches 80KB of
+   * contiguous memory instead. Bit 0 = drawable at all, bit 1 =
+   * transparent. Rebuilt only when it can have changed; see
+   * `flagsDirty`. */
+  meshFlags: number[] = [];
+  /* Set when a mesh is added or removed. The renderer also refreshes the
+   * mirror every frame for meshes whose flags it cannot see change --
+   * `visible` is a plain public field a game may assign at any time. */
+  flagsDirty = true;
   /** Every light, whatever its type. */
   lights: Light[] = [];
   /* One list per drawable KIND, for the same reason meshes is a list: the
@@ -82,6 +99,8 @@ export class Scene extends Object3D {
   addMesh(mesh: Mesh): Scene {
     super.add(mesh);
     this.meshes.push(mesh);
+    this.meshFlags.push(0);
+    this.flagsDirty = true;
     return this;
   }
 
@@ -96,6 +115,8 @@ export class Scene extends Object3D {
   addMeshTo(parent: Object3D, mesh: Mesh): Scene {
     parent.add(mesh);
     this.meshes.push(mesh);
+    this.meshFlags.push(0);
+    this.flagsDirty = true;
     return this;
   }
 
@@ -139,7 +160,11 @@ export class Scene extends Object3D {
 
   removeMesh(mesh: Mesh): Scene {
     const i = this.meshes.indexOf(mesh);
-    if (i >= 0) this.meshes.splice(i, 1);
+    if (i >= 0) {
+      this.meshes.splice(i, 1);
+      this.meshFlags.splice(i, 1);
+      this.flagsDirty = true;
+    }
     this.remove(mesh);
     return this;
   }

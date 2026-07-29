@@ -5,9 +5,21 @@
 
 
 A game here is ordinary web code: `document.getElementById`, `getContext("2d")`,
-`requestAnimationFrame`, `new Image()`, `fetch`, Web Audio, `navigator.getGamepads()`.
-It compiles ahead of time into one self-contained executable, with Skia, SDL2 and
-the webaudio-node C++ graph statically linked behind a C-ABI shim.
+`requestAnimationFrame`, `new Image()`, `fetch`, Web Audio, `navigator.getGamepads()`,
+and WebGL2. It compiles ahead of time into one self-contained executable, with
+Skia, SDL2, GLES3 and the webaudio-node C++ graph statically linked behind a
+C-ABI shim.
+
+3D is a first-class target: **threeTS-lite** is a [three.js](https://threejs.org)-shaped
+renderer (`Scene`, `Mesh`, `PerspectiveCamera`, materials, lights,
+`InstancedMesh`, `Raycaster`) that runs the same source natively and in a page.
+
+It is a **stopgap for three.js, not a replacement**. three.js is the reason
+web 3D is approachable and its API is the one everyone already knows, which
+is exactly why we copy it. It just cannot compile under a static AOT
+compiler yet, being plain JS written for a JIT. When scriptc can build real
+three.js, this tier should give way to it, and holding the API compatible is
+what keeps that path open. See [docs/WEBGL-AND-3D.md](docs/WEBGL-AND-3D.md).
 
 ```ts
 import { window, document, requestAnimationFrame } from "scriptc-game/web";
@@ -75,9 +87,9 @@ real URLs rather than filenames.
 | **Input** | `keydown` / `keyup` with W3C `code` names, mouse events, `navigator.getGamepads()` with the Standard Mapping, hot-plug, and rumble |
 | **Loop** | Real `requestAnimationFrame` (a queue, not a single slot), `load` event, genuinely async asset loading |
 | **Engine** (optional) | Fixed-step loop with interpolation, and an asset loader with progress. Pure web API underneath; skippable |
+| **WebGL2** | The GLES3 surface behind a `WebGL2RenderingContext`: buffers, VAOs, shaders, textures, FBOs, instancing, `getContextGL()` on a canvas |
+| **3D** | threeTS-lite: `Scene`, `Object3D`, `Mesh`, `InstancedMesh`, `Sprite`, `Line`, `Points`, perspective **and orthographic** cameras, Basic/Lambert/Standard materials, ambient/directional/point/hemisphere lights, fog, render targets, data textures, `Raycaster`, **view-frustum culling**, the full math tier (`Vector2/3/4`, `Matrix3/4`, `Quaternion`, `Euler`, `Color`, `Box3`, `Sphere`, `Plane`, `Frustum`, `MathUtils`), and a glTF/GLB/OBJ mesh baker |
 | **Build** | One command from a game directory to a self-contained native binary |
-
-Not yet: WebGL and 3D.
 
 | Target | Runner | Notes |
 | --- | --- | --- |
@@ -131,19 +143,33 @@ Every number below comes from `./scripts/test.sh`, which runs headless.
 | Image formats | **20/20** checks across png, jpg, webp, bmp and gif |
 | Sprite sheets | **10/10** checks |
 | Async ordering | **26/26** checks that async-shaped APIs settle on a later turn |
+| Web surface | **18/18** checks |
+| WebGL2 | **9/9** checks on a real GPU, including a control that must fail |
+| three math | **15/15** checks against real three.js values |
+| Raycaster + loaders | **75/75** checks |
+| Phase 9 closeout | **11/11** checks: render targets, hemisphere light and Standard material, each with a control render that must differ |
+| Frustum culling | **32/32** checks, including that culling changes not one pixel, plus a control that must fail |
 | Pixel readback | passing |
+
+Every one of the 13 examples also runs in a browser from the same source,
+checked by `./browser/test.sh` (13/13 at the last run).
 
 Assets shared by more than one example live once in `examples/shared/` and are
 symlinked into each game's `public/`. Windows clones need `core.symlinks`
 enabled; see [examples/shared/README.md](examples/shared/README.md).
 
-Eight examples: `minimal` (no engine, no assets), `bounce` (the engine's
-fixed-step loop), `inputs` (keyboard, mouse and gamepad state), `loader`
-(the optional asset loader with a progress bar), `dodge` (the reference
-game), `paddle` (swept collision and a CPU opponent), `scroller` (tilemap
-platformer with a scrolling camera) and `synth` (a playable Web Audio
-graph). Every one of them also runs in a browser, checked by
-`./browser/test.sh`.
+Thirteen examples. 2D: `minimal` (no engine, no assets), `bounce` (the
+engine's fixed-step loop), `inputs` (keyboard, mouse and gamepad state),
+`loader` (the optional asset loader with a progress bar), `dodge` (the
+reference game), `paddle` (swept collision and a CPU opponent), `scroller`
+(tilemap platformer with a scrolling camera) and `synth` (a playable Web
+Audio graph).
+
+3D: `cube` (the smallest WebGL2 scene), `runner` (a 3D endless runner),
+`orbits` (Kenney Space Kit models, CC0), `spinfield` (the threeTS-lite
+benchmark: instanced vs per-mesh, same per-cube math) and `station` (a
+Descent-style 6DOF ship flight through a branching tunnel network, with
+fog, a laser weapon and music).
 
 `./scripts/build.sh examples/dodge` builds the reference game: sprites, looping
 music, sound effects, and gamepad input with rumble. `examples/loader` is the
@@ -177,10 +203,20 @@ Run the two vendor steps once, then build:
 ```sh
 ./scripts/fetch-archives.sh        # vendor/<target>/libskiac.a  + headers
 ./scripts/build-webaudio.sh        # vendor/<target>/libwebaudio.a
+./scripts/fetch-angle.sh           # macOS only: GLES3 via ANGLE
 ./scripts/build.sh examples/dodge  # -> build/dodge
 ./scripts/dev.sh examples/dodge    # rebuild + relaunch on every save
 ./scripts/typecheck.sh             # tsc only, ~0.4s
 ./scripts/test.sh                  # every suite, headless
+./browser/test.sh                  # every example, in a real browser
+```
+
+A 3D example needs a mappable window, or `SG_HEADLESS=1` to render into an
+offscreen EGL pbuffer instead:
+
+```sh
+./scripts/build.sh examples/station && ./build/station
+SG_HEADLESS=1 ./build/spinfield    # benchmark with no compositor
 ```
 
 `dev.sh` watches the game plus `web/`, `engine/`, `host/` and `shim/`. A
@@ -229,8 +265,9 @@ lifting for one part of the stack.
 | **[webaudio-node](https://github.com/monteslu/webaudio-node)** <br><sub>monteslu</sub> | A full Web Audio API for Node.js. Its C++ graph engine (15 node types, params, FFT, mixer, resampler) is compiled **natively** here and driven from an SDL audio thread. Used byte-identical to upstream. | ISC |
 | **[gamepad-node](https://github.com/monteslu/gamepad-node)** <br><sub>monteslu</sub> | The browser Gamepad API for Node.js over native SDL2. Reference for our Standard Gamepad mapping and the polling model behind `navigator.getGamepads()`. | ISC |
 | **[node-sdl](https://github.com/kmamal/node-sdl)** <br><sub>kmamal</sub> | SDL bindings for Node.js. Prior art for how a JS runtime drives SDL windows, events and audio. We bind SDL's C ABI directly, but the shape of the problem was mapped here first. | MIT |
-| **[webgl-node](https://github.com/monteslu/webgl-node)** <br><sub>monteslu</sub> | A WebGL2 implementation for Node.js on top of native-gles. Its semantics layer is the owned, debugged reference the planned WebGL2 tier ports from. | MIT |
-| **[native-gles](https://github.com/monteslu/native-gles)** <br><sub>monteslu</sub> | OpenGL ES 3.0 bindings via EGL, native on Linux/ARM and ANGLE on macOS/Windows. Proves the link shape (`-lEGL -lGLESv2`) the 3D tier will use; its N-API-free context code provides the headless path. | MIT |
+| **[three.js](https://threejs.org)** <br><sub>mrdoob and contributors</sub> | The library that made 3D on the web approachable, and **the API threeTS-lite borrows**: `Scene`, `Mesh`, `PerspectiveCamera`, materials, lights, the whole vocabulary. Twenty years of design work we are standing on. threeTS-lite exists only because three.js cannot compile under a static AOT compiler *yet*; it is a stopgap, and the intended end state is running real three.js here. Also our behavioral reference: `test/threetest.ts` checks our math against real three values. | MIT |
+| **[webgl-node](https://github.com/monteslu/webgl-node)** <br><sub>monteslu</sub> | A WebGL2 implementation for Node.js on top of native-gles. Its semantics layer is the owned, debugged reference our WebGL2 tier ports from. | MIT |
+| **[native-gles](https://github.com/monteslu/native-gles)** <br><sub>monteslu</sub> | OpenGL ES 3.0 bindings via EGL, native on Linux/ARM and ANGLE on macOS/Windows. Establishes the link shape (`-lEGL -lGLESv2`) the 3D tier uses, the pinned ANGLE build macOS needs, and the N-API-free EGL context our `SG_HEADLESS` path is modelled on. | MIT |
 | **[wasmcart](https://github.com/monteslu/wasmcart)** <br><sub>monteslu</sub> | A WASM cartridge host for sandboxed `.wasm` game carts. **A future compile target:** the same web-shaped source could emit a cart instead of a native binary. | MIT |
 
 Also relied on:
@@ -253,7 +290,7 @@ Also relied on:
 | [docs/API-SURFACE.md](docs/API-SURFACE.md) | Exact supported surface per spec, with support tiers |
 | [docs/FFI-SHIM.md](docs/FFI-SHIM.md) | The C shim: manifest, handle tables, event/string protocols, codegen |
 | [docs/DIALECT.md](docs/DIALECT.md) | The scriptc TS dialect game code must obey, with rewrite patterns |
-| [docs/WEBGL-AND-3D.md](docs/WEBGL-AND-3D.md) | WebGL2 tier + the planned 3D library |
+| [docs/WEBGL-AND-3D.md](docs/WEBGL-AND-3D.md) | The WebGL2 tier and threeTS-lite: what shipped, where it differs from three, and the benchmarks |
 | [docs/BUILD-AND-CI.md](docs/BUILD-AND-CI.md) | Archive matrix, cross-compilation, CI design, packaging |
 | [docs/SPIKE-RESULTS.md](docs/SPIKE-RESULTS.md) | Engineering notes: measurements, upstream quirks, every bug found |
 

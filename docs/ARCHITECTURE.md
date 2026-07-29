@@ -217,7 +217,7 @@ sg_audio_time() -> f64  <----------------  publish currentTime
   true single-file mode is demanded (then: appended pak section read via
   fs from the binary's own path).
 
-## The 3D tier (Phase 8/9 roadmap; full spec in WEBGL-AND-3D.md)
+## The 3D tier (shipped; full reference in WEBGL-AND-3D.md)
 
 Sits beside the canvas tier, not on top of it:
 
@@ -234,19 +234,30 @@ Architectural notes that differ from the canvas tier:
 - **No handle tables** for GL objects: GL names are already u32. Only
   GLsync (a pointer type) gets a table. Most scalar-only GL functions
   bind manifest-direct with zero shim involvement.
-- **Present**: preferred model is an SDL GL window (context via
-  SDL_GL_CreateContext, SwapWindow vsync), with the 2D canvas HUD
-  uploaded as a GL texture per frame (bytes IN direction). The
-  EGL-pbuffer model (native-gles's `egl_context.cpp`, which is
-  N-API-free and compiles into the shim unchanged) serves headless CI
-  and the future Skia-Ganesh GPU composite.
+- **Present**: an SDL GL window (context via SDL_GL_CreateContext,
+  SwapWindow vsync), with the 2D canvas HUD uploaded as a GL texture per
+  frame (bytes IN direction). `SG_HEADLESS=1` switches to the EGL-pbuffer
+  model (after native-gles's `egl_context.cpp`) for CI, benchmarks and any
+  shell where no window can be mapped; there the swap is a no-op because
+  the frame is already complete in the pbuffer.
+
+  The choice is made inside the GL archive, not in `sg_core`. `libsggl.a`
+  links BEFORE `libsggfx.a` and an archive is scanned once, left to right,
+  so `sg_core` calling into the GL side does not link at all; the GL side
+  reads the flag through accessors instead. That is the same direction
+  `sg_mail_set` already crosses.
+
+  Headless must also force SDL's dummy video driver. The accelerated
+  renderer binds a real GL context to the thread, and the pbuffer's
+  `eglMakeCurrent` then fails outright.
 - **Uniform/attribute uploads** ride the same Float32Array-as-bytes path
   as putImageData (Phase 0.4 spike governs both tiers).
 
 ## What is deliberately NOT here
 
-- No WebGL/3D tier in v0.1; it arrives as Phases 8/9 per the section
-  above rather than growing ad hoc.
+- No ad-hoc 3D growth. The WebGL2 and threeTS-lite tiers shipped as
+  Phases 8/9 per the section above, and additions go through the same
+  spec-first route rather than accreting.
 - No DOM tree. `document.getElementById` returns THE canvas whatever id it is
   given, and `querySelectorAll` has no meaning here; there is nothing to
   query. This is the same shortcut jsgamelauncher takes, for the same reason.

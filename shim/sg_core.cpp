@@ -69,6 +69,8 @@ static SDL_Renderer* g_renderer;
 static SDL_Texture*  g_texture;
 static skiac_surface* g_surface;
 static uint32_t g_width, g_height;
+static bool g_gl_novsync = false;
+static bool g_gl_headless = false;
 static uint8_t* g_pixels;        /* shim-owned RGBA staging buffer */
 static size_t   g_pixels_size;
 
@@ -78,10 +80,40 @@ extern "C" int32_t sg_init(uint32_t w, uint32_t h, uint32_t flags) {
     mail_set("window dimensions out of range");
     return SG_ERANGE;
   }
+  /* Headless: force SDL onto the dummy video driver BEFORE SDL_Init.
+   *
+   * The window and renderer are still created (Skia, input and the 2D
+   * present path all assume they exist), but the dummy driver never talks
+   * to the compositor, so nothing maps and nothing blocks.
+   *
+   * It must also not create a real GL context: the accelerated renderer
+   * binds one to this thread, and the later eglMakeCurrent for the pbuffer
+   * then fails with "eglMakeCurrent failed" -- which is exactly what a
+   * window-plus-pbuffer version of this did. Dummy gives a software
+   * renderer, leaving the thread's GL binding free for EGL.
+   *
+   * SDL_SetHint rather than setenv: it is the documented knob and does not
+   * leak into child processes. */
+  if ((flags & 4u) != 0) SDL_SetHint(SDL_HINT_VIDEODRIVER, "dummy");
+
   if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_EVENTS) != 0) {
     mail_set(SDL_GetError());
     return SG_ESDL;
   }
+  /* Remembered for the GL context, which is created later and paces its
+   * own presents. */
+  g_gl_novsync = (flags & 2u) != 0;
+
+  /* flags bit 2: headless GL. The GL context comes from an EGL pbuffer
+   * instead of the window, so a 3D benchmark can run with no compositor.
+   *
+   * Without it a GL game on a machine with a display server still BLOCKS:
+   * SDL_CreateWindow succeeds, but the window never maps in a
+   * non-interactive shell, and the process sits in poll() at ~0% CPU
+   * forever, producing no output. That is not a slow run, it is a hang,
+   * and it is why the native benchmark could not be reproduced. */
+  g_gl_headless = (flags & 4u) != 0;
+
   /* flags bit 0: resizable. Logical size stays w*h regardless. */
   Uint32 winflags = SDL_WINDOW_ALLOW_HIGHDPI;
   if (flags & 1u) winflags |= SDL_WINDOW_RESIZABLE;
@@ -221,6 +253,15 @@ static SDL_GLContext g_gl_context = NULL;
 extern "C" int32_t sg_gl_init_window(int32_t unused) {
   (void)unused;
   if (g_gl_context) return SG_OK;                 /* idempotent */
+
+  /* Headless is dispatched by the GL archive, not here.
+   *
+   * sg_gl_init_headless lives in libsggl.a, which the linker places BEFORE
+   * libsggfx.a (ANGLE ordering depends on it), and an archive is scanned
+   * once, left to right. Calling it from this file is a backward reference
+   * and fails to link with "undefined reference to sg_gl_init_headless".
+   * So the GL side asks us for the flag instead -- see sg_gl_wants_headless
+   * and the wrapper in sg_gl_extra.cpp. */
   if (!g_window) { mail_set("GL context before init"); return SG_ESDL; }
 
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
@@ -232,6 +273,18 @@ extern "C" int32_t sg_gl_init_window(int32_t unused) {
   g_gl_context = SDL_GL_CreateContext(g_window);
   if (!g_gl_context) { mail_set(SDL_GetError()); return SG_ESDL; }
   SDL_GL_MakeCurrent(g_window, g_gl_context);
+
+  /* GL PRESENT PACING IS SEPARATE from the 2D renderer's PRESENTVSYNC.
+   *
+   * A GL game swaps with SDL_GL_SwapWindow, which honours the GL swap
+   * INTERVAL and knows nothing about the SDL_Renderer flags -- so
+   * SG_NO_VSYNC silently did nothing for 3D, and the benchmark measured
+   * the display refresh instead of the work: every configuration reported
+   * exactly 33.2ms (30fps) whether it drew 250 cubes or 10000.
+   *
+   * 0 = present immediately. Setting it can fail on drivers that force
+   * composition, so the result is not treated as fatal. */
+  SDL_GL_SetSwapInterval(g_gl_novsync ? 0 : 1);
   return SG_OK;
 }
 
@@ -241,8 +294,18 @@ extern "C" int32_t sg_gl_init_window(int32_t unused) {
  * a GL frame is already in the window's back buffer, so it only needs the
  * swap. A game using both would present through the 2D path, which SDL
  * flushes around. */
+/* Read by the GL archive so it can pick the pbuffer path. Accessors rather
+ * than a direct call the other way, because libsggl.a is linked first and
+ * cannot be called backwards into. */
+extern "C" int32_t sg_gl_wants_headless(void) { return g_gl_headless ? 1 : 0; }
+extern "C" uint32_t sg_gl_surface_width(void)  { return g_width; }
+extern "C" uint32_t sg_gl_surface_height(void) { return g_height; }
+
 extern "C" int32_t sg_gl_present(int32_t unused) {
   (void)unused;
+  /* Nothing to swap without a window. The frame is already complete in the
+   * pbuffer, and the benchmark times the drawing, not the presentation. */
+  if (g_gl_headless) return SG_OK;
   if (!g_gl_context) { mail_set("GL present before context"); return SG_ESDL; }
   SDL_GL_SwapWindow(g_window);
   return SG_OK;

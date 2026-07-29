@@ -54,6 +54,21 @@ export class Texture {
   /** Re-upload on the next draw. Set this after redrawing a canvas source. */
   needsUpdate = true;
 
+  /* A render target's colour attachment: its pixels come from being drawn
+   * INTO, so the renderer must allocate storage but never upload an
+   * image for it. */
+  isRenderTarget = false;
+  /* Set by DataTexture. The renderer cannot downcast a Texture to a
+   * DataTexture (no structural narrowing in the dialect), so the subclass
+   * announces itself with a flag and parks its bytes here, exactly the way
+   * isRenderTarget already works. */
+  isDataTexture = false;
+  /** RGBA8 pixels when isDataTexture; null otherwise. */
+  data: Buffer | null = null;
+  /** Dimensions, for a render target (an image source knows its own). */
+  width = 0;
+  height = 0;
+
   /** The GL texture, null until uploaded. */
   glTexture: WebGLTexture | null = null;
 

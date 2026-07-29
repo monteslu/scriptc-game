@@ -52,6 +52,29 @@ static EGLDisplay g_egl_display = EGL_NO_DISPLAY;
 static EGLContext g_egl_context = EGL_NO_CONTEXT;
 static EGLSurface g_egl_surface = EGL_NO_SURFACE;
 
+/* Owned by sg_core.cpp (libsggfx.a). Calling forward into that archive is
+ * fine -- sg_mail_set already does -- whereas sg_core calling back into
+ * this one would not link. */
+int32_t sg_gl_wants_headless(void);
+uint32_t sg_gl_surface_width(void);
+uint32_t sg_gl_surface_height(void);
+int32_t sg_gl_init_window(int32_t unused);
+int32_t sg_gl_init_headless(int32_t width, int32_t height);
+
+/* What a game's canvas actually calls: window context normally, EGL
+ * pbuffer when the host asked for headless.
+ *
+ * The choice has to be made on THIS side of the archive boundary, so the
+ * decision reads the flag from sg_core rather than sg_core dispatching. */
+int32_t sg_gl_init_auto(int32_t unused) {
+  (void)unused;
+  if (sg_gl_wants_headless()) {
+    return sg_gl_init_headless((int32_t)sg_gl_surface_width(),
+                               (int32_t)sg_gl_surface_height());
+  }
+  return sg_gl_init_window(0);
+}
+
 int32_t sg_gl_init_headless(int32_t width, int32_t height) {
   if (g_egl_context != EGL_NO_CONTEXT) return SG_OK;   // idempotent
 
@@ -71,7 +94,22 @@ int32_t sg_gl_init_headless(int32_t width, int32_t height) {
     return SG_ESDL;
   }
 
-  g_egl_display = getPlatformDisplay(EGL_PLATFORM_DEVICE_EXT, devices[0], nullptr);
+  /* WHICH GPU. devices[0] is not necessarily the one the desktop (and so a
+   * browser) renders with: this box enumerates an integrated 890M first and
+   * a discrete RX 7600 second, so the default silently benchmarked native
+   * on the slower part and made it look 29x slower than the same scene in
+   * Firefox. Comparing two stacks across two GPUs measures nothing.
+   *
+   * SG_GL_DEVICE picks by index so a benchmark can pin the same hardware
+   * the browser uses. Out-of-range falls back to 0 rather than failing;
+   * the default is unchanged. */
+  int deviceIndex = 0;
+  if (const char* sel = getenv("SG_GL_DEVICE")) {
+    int want = atoi(sel);
+    if (want >= 0 && want < deviceCount) deviceIndex = want;
+  }
+
+  g_egl_display = getPlatformDisplay(EGL_PLATFORM_DEVICE_EXT, devices[deviceIndex], nullptr);
   if (g_egl_display == EGL_NO_DISPLAY) { sg_mail_set("eglGetPlatformDisplay failed"); return SG_ESDL; }
   if (!eglInitialize(g_egl_display, nullptr, nullptr)) {
     sg_mail_set("eglInitialize failed");
@@ -599,5 +637,22 @@ extern "C" int32_t sg_gl_fit_viewport(int32_t logical_w, int32_t logical_h) {
   glViewport(vx, vy, vw, vh);
   glScissor(vx, vy, vw, vh);
   glEnable(GL_SCISSOR_TEST);
+  return SG_OK;
+}
+
+/* Allocate texture storage with NO pixel data.
+ *
+ * A render target's texture is drawn INTO, so it needs storage but has no
+ * image to upload. glTexImage2D with a null pointer does exactly that, but
+ * FFI format 1 has no way to express "a bytes parameter that is null" --
+ * the existing upload entry points all require real data. Hence a
+ * dedicated binding.
+ */
+extern "C" int32_t sg_gl_tex_image_empty(uint32_t target, int32_t level,
+                                         int32_t internalformat,
+                                         int32_t width, int32_t height,
+                                         uint32_t format, uint32_t type) {
+  glTexImage2D(target, level, internalformat, width, height, 0,
+               format, type, nullptr);
   return SG_OK;
 }

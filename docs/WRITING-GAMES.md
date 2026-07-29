@@ -281,6 +281,91 @@ exactly how a broken asset path hides.
 
 ---
 
+## 3D
+
+Two levels, both running the same source in a browser.
+
+**Raw WebGL2.** `canvas.getContextGL()` returns a `WebGL2RenderingContext`.
+Two spellings differ from a page, both aliased away in the browser build:
+
+```ts
+const gl = canvas.getContextGL();          // getContext("webgl2")
+import { TRIANGLES } from "../../web/webgl/constants.js";   // gl.TRIANGLES
+```
+
+`getContext` cannot return the union a browser returns, because the dialect
+does not resolve members on a union type -- a single `getContext` would
+break every 2D game in the tree. Two methods, each with a concrete type, is
+the honest shape. `examples/cube` is the smallest complete case.
+
+**threeTS-lite.** A three.js-shaped library over that context, so scene code
+reads the way a three user expects:
+
+```ts
+import { Scene } from "../../three/core/Scene.js";
+import { PerspectiveCamera } from "../../three/core/PerspectiveCamera.js";
+import { Mesh } from "../../three/objects/Mesh.js";
+import { BoxGeometry } from "../../three/geometries/BoxGeometry.js";
+import { MeshLambertMaterial } from "../../three/materials/Material.js";
+import { DirectionalLight } from "../../three/lights/Light.js";
+import { WebGLRenderer } from "../../three/renderer/WebGLRenderer.js";
+
+const renderer = new WebGLRenderer(canvas.getContextGL());
+renderer.setSize(canvas.width, canvas.height);
+
+const scene = new Scene();
+const camera = new PerspectiveCamera(60, canvas.width / canvas.height, 0.1, 400);
+camera.position.set(0, 0, 8);
+
+const mesh = new Mesh(new BoxGeometry(1, 1, 1), new MeshLambertMaterial(0xff8844));
+scene.add(mesh);
+scene.add(new DirectionalLight(0xffffff, 1));
+
+renderer.render(scene, camera);
+```
+
+Available: `Object3D`, `Scene`, `Mesh`, `InstancedMesh`, `Sprite`, `Line`,
+`LineSegments`, `Points`, `PerspectiveCamera`, `OrthographicCamera`,
+`Raycaster`, Box/Plane/Sphere geometries plus `BufferGeometry`,
+Basic/Lambert/Standard materials, ambient/directional/point/hemisphere
+lights, `Fog` and `FogExp2`, `Texture`, `DataTexture`,
+`WebGLRenderTarget`, and the full math tier (`Vector2/3/4`, `Matrix3/4`,
+`Quaternion`, `Euler`, `Color`, `Box3`, `Sphere`, `Plane`, `Frustum`,
+`MathUtils`).
+
+**View-frustum culling is on by default**, as in three. Objects outside the
+camera's view are skipped before any per-object work, and the pixels are
+identical either way. Two knobs, both matching three:
+
+```ts
+renderer.frustumCulling = false;   // whole-renderer off (benchmarks)
+mesh.frustumCulled = false;        // this object is never culled
+```
+
+Turn `frustumCulled` off for anything whose drawn extent is not described by
+its geometry's bounds around its own origin -- a vertex shader that displaces
+geometry, or a deliberate backdrop. Otherwise it vanishes the moment its
+origin leaves the view, which looks like a rendering bug.
+
+`MathUtils` is imported as plain functions, not a namespace object:
+
+```ts
+import { clamp, lerp, damp, degToRad } from ".../three/math/MathUtils.js";
+```
+
+Models are **baked, not parsed at runtime**: `codegen/bake-mesh.js` turns
+glTF/GLB/OBJ into a compact `.sgm` that `SGMLoader` reads. See
+[WEBGL-AND-3D.md](WEBGL-AND-3D.md) for the format and the rationale.
+
+Where it differs from three, and why, is documented in that same file; the
+short version is that API compatibility wins over layout changes that would
+be faster but would stop `mesh.position.set(...)` meaning what you expect.
+
+Running a 3D game where no window can be mapped (CI, a benchmark, any
+non-interactive shell) needs `SG_HEADLESS=1` -- see Build below.
+
+---
+
 ## What differs from a browser
 
 A short, honest list.
@@ -322,7 +407,22 @@ The entry file is found by convention, mirroring jsgamelauncher: `main.ts`,
 
 Harness knobs, for tests and screenshots, are read by the **host**, never by game
 source: `SG_MAX_FRAMES`, `SG_SHOT`, `SG_SHOT_FRAME`, `SG_NO_VSYNC`,
-`SG_GAME_DIR`.
+`SG_GAME_DIR`, `SG_HEADLESS`, `SG_GL_DEVICE`, `SG_STATS`.
+
+`SG_STATS=1` prints frame count, mean/min/max frame time and hitch count on
+exit. Useful for a before/after on a real game rather than only on the
+benchmark example.
+
+`SG_HEADLESS=1` renders into an offscreen EGL pbuffer instead of a window,
+and implies no vsync. Use it to run a 3D game where no window can be mapped
+(CI, a non-interactive shell, a benchmark). Without it such a run does not
+fail -- it BLOCKS in `poll()` at ~0% CPU with no output, because
+`SDL_CreateWindow` succeeds and the window is simply never mapped.
+
+`SG_GL_DEVICE=<n>` picks the EGL device by index for headless runs.
+`devices[0]` is not necessarily the GPU the desktop uses: a machine with
+integrated and discrete graphics may enumerate the slower one first, which
+silently invalidates any benchmark comparing against a browser.
 
 ---
 

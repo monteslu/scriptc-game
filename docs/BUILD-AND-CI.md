@@ -34,6 +34,12 @@ Targets: `linux-x86_64`, `linux-arm64`, `macos-arm64`, `windows-x86_64`.
 | `libSDL2.a` | SDL release source, `scripts/build-sdl.sh` | Static, subsystems: video, events, timer, joystick, gamecontroller, haptic, audio. Linux still dlopens display/audio drivers at runtime (its normal static behavior), hence `dl` in system_libraries. |
 | `libwebaudio.a` | webaudio-node repo, `scripts/build-webaudio.sh` | clang -O2, plain native, includes dr_libs/stb_vorbis/fdk-aac. SIMD flags per arch (SSE4.2 / NEON). |
 | `libsgshim.a` | this repo, `scripts/build-shim.sh` | Small; rebuilt constantly during dev. |
+| `libsggl.a` | this repo, `scripts/build-gl.sh` | The GLES3 tier: generated bindings plus the hand-written shim (out-params, strings, bulk uploads, the EGL pbuffer). Linked only when a game's reachable declaration set uses GL, so a 2D game does not pull in libGLESv2. **Must be scripted, not hand-built**: it being built by hand and never scripted is what broke CI from Phase 8 until it was found. |
+| `angle/lib/*.dylib` | `scripts/fetch-angle.sh` (macOS only) | Apple deprecated OpenGL and ships no GLES3, so a 3D game cannot link on macOS at all without ANGLE. Pinned to the same kivy/angle-builder tag native-gles uses. The script rewrites the archive's RELATIVE install names to absolute and verifies with `otool -D`; shipped as-is they link fine and then die at startup with `dyld: Library not loaded: ./libGLESv2.dylib`. |
+
+**Link order is load-bearing**: `libsggl.a` comes BEFORE `libsggfx.a`, with
+ANGLE between them on macOS. An archive is scanned once, left to right, so
+the GL archive may call into the gfx archive but never the reverse.
 
 `scripts/fetch-archives.sh <target>` populates `vendor/<target>/` from
 pinned release URLs + local builds, and writes `vendor/<target>/MANIFEST`
@@ -114,6 +120,18 @@ minus RenderPresent; the raster surface (what the goldens hash) is
 unaffected. Real-window smoke happens in the arm64/windows smoke jobs only
 if the runner has a display; otherwise dummy there too and real-window
 testing stays a local-machine checklist item before releases.
+
+**A 3D game needs `SG_HEADLESS=1`**, which is a different mechanism: it
+renders into an EGL pbuffer and forces the dummy video driver itself. The
+failure mode without it is not an error but a HANG -- `SDL_CreateWindow`
+succeeds, the window is never mapped, and the process sits in `poll()` at
+~0% CPU producing no output until it is killed. A CI job that merely times
+out looks like a slow runner rather than a missing flag.
+
+`SG_GL_DEVICE=<n>` pins the EGL device. `devices[0]` is whatever the driver
+enumerates first, which on a machine with integrated and discrete graphics
+may be the slower part; any benchmark that does not pin this is comparing
+across GPUs without saying so.
 
 ## Packaging
 

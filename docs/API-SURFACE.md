@@ -18,10 +18,10 @@ Games import from **`web/globals.js`** and get the browser surface:
 Gamepad interfaces. See [WRITING-GAMES.md](WRITING-GAMES.md) for the
 author-facing guide.
 
-The 3D surface (`canvas.getContext("webgl2")`, and the
-threeTS-lite library) is specified separately in
-[WEBGL-AND-3D.md](WEBGL-AND-3D.md); it is D-tier by schedule (Phases 8/9,
-post-v0.1), S-tier by design commitment.
+The 3D surface has **shipped** and is specified separately in
+[WEBGL-AND-3D.md](WEBGL-AND-3D.md): a `WebGL2RenderingContext` reached via
+`canvas.getContextGL()` (spelled `getContext("webgl2")` in a page), plus the
+threeTS-lite library on top of it.
 
 ---
 
