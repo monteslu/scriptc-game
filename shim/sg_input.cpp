@@ -278,7 +278,7 @@ extern "C" uint32_t sg_pad_has_rumble(uint32_t slot) {
 }
 
 /** Adds an SDL controller-mapping string. Returns 1 if new, 0 if updated. */
-extern "C" int32_t sg_pad_add_mapping(const uint8_t* text, size_t len) {
+extern "C" int32_t sg_pad_add_mapping(const uint8_t* text, uint32_t len) {
   char buf[1024];
   if (len >= sizeof(buf)) { sg_mail_set("mapping string too long"); return SG_ERANGE; }
   memcpy(buf, text, len);
