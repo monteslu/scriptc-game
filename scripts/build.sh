@@ -11,10 +11,24 @@
 set -euo pipefail
 INPUT="${1:?usage: build.sh <gameDir|entry.ts> [target]}"
 # An explicit second argument wins; otherwise SG_TARGET, which CI sets from
-# the build matrix. Defaulting here rather than in each caller means a new
-# script cannot silently link the wrong architecture's archives.
-TARGET="${2:-${SG_TARGET:-linux-x86_64}}"
+# the build matrix; otherwise the HOST platform (scripts/host-target.sh).
+# Detecting here rather than defaulting to one target means a plain
+# `build.sh <game>` links the right architecture's archives on every dev
+# machine, not just Linux x86_64.
+. "$(dirname "$0")/host-target.sh"
+TARGET="${2:-${SG_TARGET:-$(host_target)}}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+# macOS GL builds need ANGLE (gen-ffi refuses without it). The fetched
+# location is the only place it ever is locally, so export it rather than
+# make every shell do so; an explicit ANGLE_LIB still wins.
+case "$TARGET" in
+  macos-*)
+    if [ -z "${ANGLE_LIB:-}" ] && [ -d "$ROOT/vendor/$TARGET/angle/lib" ]; then
+      export ANGLE_LIB="$ROOT/vendor/$TARGET/angle/lib"
+    fi
+    ;;
+esac
 SCRIPTC="${SCRIPTC_BIN:-$ROOT/../scriptc/packages/cli/dist/main.js}"
 
 if [ -d "$INPUT" ]; then
@@ -83,4 +97,27 @@ fi
 OUT="$ROOT/build/$BASE"
 mkdir -p "$(dirname "$OUT")"
 node "$SCRIPTC" build "$ENTRY" --ffi "$ROOT/ffi/core.ffi.json" -o "$OUT"
+
+# macOS + GL: the kivy ANGLE prebuilts carry RELATIVE install names
+# ("./libEGL.dylib"), which the linker copies into the binary verbatim, and
+# dyld then resolves against the CWD -- so the binary only launches from one
+# directory, if that. fetch-angle.sh rewrites the dylibs in place where the
+# toolchain allows it (they ship with no header padding, so a CLT-only
+# install_name_tool cannot); rewriting the BINARY always works, because
+# clang linked it locally with room to spare. A no-op when the recorded
+# names are already absolute.
+case "$TARGET" in
+  macos-*)
+    if grep -q 'libEGL\.dylib' "$ROOT/ffi/core.ffi.json" 2>/dev/null &&
+       command -v install_name_tool >/dev/null 2>&1; then
+      A="${ANGLE_LIB:-$ROOT/vendor/$TARGET/angle/lib}"
+      install_name_tool -change ./libGLESv2.dylib "$A/libGLESv2.dylib" \
+                        -change ./libEGL.dylib "$A/libEGL.dylib" "$OUT"
+      # install_name_tool invalidates the ad-hoc signature; dyld refuses an
+      # unsigned arm64 binary, so re-sign.
+      codesign --force --sign - "$OUT" 2>/dev/null || true
+    fi
+    ;;
+esac
+
 echo "built $OUT"
