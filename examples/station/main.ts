@@ -1515,11 +1515,14 @@ function placeHUD(hud: Mesh, camera: PerspectiveCamera): void {
   const halfH = 1.68;             // tan(70/2 deg) * 2.4  -- fov is VERTICAL
   const halfW = halfH * (1280 / 720);
   /* The quad is makeQuad(0.72, 0.36), whose arguments are HALF-extents, so
-   * pulling in by exactly those puts it flush in the corner. */
+   * pulling in by exactly those puts it flush in the corner. MARGIN backs
+   * it off the frame edge a little further: 720 screen pixels span
+   * 2*halfH world units at HUD_D, so 0.05 is roughly a 10px inset. */
+  const MARGIN = 0.05;
   hud.position.addScaledVector(_fwd, HUD_D);
-  hud.position.addScaledVector(_up, halfH - 0.36);
+  hud.position.addScaledVector(_up, halfH - 0.36 - MARGIN);
   _right.set(1, 0, 0).applyQuaternion(camera.quaternion);
-  hud.position.addScaledVector(_right, -(halfW - 0.72));
+  hud.position.addScaledVector(_right, -(halfW - 0.72 - MARGIN));
   hud.quaternion.copy(camera.quaternion);
 }
 
