@@ -47,6 +47,16 @@ export class Object3D {
 
   visible = true;
 
+  /* Whether the renderer may reject this object with the view frustum.
+   * three's flag, same default.
+   *
+   * Turn it OFF for anything whose drawn extent is not described by its
+   * geometry's bounds around its own origin: a vertex shader that displaces
+   * geometry, a skinned mesh, or an object deliberately drawn as a
+   * background. Such an object would otherwise vanish the moment its origin
+   * left the view, which looks like a rendering bug rather than a setting. */
+  frustumCulled = true;
+
   /* Whether the local matrix is recomposed every frame. three exposes the
    * same flag; setting it false and updating `matrix` by hand is how static
    * geometry skips the work. */

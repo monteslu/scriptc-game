@@ -58,6 +58,13 @@ export class Texture {
    * INTO, so the renderer must allocate storage but never upload an
    * image for it. */
   isRenderTarget = false;
+  /* Set by DataTexture. The renderer cannot downcast a Texture to a
+   * DataTexture (no structural narrowing in the dialect), so the subclass
+   * announces itself with a flag and parks its bytes here, exactly the way
+   * isRenderTarget already works. */
+  isDataTexture = false;
+  /** RGBA8 pixels when isDataTexture; null otherwise. */
+  data: Buffer | null = null;
   /** Dimensions, for a render target (an image source knows its own). */
   width = 0;
   height = 0;

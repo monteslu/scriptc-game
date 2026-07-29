@@ -230,6 +230,19 @@ export async function run(opts: HostOptions): Promise<number> {
     await Promise.resolve(0);
   }
 
+  /* Frame stats on the way out, when asked for.
+   *
+   * These were collected every frame and never reported, so measuring any
+   * game meant editing its source. SG_STATS prints them instead, which is
+   * what makes a before/after comparison possible on a real scene rather
+   * than only on the benchmark example. */
+  if (process.env["SG_STATS"] !== undefined && stats.frames > 0) {
+    const mean = stats.totalMs / stats.frames;
+    console.log(`frames ${stats.frames}  mean ${mean.toFixed(3)} ms` +
+                `  min ${stats.minMs.toFixed(3)}  max ${stats.maxMs.toFixed(3)}` +
+                `  hitches ${stats.hitches}`);
+  }
+
   ffi.inputQuit();
   ffi.quit();
   return 0;

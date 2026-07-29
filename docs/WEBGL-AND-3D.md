@@ -346,19 +346,57 @@ conveniences (`Vector3.projectOnPlane`, `Color.setHSL`, `Matrix4.decompose`).
 What is present is the part a game touches every frame. Judge it by the
 example above rather than by the percentage.
 
-**Still unbuilt from the v0 scope above.** Listed because the scope tiers
-were written before the work and should not read as a completion claim:
+**The v0 scope is now complete.** The gaps that stood open after the first
+pass have been closed:
 
-| Missing | Notes |
+| Was missing | Now |
 | --- | --- |
-| `Vector4` | Not needed by anything shipped; trivial when something wants it. |
-| `Box3`, `Sphere` (math), `Plane` (math), `Frustum` | `Raycaster` carries its own `Ray`; the bounding types never got built. |
-| **Frustum culling** | Listed in the renderer scope and NOT implemented. Every mesh in the list is submitted. This is the single most valuable missing item: it is exactly what would cut the 10000-mesh scene walk that the benchmark section shows dominating the frame. |
-| `MathUtils` | Conveniences only (`degToRad`, `clamp`, `lerp`). |
-| `OrthographicCamera` | Only `PerspectiveCamera` exists. Blocks 2.5D and most UI-in-3D. |
-| `CubeTexture`, `DataTexture` | `Texture` and `WebGLRenderTarget` cover what the examples use. |
+| `Vector4` | Shipped. |
+| `Box3`, `Sphere`, `Plane`, `Frustum` | Shipped, in `three/math/`. |
+| **Frustum culling** | Shipped and on by default. `renderer.frustumCulling` toggles it; `mesh.frustumCulled` opts a single object out, as in three. |
+| `MathUtils` | Shipped as plain exported functions (`clamp`, `lerp`, `damp`, `smoothstep`, ...) rather than a namespace object, since the dialect resolves imported functions statically. |
+| `OrthographicCamera` | Shipped. |
+| `DataTexture` | Shipped: RGBA8 bytes straight to `texImage2D`, for procedural textures and shader lookup tables. |
 
-`Group` exists. Everything else in the v0 list shipped.
+`CubeTexture` is the one v0 item deliberately still out: it needs the cube
+map target plumbed through the texture path, and nothing in the tree wants
+it yet. Everything else in the v0 list shipped.
+
+### Culling, measured
+
+Culling is only worth having if it is invisible and if it pays. Both are
+checked in `test/frustumtest.ts` (32 checks): the same frame rendered with
+culling on and off must hash IDENTICALLY, and a control that hides a visible
+mesh must change the hash -- without that control, "identical" and "the
+harness is broken" look the same.
+
+What it buys depends entirely on how much of the scene is off screen:
+
+| scene | culling off | culling on | |
+| --- | ---: | ---: | --- |
+| `examples/station` (tunnel network) | 0.807 ms | 0.753 ms | ~7% |
+| `examples/spinfield` | no change | no change | see below |
+
+spinfield shows nothing, and that is correct rather than a failure: its
+field is a sphere of radius 26 viewed from 96 units back, so the whole
+scene is always inside the frustum and there is nothing to reject. A
+benchmark that cannot exercise a feature is not evidence against it. The
+station number is the honest one, and it is modest because station's frames
+are already cheap.
+
+### A test that was passing without running
+
+Found while wiring the culling test in, and worth recording because the
+failure was silent. `test/phase9test.ts` hung its entire body off
+`window.addEventListener("load", ...)`. A bare `.ts` entry is compiled
+AS-IS by `scripts/build.sh` -- no generated entry, so the host's
+`boot()`/`run()` never execute and `load` never fires. The process did
+nothing and exited 0, and `test.sh` checks only the exit code, so every
+Phase 9 closeout check reported PASS from the day it landed without ever
+executing.
+
+It now runs at top level through `initHeadless`, like `webgltest.ts`, and
+reports 11/11 for real. A scan of the other suites found no second case.
 
 ### InstancedMesh
 

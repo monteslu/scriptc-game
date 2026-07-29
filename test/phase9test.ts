@@ -10,7 +10,9 @@
  * MUST differ. "The hash is stable" and "the hash is stably wrong" look
  * identical otherwise.
  */
-import { window, document, Math as M } from "../web/globals.js";
+import { Math as M } from "../web/globals.js";
+import { initHeadless, shutdownHeadless } from "../host/gl-ffi.js";
+import { WebGL2RenderingContext } from "../web/webgl/context.js";
 import { Scene } from "../three/core/Scene.js";
 import { PerspectiveCamera } from "../three/core/PerspectiveCamera.js";
 import { Mesh } from "../three/objects/Mesh.js";
@@ -32,16 +34,23 @@ function check(cond: boolean, label: string): void {
   if (cond) { passed += 1; } else { failed += 1; console.log(`  FAIL: ${label}`); }
 }
 
-window.addEventListener("load", () => {
-  const canvas = document.getElementById("game-canvas");
-  const W = canvas.width;
-  const H = canvas.height;
-  const gl = canvas.getContextGL();
-  if (gl === null) {
-    console.log("phase9: WebGL2 unavailable");
+const W = 320;
+const H = 240;
+
+/* initHeadless, NOT a canvas load handler.
+ *
+ * A bare .ts entry is compiled AS-IS (scripts/build.sh), so the host's
+ * boot()/run() never execute and the `load` event never fires. This file
+ * previously hung its entire body off addEventListener("load"), so it ran
+ * NOTHING and still exited 0 -- and test.sh, which only checks the exit
+ * code, reported PASS for every one of these checks since the tier landed.
+ * Top-level is the shape that actually runs. */
+function main(): void {
+  if (initHeadless(W, H) !== 0) {
+    console.log("    SKIP (no headless GL device)");
     process.exit(0);
-    return;
   }
+  const gl = new WebGL2RenderingContext(W, H);
 
   const renderer = new WebGLRenderer(gl);
   renderer.setSize(W, H);
@@ -171,7 +180,10 @@ window.addEventListener("load", () => {
   check(rt.glFramebuffer === null, "resizing a target invalidates its framebuffer");
   check(rt.width === 64, "resizing a target updates its size");
 
+  shutdownHeadless();
   console.log("");
   console.log(`phase9 test: ${passed}/${passed + failed} checks passed`);
   process.exit(failed === 0 ? 0 : 1);
-});
+}
+
+main();

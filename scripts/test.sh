@@ -35,7 +35,7 @@ run() {
 }
 
 echo "==> building test programs"
-for entry in test/conformance.ts test/readbackprobe.ts test/inputtest.ts test/padvisual.ts test/audiotest.ts test/decodetest.ts test/imagetest.ts test/spritetest.ts test/asynctest.ts test/missileprobe.ts test/websurface.ts test/webgltest.ts test/threetest.ts test/raytest.ts test/phase9test.ts; do
+for entry in test/conformance.ts test/readbackprobe.ts test/inputtest.ts test/padvisual.ts test/audiotest.ts test/decodetest.ts test/imagetest.ts test/spritetest.ts test/asynctest.ts test/missileprobe.ts test/websurface.ts test/webgltest.ts test/threetest.ts test/raytest.ts test/phase9test.ts test/frustumtest.ts; do
   ./scripts/build.sh "$entry" "$TARGET" >/dev/null || { echo "build failed: $entry"; exit 1; }
 done
 
@@ -57,6 +57,10 @@ run "raycaster + loader" ./scripts/mesh-fixtures.sh
 # hashing rendered PIXELS: a material that compiles but shades nothing
 # would pass any field-level assertion.
 run "phase 9 closeout"   env ./build/phase9test
+
+# Culling must be INVISIBLE: the same frame with it on and off must hash
+# identically, with a control that must fail proving the hash can move.
+run "frustum culling"    env ./build/frustumtest
 
 run "webgl2"             env ./build/webgltest
 # The acceptance gate: identical framebuffer hashes from this build and from

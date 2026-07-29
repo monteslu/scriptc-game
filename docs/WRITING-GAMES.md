@@ -325,11 +325,33 @@ renderer.render(scene, camera);
 ```
 
 Available: `Object3D`, `Scene`, `Mesh`, `InstancedMesh`, `Sprite`, `Line`,
-`LineSegments`, `Points`, `PerspectiveCamera`, `Raycaster`, Box/Plane/Sphere
-geometries plus `BufferGeometry`, Basic/Lambert/Standard materials,
-ambient/directional/point/hemisphere lights, `Fog` and `FogExp2`,
-`Texture`, `WebGLRenderTarget`, and the full math tier (`Vector2/3`,
-`Matrix3/4`, `Quaternion`, `Euler`, `Color`).
+`LineSegments`, `Points`, `PerspectiveCamera`, `OrthographicCamera`,
+`Raycaster`, Box/Plane/Sphere geometries plus `BufferGeometry`,
+Basic/Lambert/Standard materials, ambient/directional/point/hemisphere
+lights, `Fog` and `FogExp2`, `Texture`, `DataTexture`,
+`WebGLRenderTarget`, and the full math tier (`Vector2/3/4`, `Matrix3/4`,
+`Quaternion`, `Euler`, `Color`, `Box3`, `Sphere`, `Plane`, `Frustum`,
+`MathUtils`).
+
+**View-frustum culling is on by default**, as in three. Objects outside the
+camera's view are skipped before any per-object work, and the pixels are
+identical either way. Two knobs, both matching three:
+
+```ts
+renderer.frustumCulling = false;   // whole-renderer off (benchmarks)
+mesh.frustumCulled = false;        // this object is never culled
+```
+
+Turn `frustumCulled` off for anything whose drawn extent is not described by
+its geometry's bounds around its own origin -- a vertex shader that displaces
+geometry, or a deliberate backdrop. Otherwise it vanishes the moment its
+origin leaves the view, which looks like a rendering bug.
+
+`MathUtils` is imported as plain functions, not a namespace object:
+
+```ts
+import { clamp, lerp, damp, degToRad } from ".../three/math/MathUtils.js";
+```
 
 Models are **baked, not parsed at runtime**: `codegen/bake-mesh.js` turns
 glTF/GLB/OBJ into a compact `.sgm` that `SGMLoader` reads. See
@@ -385,7 +407,11 @@ The entry file is found by convention, mirroring jsgamelauncher: `main.ts`,
 
 Harness knobs, for tests and screenshots, are read by the **host**, never by game
 source: `SG_MAX_FRAMES`, `SG_SHOT`, `SG_SHOT_FRAME`, `SG_NO_VSYNC`,
-`SG_GAME_DIR`, `SG_HEADLESS`, `SG_GL_DEVICE`.
+`SG_GAME_DIR`, `SG_HEADLESS`, `SG_GL_DEVICE`, `SG_STATS`.
+
+`SG_STATS=1` prints frame count, mean/min/max frame time and hitch count on
+exit. Useful for a before/after on a real game rather than only on the
+benchmark example.
 
 `SG_HEADLESS=1` renders into an offscreen EGL pbuffer instead of a window,
 and implies no vsync. Use it to run a 3D game where no window can be mapped

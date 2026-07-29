@@ -88,7 +88,7 @@ real URLs rather than filenames.
 | **Loop** | Real `requestAnimationFrame` (a queue, not a single slot), `load` event, genuinely async asset loading |
 | **Engine** (optional) | Fixed-step loop with interpolation, and an asset loader with progress. Pure web API underneath; skippable |
 | **WebGL2** | The GLES3 surface behind a `WebGL2RenderingContext`: buffers, VAOs, shaders, textures, FBOs, instancing, `getContextGL()` on a canvas |
-| **3D** | threeTS-lite: `Scene`, `Object3D`, `Mesh`, `InstancedMesh`, `Sprite`, `Line`, `Points`, Basic/Lambert/Standard materials, ambient/directional/point/hemisphere lights, fog, render targets, `Raycaster`, and a glTF/GLB/OBJ mesh baker |
+| **3D** | threeTS-lite: `Scene`, `Object3D`, `Mesh`, `InstancedMesh`, `Sprite`, `Line`, `Points`, perspective **and orthographic** cameras, Basic/Lambert/Standard materials, ambient/directional/point/hemisphere lights, fog, render targets, data textures, `Raycaster`, **view-frustum culling**, the full math tier (`Vector2/3/4`, `Matrix3/4`, `Quaternion`, `Euler`, `Color`, `Box3`, `Sphere`, `Plane`, `Frustum`, `MathUtils`), and a glTF/GLB/OBJ mesh baker |
 | **Build** | One command from a game directory to a self-contained native binary |
 
 | Target | Runner | Notes |
@@ -147,7 +147,8 @@ Every number below comes from `./scripts/test.sh`, which runs headless.
 | WebGL2 | **9/9** checks on a real GPU, including a control that must fail |
 | three math | **15/15** checks against real three.js values |
 | Raycaster + loaders | **75/75** checks |
-| Phase 9 closeout | render targets, hemisphere light and Standard material, each with a control render that must differ |
+| Phase 9 closeout | **11/11** checks: render targets, hemisphere light and Standard material, each with a control render that must differ |
+| Frustum culling | **32/32** checks, including that culling changes not one pixel, plus a control that must fail |
 | Pixel readback | passing |
 
 Every one of the 13 examples also runs in a browser from the same source,

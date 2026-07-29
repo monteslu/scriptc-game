@@ -59,6 +59,8 @@ import { Matrix4 } from "../math/Matrix4.js";
 import { Matrix3 } from "../math/Matrix3.js";
 import { Vector3 } from "../math/Vector3.js";
 import { Color } from "../math/Color.js";
+import { Frustum } from "../math/Frustum.js";
+import { Sphere } from "../math/Sphere.js";
 
 /* Fixed light maxima. A game-sized budget keeps the shader branch-free and
  * the uniform block small; three's unbounded arrays are what force its
@@ -149,6 +151,13 @@ export class WebGLRenderer {
   private renderTarget: WebGLRenderTarget | null = null;
   /** Increments each render; programs stamp it to skip redundant uploads. */
   private frameStamp = 0;
+
+  /* View-frustum culling. On by default, as in three, and switchable so a
+   * game (or the benchmark) can measure with it off. */
+  frustumCulling = true;
+  readonly frustum = new Frustum();
+  /** Meshes rejected by the frustum last frame; diagnostic only. */
+  culledCount = 0;
   /* What is currently bound. GL state is global and sticky, so re-issuing
    * a bind that changes nothing is pure cost. */
   private currentProgram: Program | null = null;
@@ -671,7 +680,13 @@ export class WebGLRenderer {
     if (tex.isRenderTarget) return;
     if (!tex.needsUpdate) return;
     gl.bindTexture(TEXTURE_2D, tex.glTexture);
-    if (tex.image !== null && tex.image.complete) {
+    const data = tex.data;
+    if (tex.isDataTexture && data !== null) {
+      /* Raw RGBA8 bytes: a procedural texture or a shader lookup table. */
+      gl.texImage2D(TEXTURE_2D, 0, RGBA, tex.width, tex.height, 0,
+                    RGBA, UNSIGNED_BYTE, data);
+      tex.needsUpdate = false;
+    } else if (tex.image !== null && tex.image.complete) {
       gl.texImage2DFromImage(TEXTURE_2D, 0, tex.image);
       tex.needsUpdate = false;
     } else if (tex.canvas !== null) {
@@ -718,6 +733,29 @@ export class WebGLRenderer {
     const n = meshes.length;
     while (flags.length < n) flags.push(0);
 
+    /* VIEW-FRUSTUM CULLING.
+     *
+     * Built once per frame from the camera's viewProjection, then each
+     * mesh's origin-centred bounding radius is tested against it. A mesh
+     * that fails is not drawn AND not walked further, which is the point:
+     * the benchmark shows the per-object work dominating a large frame, so
+     * the win is skipping objects rather than drawing them faster.
+     *
+     * The sphere is conservative (a corner case can pass and still be off
+     * screen). That is deliberate and matches three: a false accept costs
+     * one draw, a false reject is a visibly missing object.
+     *
+     * `mesh.frustumCulled` opts out per object, as in three. Anything
+     * whose vertex shader moves geometry away from its transform -- and
+     * the sprites/lines/points paths, which are collected elsewhere --
+     * must keep it off or it will vanish when its origin leaves view. */
+    const doCull = this.frustumCulling;
+    let culled = 0;
+    if (doCull) {
+      _viewProj.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+      this.frustum.setFromProjectionMatrix(_viewProj);
+    }
+
     for (let i = 0; i < n; i++) {
       const mesh = meshes[i];
       const mat = mesh.material;
@@ -727,8 +765,19 @@ export class WebGLRenderer {
         f = 1;
         if (mat.transparent) f = 3;
       }
+      if (f !== 0 && doCull && mesh.frustumCulled) {
+        const geo = mesh.geometry;
+        if (geo.boundingRadius < 0) geo.computeBoundingRadius();
+        _cullSphere.center.set(0, 0, 0);
+        _cullSphere.radius = geo.boundingRadius;
+        if (!this.frustum.intersectsSphereTransformed(_cullSphere, mesh.matrixWorld)) {
+          f = 0;
+          culled = culled + 1;
+        }
+      }
       flags[i] = f;
     }
+    this.culledCount = culled;
 
     for (let i = 0; i < n; i++) {
       const f = flags[i];
@@ -1536,6 +1585,9 @@ export class WebGLRenderer {
 }
 
 const _v = new Vector3();
+/* Culling scratch: rebuilt per frame, never allocated per mesh. */
+const _viewProj = new Matrix4();
+const _cullSphere = new Sphere();
 
 /* How much a point light matters from here: brighter and nearer wins.
  *
