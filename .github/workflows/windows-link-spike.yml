@@ -94,20 +94,20 @@ jobs:
           ./scripts/build-webaudio.sh windows-x86_64
           ./scripts/build-shim.sh windows-x86_64
 
-      - name: Link a 2D game with MinGW scriptc and MSVC Skia
+      - name: Link the canvas runtime with MinGW scriptc and MSVC Skia
         shell: bash
         env:
           WEBAUDIO_SRC: ${{ github.workspace }}/webaudio-node
           SCRIPTC_BIN: ${{ github.workspace }}/scriptc/packages/cli/dist/main.js
           SCRIPTC_CC: zigcc
           SCRIPTC_TARGET: x86_64-windows-gnu
-        run: ./scripts/build.sh examples/dodge windows-x86_64
+        run: ./scripts/build.sh test/conformance.ts windows-x86_64
 
-      - name: Headless smoke test
+      - name: Headless canvas smoke test
         shell: bash
         env:
           SDL_VIDEODRIVER: dummy
           SDL_AUDIODRIVER: dummy
-          SG_MAX_FRAMES: 2
-          SG_NO_VSYNC: 1
-        run: ./build/dodge.exe
+        run: |
+          mkdir -p test/out
+          ./build/conformance.exe test/out
