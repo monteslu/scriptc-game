@@ -38,29 +38,10 @@ jobs:
             runner: macos-14
           - target: macos-x86_64
             runner: macos-15-intel
-          # windows-x86_64 is OUT, and the reason is a genuine standoff
-          # between two upstreams rather than anything in this repo.
-          #
-          # scriptc's Windows support is written for mingw: 27 unguarded
-          # POSIX includes across the runtime (dirent.h, unistd.h, fcntl.h,
-          # signal.h...), which mingw-w64 provides and MSVC does not. The
-          # x86_64-windows-gnu triple builds scriptc programs cleanly,
-          # verified locally.
-          #
-          # Skia's GN goes the other way: gn/BUILDCONFIG.gn routes EVERY
-          # target_os="win" build to the msvc toolchain (the only others
-          # are gcc_like and wasm), so build-libcanvas can only publish an
-          # MSVC Skia, whose objects import the MSVC CRT that mingw cannot
-          # supply.
-          #
-          # So gnu compiles but cannot link Skia, and msvc links Skia but
-          # cannot compile the runtime. Closing it needs one of: a mingw
-          # toolchain in Skia's GN, or MSVC ports of those 27 POSIX include
-          # sites. Both are upstream, and neither is a shim.
-          #
-          # Everything on THIS side is done and verified against the real
-          # release tarball: fetch-archives.sh vendors the Windows archives
-          # (204 skiac symbols) and build-shim.sh merges them.
+          - target: windows-x86_64
+            runner: windows-latest
+            scriptc_cc: zigcc
+            scriptc_target: x86_64-windows-msvc
 
     steps:
       - uses: actions/checkout@v7
@@ -126,6 +107,12 @@ jobs:
           clang --version
 
       # scriptc cross-compiles through zig; its own CI uses this action.
+      - name: Enable the MSVC build environment
+        if: startsWith(matrix.target, 'windows')
+        uses: TheMrMilchmann/setup-msvc-dev@v4
+        with:
+          arch: x64
+
       - uses: vercel-labs/setup-zig@v1
         if: matrix.scriptc_cc == 'zigcc'
         with:
@@ -206,6 +193,13 @@ jobs:
             echo "== $g"
             ./scripts/build.sh "$g" "${{ matrix.target }}"
           done
+
+      - name: Stage Windows runtime files
+        if: startsWith(matrix.target, 'windows')
+        shell: bash
+        run: |
+          cp "$SDL2_LIB/SDL2.dll" build/
+          cp vendor/${{ matrix.target }}/skia/icudtl.dat build/
 
       # The WebGL2 parity gate needs the Node reference stack. Linux only:
       # it renders through surfaceless EGL with the software rasteriser,
