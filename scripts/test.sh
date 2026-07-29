@@ -15,7 +15,8 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # Without this every suite built against vendor/linux-x86_64 regardless of
 # the host, which fails on any other architecture with a bare
 # "ar: .../linux-x86_64/libskiac.a: No such file or directory".
-TARGET="${SG_TARGET:-linux-x86_64}"
+. "$ROOT/scripts/host-target.sh"
+TARGET="${SG_TARGET:-$(host_target)}"
 export SG_TARGET="$TARGET"     # inherited by conformance.sh and every child
 cd "$ROOT"
 

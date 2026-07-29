@@ -42,6 +42,7 @@ import { Gamepad, gamepads as sparseGamepads } from "./input/gamepad.js";
 import { SgMath } from "./math.js";
 import { resolveUrl, readBinary, fileExists, isExternalUrl, warnAsset } from "../host/resources.js";
 import { queueTask } from "../host/tasks.js";
+import { readMailbox } from "../host/mailbox.js";
 
 /* ---- the task queue ----
  *
@@ -185,7 +186,10 @@ export class HTMLCanvasElement {
     if (this.gl === null) {
       // A real GL context on this window; without it every GL call is a
       // no-op against nothing and the canvas stays blank.
-      if (ffi.glInitWindow() !== 0) return null;
+      if (ffi.glInitWindow() !== 0) {
+        console.log("glInitWindow failed: " + readMailbox());
+        return null;
+      }
       this.gl = new WebGL2RenderingContext(this.w, this.h);
       setGLPresent();
     }

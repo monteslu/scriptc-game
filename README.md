@@ -138,7 +138,7 @@ Every number below comes from `./scripts/test.sh`, which runs headless.
 | --- | --- |
 | Canvas conformance | **55/55** scenes byte-identical to `@napi-rs/canvas` goldens |
 | Input | **89/89** checks, including a synthetic gamepad for the hardware-free lane |
-| Audio graph | **16/16** checks |
+| Audio graph | **22/22** checks, including buffer-source looping both ways |
 | Audio decoders | **17/17** checks across mp3, wav, ogg and flac |
 | Image formats | **20/20** checks across png, jpg, webp, bmp and gif |
 | Sprite sheets | **10/10** checks |
@@ -205,6 +205,12 @@ Run the two vendor steps once, then build:
 ./scripts/build-webaudio.sh        # vendor/<target>/libwebaudio.a
 ./scripts/fetch-angle.sh           # macOS only: GLES3 via ANGLE
 ./scripts/build.sh examples/dodge  # -> build/dodge
+```
+
+Every script targets the HOST platform by default; pass a target as the
+second argument (or set `SG_TARGET`, as CI does) to build for another one.
+
+```sh
 ./scripts/dev.sh examples/dodge    # rebuild + relaunch on every save
 ./scripts/typecheck.sh             # tsc only, ~0.4s
 ./scripts/test.sh                  # every suite, headless

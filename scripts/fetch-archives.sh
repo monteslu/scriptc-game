@@ -60,6 +60,7 @@ for f in "$SRC"/skia/*.a "$SRC"/skia/*.lib; do
 done
 [ "$copied" -gt 0 ] || { echo "no skia archives found in $SRC/skia" >&2; exit 1; }
 
+cp "$SRC"/skia/icudtl.dat "$DEST/skia/" 2>/dev/null || true
 cp "$SRC"/include/skia_c.hpp "$DEST/include/"
 cp "$SRC"/CANVAS_VERSION "$DEST/" 2>/dev/null || true
 

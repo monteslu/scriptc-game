@@ -334,16 +334,19 @@ function systemLibraries(t) {
  *
  * ANGLE_LIB is set by the CI step that downloads it; a local build
  * without it gets a clear error rather than an undefined-symbol wall. */
-function angleDylibs(target) {
+function angleLibraries(target) {
   const dir = process.env.ANGLE_LIB;
   if (!dir) {
     throw new Error(
-      "gen-ffi: ANGLE_LIB is not set. macOS has no system GLES3, so a GL " +
+      "gen-ffi: ANGLE_LIB is not set. This platform has no system GLES3, so a GL " +
       "program needs ANGLE: run scripts/fetch-angle.sh and export ANGLE_LIB.",
     );
   }
   const out = [];
-  for (const name of ["libGLESv2.dylib", "libEGL.dylib"]) {
+  const names = target.startsWith("windows")
+    ? ["libGLESv2.lib", "libEGL.lib"]
+    : ["libGLESv2.dylib", "libEGL.dylib"];
+  for (const name of names) {
     const p = join(dir, name);
     if (!existsSync(p)) {
       throw new Error(`gen-ffi: no ${name} in '${dir}' (scripts/fetch-angle.sh)`);
@@ -415,7 +418,9 @@ const manifest = {
     ...(usesGl ? [`${vendor}/libsggl.a`] : []),
     /* ANGLE first: libsggl calls into it, and the linker takes each
      * archive once, left to right. */
-    ...(usesGl && target.startsWith("macos") ? angleDylibs(target) : []),
+    ...(usesGl && (target.startsWith("macos") || target.startsWith("windows"))
+      ? angleLibraries(target)
+      : []),
     `${vendor}/libsggfx.a`,
     `${vendor}/libwebaudio.a`,
     ...(target.startsWith("macos") ? [sdl2DylibPath()] : []),
@@ -424,7 +429,9 @@ const manifest = {
   /* GLESv2/EGL are system libraries on Linux and Android. On macOS they
    * come from ANGLE by full path (see angleDylibs), so naming them here
    * as well would make the linker search for a second, nonexistent copy. */
-  system_libraries: usesGl && !target.startsWith("macos")
+  system_libraries: usesGl &&
+      !target.startsWith("macos") &&
+      !target.startsWith("windows")
     ? [...systemLibraries(target), "GLESv2", "EGL"]
     : systemLibraries(target),
 };

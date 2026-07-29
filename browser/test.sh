@@ -86,6 +86,9 @@ for gamedir in "$ROOT"/examples/*/; do
     if [ -n "${SG_PROOF_VERBOSE:-}" ]; then
       echo "$OUTPUT" | sed "s/^/      /"
     fi
+  elif echo "$OUTPUT" | grep -qE \
+      "WebGL2 is unavailable in this browser|browser/webgl-constants\\.js:13"; then
+    echo "SKIP (WebGL2 unavailable on this runner)"
   else
     echo "FAIL"
     echo "$OUTPUT"

@@ -36,7 +36,12 @@ __asm__(".linker_option \"-framework\", \"AppKit\"");
 #include <SDL2/SDL.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+
+#if defined(__APPLE__)
+#include <mach-o/dyld.h>
+#endif
 
 #include "sg_tables.h"
 #include "sg_skia.h"
@@ -250,6 +255,80 @@ extern "C" uint32_t sg_is_fullscreen(int32_t unused) {
  */
 static SDL_GLContext g_gl_context = NULL;
 
+#if defined(__APPLE__)
+/* Point SDL's EGL loader at the ANGLE this binary already links.
+ *
+ * SDL_EGL_LoadLibrary dlopens "libEGL.dylib" by BARE NAME, and the vendored
+ * ANGLE lives in vendor/<target>/angle/lib -- on no search path, so the
+ * dlopen fails and the ES context silently degrades to "unavailable". But
+ * the binary links ANGLE directly (gen-ffi puts both dylibs in `libraries`),
+ * so dyld already knows their absolute paths: read them back from the loaded
+ * images and hand them to SDL through its documented env overrides. setenv
+ * with overwrite=0 keeps a user's explicit choice winning. */
+static void gl_point_sdl_at_linked_angle(void) {
+  uint32_t n = _dyld_image_count();
+  for (uint32_t i = 0; i < n; i++) {
+    const char* path = _dyld_get_image_name(i);
+    if (!path) continue;
+    const char* base = strrchr(path, '/');
+    base = base ? base + 1 : path;
+    if (strcmp(base, "libEGL.dylib") == 0) {
+      setenv("SDL_VIDEO_EGL_DRIVER", path, 0);
+    } else if (strcmp(base, "libGLESv2.dylib") == 0) {
+      setenv("SDL_VIDEO_GL_DRIVER", path, 0);
+    }
+  }
+}
+#endif
+
+/* Remake the window as a GL window, renderer and all.
+ *
+ * sg_init cannot know a game will ask for GL (the context is created lazily
+ * by the first getContextGL), so it creates the window with no GL flag. On
+ * Linux that works BY ACCIDENT: the default render driver is "opengl", and
+ * SDL_CreateRenderer recreates the window with SDL_WINDOW_OPENGL as a side
+ * effect. On macOS the default is "metal", the window stays a Metal window,
+ * and SDL_GL_CreateContext fails with "The specified window isn't an OpenGL
+ * window".
+ *
+ * The fix uses the same side effect deliberately: recreate the renderer
+ * with the "opengles2" driver, and SDL_CreateRenderer recreates the window
+ * (same SDL_Window*, so every held pointer stays valid) with the GL flag
+ * and the EGL/ANGLE machinery loaded. The 2D present path's texture is
+ * renderer-owned, so it is remade along with it. */
+static int32_t gl_remake_window(void) {
+#if defined(__APPLE__)
+  gl_point_sdl_at_linked_angle();
+#endif
+  int driver = -1;
+  int n = SDL_GetNumRenderDrivers();
+  for (int i = 0; i < n; i++) {
+    SDL_RendererInfo info;
+    if (SDL_GetRenderDriverInfo(i, &info) == 0 && info.name &&
+        strcmp(info.name, "opengles2") == 0) {
+      driver = i;
+      break;
+    }
+  }
+  if (driver < 0) { mail_set("no opengles2 render driver for a GL window"); return SG_ESDL; }
+
+  if (g_texture)  { SDL_DestroyTexture(g_texture); g_texture = NULL; }
+  if (g_renderer) { SDL_DestroyRenderer(g_renderer); g_renderer = NULL; }
+
+  Uint32 rflags = SDL_RENDERER_ACCELERATED;
+  if (!g_gl_novsync) rflags |= SDL_RENDERER_PRESENTVSYNC;
+  g_renderer = SDL_CreateRenderer(g_window, driver, rflags);
+  if (!g_renderer) { mail_set(SDL_GetError()); return SG_ESDL; }
+  SDL_RenderSetLogicalSize(g_renderer, (int)g_width, (int)g_height);
+  SDL_RenderSetIntegerScale(g_renderer, SDL_TRUE);
+  SDL_SetRenderDrawColor(g_renderer, 0, 0, 0, 255);
+  g_texture = SDL_CreateTexture(g_renderer, SDL_PIXELFORMAT_ABGR8888,
+                                SDL_TEXTUREACCESS_STREAMING,
+                                (int)g_width, (int)g_height);
+  if (!g_texture) { mail_set(SDL_GetError()); return SG_ESDL; }
+  return SG_OK;
+}
+
 extern "C" int32_t sg_gl_init_window(int32_t unused) {
   (void)unused;
   if (g_gl_context) return SG_OK;                 /* idempotent */
@@ -263,6 +342,11 @@ extern "C" int32_t sg_gl_init_window(int32_t unused) {
    * So the GL side asks us for the flag instead -- see sg_gl_wants_headless
    * and the wrapper in sg_gl_extra.cpp. */
   if (!g_window) { mail_set("GL context before init"); return SG_ESDL; }
+
+  if (!(SDL_GetWindowFlags(g_window) & SDL_WINDOW_OPENGL)) {
+    int32_t rc = gl_remake_window();
+    if (rc != SG_OK) return rc;
+  }
 
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);

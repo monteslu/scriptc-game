@@ -27,6 +27,20 @@ function main(): void {
   const m = ctx.measureText("Hello 123");
   console.log(`measure: width=${m.width} ascent=${m.actualBoundingBoxAscent} descent=${m.actualBoundingBoxDescent}`);
 
+  /* The EMPTY string, which is not an exotic input: every text field
+   * measures one before the first keystroke, and a caret is positioned from
+   * that width. A wasm cart build hangs HERE -- measureText("") never
+   * returns, while measureText("x") is fine (bisected in
+   * wasmcart-scriptc/src/text_tracer.ts). This probe exists to say whether
+   * the native Skia build shares the defect, which decides whether the fix
+   * belongs in wasmcart-skia's build or in shim/sg_skia_extra.cpp.
+   *
+   * Printed either side of the call rather than asserted: a hang and a wrong
+   * number are different failures and the log has to tell them apart. */
+  console.log("measuring empty string...");
+  const me = ctx.measureText("");
+  console.log(`measure empty: width=${me.width} ascent=${me.actualBoundingBoxAscent}`);
+
   ctx.fillStyle = "#cc2200";
   ctx.font = "bold 18px DejaVu Sans";
   ctx.fillText("Bold text", 20, 80);
