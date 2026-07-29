@@ -2,12 +2,6 @@
   "ffi_format": 1,
   "functions": [
     {
-      "name": "sg_present_frame",
-      "symbol": "sg_present_frame",
-      "params": [],
-      "returns": "u32"
-    },
-    {
       "name": "sgInit",
       "symbol": "sg_init",
       "params": [

@@ -71,13 +71,39 @@ export function warnAsset(kind: string, url: string, detail: string): void {
   console.log(`[scriptc-game] ${kind} failed: ${url}${detail === "" ? "" : ` (${detail})`}`);
 }
 
+/* PLUGGABLE BACKING STORE.
+ *
+ * Native builds read the game directory with node:fs, which is what the two
+ * functions below do by default. A build with no filesystem -- a wasmcart
+ * cart, where assets live in the .wasc and come through the host -- installs
+ * its own reader here instead.
+ *
+ * Injected rather than #ifdef'd because the dialect has no conditional
+ * compilation, and rather than forked because a second copy of the URL
+ * resolution rules would drift from this one. Everything above (the web
+ * root, the external-URL rule, the warning) stays shared. */
+export class AssetStore {
+  /** Byte length, or -1 when the asset is absent. */
+  size(path: string): number {
+    return existsSync(path) ? readFileSync(path).length : -1;
+  }
+  /** The bytes, or null when absent. */
+  read(path: string): Buffer | null {
+    return existsSync(path) ? readFileSync(path) : null;
+  }
+}
+
+let store: AssetStore = new AssetStore();
+
+/** Replaces the backing store. Called once, before any asset is read. */
+export function setAssetStore(s: AssetStore): void { store = s; }
+
 /** Reads a file, or null when it is missing or unreadable. */
 export function readBinary(path: string): Buffer | null {
   if (isExternalUrl(path)) return null;   // no network stack in this build
-  if (!existsSync(path)) return null;
-  return readFileSync(path);
+  return store.read(path);
 }
 
 export function fileExists(path: string): boolean {
-  return !isExternalUrl(path) && existsSync(path);
+  return !isExternalUrl(path) && store.size(path) >= 0;
 }
