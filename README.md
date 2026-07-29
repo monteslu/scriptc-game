@@ -97,27 +97,18 @@ real URLs rather than filenames.
 | linux-aarch64 | ubuntu-24.04-arm | |
 | macos-aarch64 | macos-14 | frameworks via Mach-O linker options |
 | macos-x86_64 | macos-15-intel | |
+| windows-x86_64 | windows-latest | MSVC ABI via `zig cc`; SDL2, ANGLE, and Skia ICU runtime files staged beside the executable |
 
 Each target builds on its own runner rather than cross-compiling. scriptc
 can cross-compile, but Skia, SDL2 and the audio graph are per-platform
 binaries, so only a native runner links a real result.
 
-Windows is not a target yet, and the blocker is a standoff between two
-upstreams rather than anything here. scriptc's Windows support is built for
-mingw: 16 of its 54 runtime translation units include POSIX headers
-(`dirent.h`, `unistd.h`, `poll.h`) unguarded, which mingw-w64 provides and
-MSVC does not. Skia's GN goes the other way, routing every `target_os="win"`
-build to its `msvc` toolchain, so build-libcanvas can only publish an MSVC
-Skia whose objects import a CRT mingw cannot supply. Verified locally: the
-gnu triple compiles scriptc programs cleanly and cannot link Skia; the MSVC
-triple links Skia and cannot compile the runtime.
-
-Everything on this side is done: `fetch-archives.sh` vendors the Windows
-archives (204 skiac symbols) and `build-shim.sh` merges them, both checked
-against the real release tarball. Two of the MSVC-side compiler gaps are
-already fixed on branches (see the table above). The likely path to Windows
-is a wasmcart build rather than a native one, which avoids the toolchain
-question entirely.
+Windows uses the MSVC ABI end to end. `scriptc` targets
+`x86_64-windows-msvc` through `zig cc`, its runtime uses the static MSVC CRT,
+and Skia comes from the matching MSVC build-libcanvas release. SDL2 and
+ANGLE use their VC import libraries; `SDL2.dll`, ANGLE's DLLs, and Skia's
+`icudtl.dat` are staged beside the executable. CI builds every example and
+runs the same headless suite as the other native targets.
 
 **Android is blocked upstream**: scriptc has no Android support, and its
 cross path goes through `zig cc`, which cannot be pointed at an NDK
@@ -186,9 +177,10 @@ pins them). Each has a default location and an environment override.
 | [scriptc](https://github.com/vercel-labs/scriptc) | `../scriptc/packages/cli/dist/main.js` (a sibling checkout) | `SCRIPTC_BIN` |
 
 Build from the `game-integration` branch of
-[monteslu/scriptc](https://github.com/monteslu/scriptc), which carries two
-compiler fixes this project needs. Each lives on its own topic branch, kept
-separate and self-contained so any one can go upstream on its own:
+[monteslu/scriptc](https://github.com/monteslu/scriptc). It carries the FFI
+fix and the Windows MSVC runtime/driver support this project needs. The
+original issue-focused branches remain separate so they can go upstream on
+their own:
 
 | Branch | What it fixes |
 | --- | --- |
@@ -203,7 +195,7 @@ Run the two vendor steps once, then build:
 ```sh
 ./scripts/fetch-archives.sh        # vendor/<target>/libskiac.a  + headers
 ./scripts/build-webaudio.sh        # vendor/<target>/libwebaudio.a
-./scripts/fetch-angle.sh           # macOS only: GLES3 via ANGLE
+./scripts/fetch-angle.sh           # macOS/Windows: GLES3 via ANGLE
 ./scripts/build.sh examples/dodge  # -> build/dodge
 ```
 

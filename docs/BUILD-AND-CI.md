@@ -26,7 +26,8 @@ Rules (house conventions):
 
 ## Per-target archive sets (`vendor/<target>/`)
 
-Targets: `linux-x86_64`, `linux-arm64`, `macos-arm64`, `windows-x86_64`.
+Targets: `linux-x86_64`, `linux-aarch64`, `macos-aarch64`,
+`macos-x86_64`, `windows-x86_64`.
 
 | Archive | Source | Notes |
 | --- | --- | --- |
@@ -35,10 +36,11 @@ Targets: `linux-x86_64`, `linux-arm64`, `macos-arm64`, `windows-x86_64`.
 | `libwebaudio.a` | webaudio-node repo, `scripts/build-webaudio.sh` | clang -O2, plain native, includes dr_libs/stb_vorbis/fdk-aac. SIMD flags per arch (SSE4.2 / NEON). |
 | `libsgshim.a` | this repo, `scripts/build-shim.sh` | Small; rebuilt constantly during dev. |
 | `libsggl.a` | this repo, `scripts/build-gl.sh` | The GLES3 tier: generated bindings plus the hand-written shim (out-params, strings, bulk uploads, the EGL pbuffer). Linked only when a game's reachable declaration set uses GL, so a 2D game does not pull in libGLESv2. **Must be scripted, not hand-built**: it being built by hand and never scripted is what broke CI from Phase 8 until it was found. |
-| `angle/lib/*.dylib` | `scripts/fetch-angle.sh` (macOS only) | Apple deprecated OpenGL and ships no GLES3, so a 3D game cannot link on macOS at all without ANGLE. Pinned to the same kivy/angle-builder tag native-gles uses. The script rewrites the archive's RELATIVE install names to absolute and verifies with `otool -D`; shipped as-is they link fine and then die at startup with `dyld: Library not loaded: ./libGLESv2.dylib`. A Command-Line-Tools-only `install_name_tool` cannot do that rewrite (the prebuilts have no header padding), so the script falls back to pristine dylibs there and `build.sh` rewrites the load commands in the BINARY after every link instead -- clang linked it locally, so it has room. Both paths end at the same absolute references. |
+| `angle/lib/*` | `scripts/fetch-angle.sh` (macOS/Windows) | GLES3 via pinned ANGLE builds, following `native-gles`: kivy/angle-builder dylibs on macOS and mmozeiko/build-angle DLLs plus import libraries on Windows. macOS install names are rewritten after linking; Windows DLLs are staged beside each artifact. Linux uses system EGL/GLES. |
+| `skia/icudtl.dat` | build-libcanvas release | Required by Skia text layout on Windows and staged beside the executable. |
 
 **Link order is load-bearing**: `libsggl.a` comes BEFORE `libsggfx.a`, with
-ANGLE between them on macOS. An archive is scanned once, left to right, so
+ANGLE between them on macOS and Windows. An archive is scanned once, left to right, so
 the GL archive may call into the gfx archive but never the reverse.
 
 `scripts/fetch-archives.sh <target>` populates `vendor/<target>/` from
@@ -49,24 +51,12 @@ this is called out).
 
 ## Build hosts and lanes
 
-scriptc's compiler is an npm package (Node program driving clang); primary
-documented host is macOS arm64; static programs cross-compile with
-`SCRIPTC_CC=zigcc SCRIPTC_TARGET=<triple>`. We never use `--dynamic`
-(which is host-native only), so every target is reachable from any host
-that runs scriptc itself.
-
-Two lanes, so no single host type is a dependency:
-
-1. **Native lane** (preferred when available): build on a runner matching
-   the target. linux-x86_64 runner builds linux-x86_64, etc. Phase 0.1
-   establishes whether scriptc runs on Linux hosts; expectation is yes
-   (no `os` restriction in the npm package, needs only Node + clang).
-2. **Cross lane** (documented-supported): macos-arm64 runner + zig builds
-   linux-x86_64, linux-arm64, windows-x86_64. FFI archives do not
-   translate across targets, so the cross lane consumes the SAME
-   `vendor/<target>/` sets the native lane does. This lane is the fallback
-   if 0.1 says Linux hosting is broken, and the only lane for windows
-   until someone cares enough to test scriptc-on-Windows-host.
+Each target builds on a matching native runner. Linux and macOS use native
+clang. Windows runs on `windows-latest` and selects
+`SCRIPTC_CC=zigcc SCRIPTC_TARGET=x86_64-windows-msvc`; this uses Zig as the
+driver while consuming the runner's MSVC SDK and ABI-compatible native
+archives. FFI archives are always target-specific and are never borrowed
+from another matrix lane.
 
 `scripts/build.sh <example|game-dir> <target>`:
 
@@ -89,13 +79,11 @@ sites, or the build fails.
 
 | Job | Runner | What |
 | --- | --- | --- |
-| `shim-unit` | ubuntu | Shim unit tests native + ASan (no scriptc involved): handle tables, event slot, ring buffer, decode entry points |
-| `build-linux-x64` | ubuntu | Native lane full build, all examples |
-| `conformance-linux-x64` | ubuntu | Headless canvas goldens + audio hashes + leak counters (SDL dummy video/audio drivers) |
-| `build-macos-arm64` | macos-14 | Native macOS build + cross-compile linux-arm64 & windows-x64 artifacts |
-| `smoke-linux-arm64` | ubuntu-arm | Run cross-built arm64 artifacts + conformance |
-| `smoke-windows` | windows | Run cross-built exe: boots, renders 100 frames headless, exits 0 |
-| `report` | ubuntu | Size/startup table per example per target, appended to a tracked CSV; regression thresholds fail the job |
+| `linux-x86_64` | ubuntu-24.04 | Build every example, run the full suite, report sizes, upload binaries |
+| `linux-aarch64` | ubuntu-24.04-arm | Same |
+| `macos-aarch64` | macos-14 | Same; ANGLE translates GLES3 to Metal |
+| `macos-x86_64` | macos-15-intel | Same; ANGLE translates GLES3 to Metal |
+| `windows-x86_64` | windows-latest | Same; MSVC ABI, SDL2/ANGLE DLLs and `icudtl.dat` staged with artifacts |
 
 ### Conformance details
 
@@ -135,10 +123,9 @@ across GPUs without saying so.
 
 ## Packaging
 
-Per-game artifact = the binary + `assets/` directory, zipped per target.
-No installer, no runtime deps (verified by the clean-machine smoke:
-container `FROM scratch`-adjacent image for Linux jobs, `ldd` output
-recorded; expected: libc, libm, libpthread, libdl, libstdc++ family only).
+Each matrix lane uploads its `build/` directory. Linux and macOS artifacts
+contain native executables. Windows additionally carries `SDL2.dll`,
+ANGLE's DLLs, and `icudtl.dat`; keep those files beside the executable.
 
 The framework itself ships as a template repo (copy, not a package
 registry dependency) in v1: scriptc resolves plain relative imports, the

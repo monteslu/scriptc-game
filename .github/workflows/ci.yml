@@ -148,11 +148,8 @@ jobs:
           brew install sdl2 pkg-config ffmpeg webp
           brew install llvm || true
 
-      # ANGLE, macOS only. Apple deprecated OpenGL and never shipped GLES3,
-      # so a 3D example cannot link at all without it -- every macOS run
-      # failed here even after the Khronos headers were vendored. ANGLE
-      # translates GLES3 onto Metal and is what native-gles uses for the
-      # same problem.
+      # macOS and Windows use pinned ANGLE builds for GLES3. Linux uses its
+      # system EGL/GLES libraries.
       - name: Fetch ANGLE
         if: startsWith(matrix.target, 'macos') || startsWith(matrix.target, 'windows')
         shell: bash
