@@ -316,6 +316,11 @@ extern "C" skiac_font_collection* sg_fonts(void) {
  * uses the full uint32 range and reinterpreting it as int32 makes perfectly
  * good ids look like errors. Nothing needs the id yet -- fonts are addressed
  * by family name -- so it is deliberately not surfaced. */
+/* SG_NO_FONT_PATH: a build with no filesystem supplies its own
+ * sg_font_register (reading the same path through a host asset API) and
+ * defines this to keep the two from colliding at link time. Native builds
+ * never set it. */
+#ifndef SG_NO_FONT_PATH
 extern "C" int32_t sg_font_register(const uint8_t* path, uint32_t path_len) {
   skiac_font_collection* fc = sg_fonts();
   if (!fc) { sg_mail_set("font collection unavailable"); return SG_ESKIA; }
@@ -327,6 +332,7 @@ extern "C" int32_t sg_font_register(const uint8_t* path, uint32_t path_len) {
   if (id == 0) { sg_mail_set("font registration failed (missing or unreadable)"); return SG_EDECODE; }
   return SG_OK;
 }
+#endif  /* SG_NO_FONT_PATH */
 
 /* ---- text ----
  *
