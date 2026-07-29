@@ -128,6 +128,17 @@ picks per-platform:
    glTexSubImage2D (bytes IN: supported direction) onto a fullscreen quad.
    HUD-sized uploads are small; this works everywhere and keeps ONE GL
    context in the process.
+
+   Two macOS realities, both handled in `sg_gl_init_window`: the window
+   `sg_init` created is a METAL window there (on Linux the default
+   "opengl" render driver recreates it with the GL flag as a side effect,
+   which is why this never bit before), so the shim recreates the
+   renderer with the "opengles2" driver, and SDL remakes the window --
+   same `SDL_Window*` -- with `SDL_WINDOW_OPENGL` set. And SDL's EGL
+   loader dlopens `libEGL.dylib` by BARE NAME, which is on no search
+   path; the shim reads the ANGLE paths back from the loaded dyld images
+   (the binary links them directly) and hands them to SDL through
+   `SDL_VIDEO_EGL_DRIVER` / `SDL_VIDEO_GL_DRIVER` before that load.
 2. **EGL pbuffer + composite (webgl-node's model).** Offscreen EGL context
    via native-gles's N-API-free `egl_context.cpp` (compiled into the shim
    as-is), used when headless (CI conformance) or when the Skia-Ganesh
