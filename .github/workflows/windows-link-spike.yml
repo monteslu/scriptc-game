@@ -106,6 +106,7 @@ jobs:
           mkdir -p build
           node "$SCRIPTC_BIN" build test/conformance.ts \
             --ffi ffi/core.ffi.json -o build/conformance.exe
+          cp "$SDL2_LIB/SDL2.dll" build/
 
       - name: Headless canvas smoke test
         shell: bash
