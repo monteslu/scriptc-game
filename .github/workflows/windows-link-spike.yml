@@ -101,7 +101,24 @@ jobs:
           SCRIPTC_BIN: ${{ github.workspace }}/scriptc/packages/cli/dist/main.js
           SCRIPTC_CC: zigcc
           SCRIPTC_TARGET: x86_64-windows-gnu
-        run: ./scripts/build.sh test/conformance.ts windows-x86_64
+        run: |
+          node codegen/gen-ffi.js windows-x86_64 test/conformance.ts
+          node -e '
+            const fs = require("fs");
+            const path = require("path");
+            const manifestPath = "ffi/core.ffi.json";
+            const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+            const lib = path.join(process.env.VCToolsInstallDir, "lib", "x64");
+            manifest.libraries.push(
+              path.join(lib, "libcmt.lib"),
+              path.join(lib, "oldnames.lib"),
+              path.join(lib, "libcpmt.lib"),
+            );
+            fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + "\n");
+          '
+          mkdir -p build
+          node "$SCRIPTC_BIN" build test/conformance.ts \
+            --ffi ffi/core.ffi.json -o build/conformance.exe
 
       - name: Headless canvas smoke test
         shell: bash
