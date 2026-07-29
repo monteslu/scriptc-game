@@ -227,7 +227,7 @@ extern "C" int32_t sg_audio_suspend(uint32_t suspend) {
  * NOT go through the ring. It is safe because a fresh node is unconnected:
  * the audio thread cannot reach it until a CMD_CONNECT is drained, and the
  * engine's node table only grows. */
-extern "C" int32_t sg_audio_create_node(const uint8_t* type, size_t len) {
+extern "C" int32_t sg_audio_create_node(const uint8_t* type, uint32_t len) {
   if (g_graph < 0) { sg_mail_set("audio not initialised"); return SG_EAUDIO; }
   char buf[64];
   if (len >= sizeof(buf)) { sg_mail_set("node type name too long"); return SG_ERANGE; }
@@ -292,7 +292,7 @@ extern "C" int32_t sg_audio_schedule_param(uint32_t node, uint32_t param,
  * borrowed, so registerBuffer's copy has to happen inside this call. */
 static int g_next_buffer_id = 1;
 
-extern "C" int32_t sg_audio_register_buffer(const uint8_t* data, size_t len,
+extern "C" int32_t sg_audio_register_buffer(const uint8_t* data, uint32_t len,
                                             uint32_t frames, uint32_t channels) {
   if (g_graph < 0) { sg_mail_set("audio not initialised"); return SG_EAUDIO; }
   size_t need = (size_t)frames * channels * sizeof(float);
@@ -340,7 +340,7 @@ extern "C" int32_t sg_audio_set_curve(uint32_t node, const uint8_t* data,
  * samples never leave native code -- the caller gets a WAV on disk, which is
  * also what makes the output comparable byte-for-byte with the WASM build.
  */
-extern "C" int32_t sg_audio_render_offline(const uint8_t* path, size_t path_len,
+extern "C" int32_t sg_audio_render_offline(const uint8_t* path, uint32_t path_len,
                                            uint32_t frames) {
   if (g_graph < 0) { sg_mail_set("audio not initialised"); return SG_EAUDIO; }
   char file[1024];

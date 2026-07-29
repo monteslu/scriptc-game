@@ -64,6 +64,19 @@ function statsOf(path: string): WavStats {
   return st;
 }
 
+/** Peak magnitude AFTER the first `skipFrames` frames (2ch float32 WAV). */
+function tailPeakOf(path: string, skipFrames: number): number {
+  const buf = readFileSync(path);
+  let peak = 0;
+  for (let o = 44 + skipFrames * 2 * 4; o + 3 < buf.length; o += 4) {
+    const bits = ((buf[o + 3] << 24) | (buf[o + 2] << 16) | (buf[o + 1] << 8) | buf[o]) >>> 0;
+    const v = f32FromBits(bits);
+    const a = v < 0 ? -v : v;
+    if (a > peak) peak = a;
+  }
+  return peak;
+}
+
 /** IEEE-754 single from its bit pattern. */
 function f32FromBits(bits: number): number {
   const sign = (bits >>> 31) !== 0 ? -1 : 1;
@@ -163,6 +176,48 @@ function main(): void {
   const muted = statsOf(mutedPath);
   console.log(`gain 0: peak=${muted.peak}`);
   check(muted.peak === 0, `muted peak is ${muted.peak}, want 0`);
+
+  /* ---- 7. buffer source loop ----
+   *
+   * Same story as disconnect (check 5): the engine's setNodeParameter
+   * dropped PARAM_LOOP on the floor until this project implemented it
+   * upstream, so `src.loop = true` played once and went silent -- which is
+   * exactly how station's music behaved. A DC-1 clip of 0.01s rendered into
+   * 0.1s: the tail past the clip must be silent unlooped and loud looped. */
+  const LOOP_FRAMES = 480;                       // 0.01s of source material
+  const pcm = Buffer.alloc(LOOP_FRAMES * 2 * 4); // 2ch interleaved float32
+  for (let i = 0; i < LOOP_FRAMES * 2; i++) pcm.writeFloatLE(1.0, i * 4);
+  const clip = ctx.createBuffer(pcm, LOOP_FRAMES, 2);
+  check(clip !== null, "PCM clip registered");
+  if (clip !== null) {
+    const bus = ctx.createGain();
+    bus.gain.value = 1;
+    bus.connect(ctx.destination);
+
+    const once = ctx.createBufferSource();
+    once.buffer = clip;
+    once.connect(bus);
+    once.start(0);
+    const oncePath = `${outDir}/audio-once.wav`;
+    check(ctx.renderToFile(oncePath, FRAMES) === 0, "one-shot rendered");
+    const onceStats = statsOf(oncePath);
+    const onceTail = tailPeakOf(oncePath, LOOP_FRAMES * 2);
+    console.log(`one-shot: peak=${onceStats.peak.toFixed(4)} tail=${onceTail}`);
+    check(onceStats.peak > 0.9, `one-shot peak ${onceStats.peak}, want ~1`);
+    check(onceTail === 0, `one-shot tail peak ${onceTail}, want 0 (no loop)`);
+
+    const looped = ctx.createBufferSource();
+    looped.buffer = clip;
+    looped.loop = true;
+    looped.connect(bus);
+    looped.start(0);
+    const loopPath = `${outDir}/audio-looped.wav`;
+    check(ctx.renderToFile(loopPath, FRAMES) === 0, "looped rendered");
+    const loopTail = tailPeakOf(loopPath, LOOP_FRAMES * 2);
+    console.log(`looped: tail=${loopTail.toFixed(4)}`);
+    check(loopTail > 0.9,
+          `looped tail peak ${loopTail}, want ~1: loop flag reached the engine`);
+  }
 
   closeAudio();
   console.log(`\naudio test: ${checks - failures}/${checks} checks passed`);

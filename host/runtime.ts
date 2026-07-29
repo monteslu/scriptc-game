@@ -146,6 +146,71 @@ export function boot(opts: HostOptions): number {
  *
  * `await` at the bottom of each iteration ends the turn, which is precisely
  * what a browser's event loop does between frames. */
+/* One frame, synchronously. Split out of run() so a host WITHOUT a working
+ * event loop can drive frames itself.
+ *
+ * A wasmcart cart is that host: its frame boundary is an asyncify unwind
+ * out of ffi.present(), and asyncify cannot rewind into a scriptc async
+ * task -- those use swapcontext, which does not exist under wasm and is
+ * stubbed to a no-op, so any `await` in the frame path silently fails to
+ * suspend and the rewind traps ("table index is out of bounds").
+ *
+ * Returns false when the loop should stop. run() below is unchanged and
+ * still the native path; this shares its body rather than duplicating it. */
+export function runFrameSync(opts: HostOptions, st: FrameState): boolean {
+  input.pump();
+  if (input.quitRequested) return false;
+
+  __dispatchKeyEvents(input);
+  __dispatchMouseEvents(input, st.lastMouseX, st.lastMouseY);
+  st.lastMouseX = input.mouseX;
+  st.lastMouseY = input.mouseY;
+
+  /* Asset callbacks and promise continuations land before the frame that
+   * observes them, which is the ordering a browser gives. Synchronous, so
+   * it works with or without an event loop. */
+  __drainTasks();
+
+  const now = ffi.ticks();
+  let frameMs = now - st.last;
+  st.last = now;
+  if (frameMs > 250) frameMs = 250;
+
+  if (usesGLPresent()) ffi.glFitViewport(opts.width, opts.height);
+  __runFrameCallbacks(now);
+
+  const prc = usesGLPresent() ? ffi.glPresent() : ffi.present();
+  if (prc !== 0) {
+    console.log(`present failed (${prc}): ${lastError()}`);
+    return false;
+  }
+
+  stats.frames += 1;
+  stats.totalMs += frameMs;
+  if (stats.frames > 1) {
+    if (frameMs < stats.minMs) stats.minMs = frameMs;
+    if (frameMs > stats.maxMs) stats.maxMs = frameMs;
+    if (frameMs > stats.budgetMs * 1.5) stats.hitches += 1;
+  }
+  return opts.maxFrames === 0 || stats.frames < opts.maxFrames;
+}
+
+/** Per-frame state for runFrameSync; run() keeps its own locals. */
+export class FrameState {
+  last = 0;
+  lastMouseX = -1;
+  lastMouseY = -1;
+}
+
+/** Prepares stats and fires `load`. For a host driving runFrameSync. */
+export function startSync(opts: HostOptions, st: FrameState): void {
+  __fireLoad();
+  const hz = ffi.displayHz();
+  stats.displayHz = hz;
+  stats.budgetMs = opts.vsync && hz > 0 ? 1000 / hz : 1000 / 60;
+  st.last = ffi.ticks();
+}
+
 export async function run(opts: HostOptions): Promise<number> {
   /* `load` fires once, after the window exists and before the first frame --
    * the moment a browser fires it for a page. Game setup that needs the

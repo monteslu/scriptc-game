@@ -49,19 +49,27 @@ function abiClass(cType, isReturn) {
 }
 
 /* A `string` or `bytes` param is ONE TS argument that expands to the C pair
- * `(const uint8_t*, size_t)`. Collapsing the pair here is what keeps the
+ * `(const uint8_t*, <len>)`. Collapsing the pair here is what keeps the
  * arity check below meaningful: TS sees one param, C sees two. Which of the
  * two classes it is cannot be read off the C types (they are identical), so
- * the TS declaration's type picks: `string` -> string, `Buffer` -> bytes. */
+ * the TS declaration's type picks: `string` -> string, `Buffer` -> bytes.
+ *
+ * The length is uint32_t, NOT size_t, and that is load-bearing rather than
+ * stylistic. size_t is 64-bit on every native target here but 32-bit on
+ * wasm32, so an IR generated for x86_64 passes an i64 where a wasm build of
+ * the same shim expects an i32. That mismatch links with only a warning and
+ * then reads out of bounds at runtime. size_t is still accepted so an
+ * out-of-tree shim written the old way keeps working. */
 const SPAN_PTR = /^const (uint8_t|char) ?\*$/;
+const SPAN_LEN = /^(uint32_t|size_t)$/;
 function collapseSpans(cParams) {
   const out = [];
   for (let i = 0; i < cParams.length; i++) {
     const t = cParams[i].trim().replace(/\s+/g, " ");
     const next = (cParams[i + 1] ?? "").trim().replace(/\s+/g, " ");
-    if (SPAN_PTR.test(t) && next === "size_t") {
+    if (SPAN_PTR.test(t) && SPAN_LEN.test(next)) {
       out.push("__span__");
-      i++; // the size_t is part of the same TS argument
+      i++; // the length is part of the same TS argument
     } else {
       out.push(cParams[i]);
     }
@@ -85,6 +93,17 @@ const shimSrc = [
 ]
   .filter((f) => existsSync(join(root, f)))
   .map((f) => readFileSync(join(root, f), "utf8"))
+  .concat(
+    /* SG_EXTRA_SHIM: absolute paths, colon-separated, to C/C++ sources
+     * OUTSIDE this repo that also export sg_ symbols. A consumer that
+     * relinks this tier against a different host (wasmcart-scriptc builds
+     * the canvas tier into a cart) has shim sources of its own, and without
+     * this the manifest refuses to emit: "no C signature found". */
+    (process.env.SG_EXTRA_SHIM ?? "")
+      .split(":")
+      .filter((f) => f && existsSync(f))
+      .map((f) => readFileSync(f, "utf8")),
+  )
   .join("\n");
 
 const cSigs = new Map();
@@ -200,7 +219,7 @@ for (let m; (m = declRe.exec(tsSrc)); ) {
     const c = sig.params[badParam];
     problems.push(
       c === "__span__"
-        ? `${name}: parameter ${badParam + 1} is a (const uint8_t*, size_t) span, so its TS type must be 'string' or 'Buffer'`
+        ? `${name}: parameter ${badParam + 1} is a (const uint8_t*, uint32_t) span, so its TS type must be 'string' or 'Buffer'`
         : `${name}: parameter ${badParam + 1} type '${c}' has no ABI class`,
     );
     continue;

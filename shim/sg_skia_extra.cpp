@@ -316,7 +316,12 @@ extern "C" skiac_font_collection* sg_fonts(void) {
  * uses the full uint32 range and reinterpreting it as int32 makes perfectly
  * good ids look like errors. Nothing needs the id yet -- fonts are addressed
  * by family name -- so it is deliberately not surfaced. */
-extern "C" int32_t sg_font_register(const uint8_t* path, size_t path_len) {
+/* SG_NO_FONT_PATH: a build with no filesystem supplies its own
+ * sg_font_register (reading the same path through a host asset API) and
+ * defines this to keep the two from colliding at link time. Native builds
+ * never set it. */
+#ifndef SG_NO_FONT_PATH
+extern "C" int32_t sg_font_register(const uint8_t* path, uint32_t path_len) {
   skiac_font_collection* fc = sg_fonts();
   if (!fc) { sg_mail_set("font collection unavailable"); return SG_ESKIA; }
   char buf[1024];
@@ -327,6 +332,7 @@ extern "C" int32_t sg_font_register(const uint8_t* path, size_t path_len) {
   if (id == 0) { sg_mail_set("font registration failed (missing or unreadable)"); return SG_EDECODE; }
   return SG_OK;
 }
+#endif  /* SG_NO_FONT_PATH */
 
 /* ---- text ----
  *
@@ -354,7 +360,7 @@ static sg_text_state g_text = {
 };
 static skiac_line_metrics g_metrics;
 
-extern "C" int32_t sg_text_set_font(const uint8_t* family, size_t family_len,
+extern "C" int32_t sg_text_set_font(const uint8_t* family, uint32_t family_len,
                                     double size, int32_t weight, int32_t slant) {
   if (family_len >= sizeof(g_text.family)) {
     sg_mail_set("font family name too long");
@@ -378,7 +384,7 @@ extern "C" int32_t sg_text_set_layout(int32_t align, int32_t baseline,
   return SG_OK;
 }
 
-extern "C" int32_t sg_text_set_string(const uint8_t* text, size_t len) {
+extern "C" int32_t sg_text_set_string(const uint8_t* text, uint32_t len) {
   if (len >= sizeof(g_text.text)) { sg_mail_set("text too long"); return SG_ERANGE; }
   memcpy(g_text.text, text, len);
   g_text.text[len] = 0;
@@ -462,7 +468,7 @@ extern "C" double sg_text_metric(uint32_t i) {
  * returning a handle, so the shim owns the struct and re-wraps the pixels
  * into a real bitmap object.
  */
-extern "C" uint32_t sg_image_decode(const uint8_t* data, size_t len) {
+extern "C" uint32_t sg_image_decode(const uint8_t* data, uint32_t len) {
   if (!data || len == 0) { sg_mail_set("empty image data"); return 0; }
   skiac_bitmap_info info;
   memset(&info, 0, sizeof(info));
