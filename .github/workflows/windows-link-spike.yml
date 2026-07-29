@@ -107,6 +107,7 @@ jobs:
           node "$SCRIPTC_BIN" build test/conformance.ts \
             --ffi ffi/core.ffi.json -o build/conformance.exe
           cp "$SDL2_LIB/SDL2.dll" build/
+          cp vendor/windows-x86_64/skia/icudtl.dat build/
 
       - name: Headless canvas smoke test
         shell: bash
