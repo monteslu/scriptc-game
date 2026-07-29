@@ -153,8 +153,8 @@ jobs:
       # failed here even after the Khronos headers were vendored. ANGLE
       # translates GLES3 onto Metal and is what native-gles uses for the
       # same problem.
-      - name: Fetch ANGLE (macOS)
-        if: startsWith(matrix.target, 'macos')
+      - name: Fetch ANGLE
+        if: startsWith(matrix.target, 'macos') || startsWith(matrix.target, 'windows')
         shell: bash
         run: |
           ./scripts/fetch-angle.sh ${{ matrix.target }}
@@ -200,6 +200,7 @@ jobs:
         run: |
           cp "$SDL2_LIB/SDL2.dll" build/
           cp vendor/${{ matrix.target }}/skia/icudtl.dat build/
+          cp vendor/${{ matrix.target }}/angle/lib/*.dll build/
 
       # The WebGL2 parity gate needs the Node reference stack. Linux only:
       # it renders through surfaceless EGL with the software rasteriser,
