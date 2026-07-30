@@ -62,7 +62,7 @@ typedef struct {
 uint32_t sg_table_alloc(sg_domain d, void* ptr);
 
 /* Resolves a handle. Returns NULL for 0, a stale generation, or a bad
- * index : callers turn that into SG_EBADHANDLE plus a mailbox message. */
+ * index. Callers turn that into SG_EBADHANDLE plus a mailbox message. */
 void* sg_table_get(sg_domain d, uint32_t handle);
 
 /* Resolves AND frees in one step (bumping the generation), so a destroy

@@ -18,12 +18,12 @@ node examples/dodge/assets/make-sprites.mjs
 ```
 
 (`package.json` here exists only so Node resolves `@napi-rs/canvas` from the
-copy already installed for the conformance goldens : Node resolves imports
+copy already installed for the conformance goldens. Node resolves imports
 from the importing *file's* directory, not the cwd.)
 
 ## Loading
 
-Images are plain files decoded at startup : no bundling, no packing step:
+Images are plain files decoded at startup. There is no bundling or packing step:
 
 ```ts
 const img = decodeImage(readFileSync("examples/dodge/assets/player.png"));
@@ -34,7 +34,7 @@ Skia sniffs the format from the bytes, so **png, jpg, webp, bmp and gif** all
 work (`test/imagetest.ts` proves each one). Audio is the same shape:
 **mp3, wav, ogg and flac** via `decodeAudioFile` (`test/decodetest.ts`).
 
-A sprite sheet needs no extra machinery : `drawImageRect` picks the cell:
+A sprite sheet needs no extra machinery. `drawImageRect` picks the cell:
 
 ```ts
 const frame = Math.floor(elapsedMs / 90) % 4;

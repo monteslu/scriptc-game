@@ -1,8 +1,7 @@
 # Kenney Space Kit models
 
-Models by **Kenney** (https://kenney.nl/assets/space-kit), released under
-**CC0 1.0 Universal**: public domain, no attribution required, commercial
-use fine. The credit here is courtesy, not obligation.
+Models from the [Kenney Space Kit](https://kenney.nl/assets/space-kit),
+released under CC0 1.0 Universal.
 
 The `.obj` + `.mtl` pairs are the SOURCE. `codegen/bake-mesh.js` turns each
 into a `.sgm` at build time (see `scripts/bake-models.sh`); the baked files

@@ -97,27 +97,18 @@ real URLs rather than filenames.
 | linux-aarch64 | ubuntu-24.04-arm | |
 | macos-aarch64 | macos-14 | frameworks via Mach-O linker options |
 | macos-x86_64 | macos-15-intel | |
+| windows-x86_64 | windows-latest | MSVC ABI via `zig cc`; SDL2, ANGLE, and Skia ICU runtime files staged beside the executable |
 
 Each target builds on its own runner rather than cross-compiling. scriptc
 can cross-compile, but Skia, SDL2 and the audio graph are per-platform
 binaries, so only a native runner links a real result.
 
-Windows is not a target yet, and the blocker is a standoff between two
-upstreams rather than anything here. scriptc's Windows support is built for
-mingw: 16 of its 54 runtime translation units include POSIX headers
-(`dirent.h`, `unistd.h`, `poll.h`) unguarded, which mingw-w64 provides and
-MSVC does not. Skia's GN goes the other way, routing every `target_os="win"`
-build to its `msvc` toolchain, so build-libcanvas can only publish an MSVC
-Skia whose objects import a CRT mingw cannot supply. Verified locally: the
-gnu triple compiles scriptc programs cleanly and cannot link Skia; the MSVC
-triple links Skia and cannot compile the runtime.
-
-Everything on this side is done: `fetch-archives.sh` vendors the Windows
-archives (204 skiac symbols) and `build-shim.sh` merges them, both checked
-against the real release tarball. Two of the MSVC-side compiler gaps are
-already fixed on branches (see the table above). The likely path to Windows
-is a wasmcart build rather than a native one, which avoids the toolchain
-question entirely.
+Windows uses the MSVC ABI end to end. `scriptc` targets
+`x86_64-windows-msvc` through `zig cc`, its runtime uses the static MSVC CRT,
+and Skia comes from the matching MSVC build-libcanvas release. SDL2 and
+ANGLE use their VC import libraries; `SDL2.dll`, ANGLE's DLLs, and Skia's
+`icudtl.dat` are staged beside the executable. CI builds every example and
+runs the same headless suite as the other native targets.
 
 **Android is blocked upstream**: scriptc has no Android support, and its
 cross path goes through `zig cc`, which cannot be pointed at an NDK
@@ -186,9 +177,10 @@ pins them). Each has a default location and an environment override.
 | [scriptc](https://github.com/vercel-labs/scriptc) | `../scriptc/packages/cli/dist/main.js` (a sibling checkout) | `SCRIPTC_BIN` |
 
 Build from the `game-integration` branch of
-[monteslu/scriptc](https://github.com/monteslu/scriptc), which carries two
-compiler fixes this project needs. Each lives on its own topic branch, kept
-separate and self-contained so any one can go upstream on its own:
+[monteslu/scriptc](https://github.com/monteslu/scriptc). It carries the FFI
+fix and the Windows MSVC runtime/driver support this project needs. The
+original issue-focused branches remain separate so they can go upstream on
+their own:
 
 | Branch | What it fixes |
 | --- | --- |
@@ -203,7 +195,7 @@ Run the two vendor steps once, then build:
 ```sh
 ./scripts/fetch-archives.sh        # vendor/<target>/libskiac.a  + headers
 ./scripts/build-webaudio.sh        # vendor/<target>/libwebaudio.a
-./scripts/fetch-angle.sh           # macOS only: GLES3 via ANGLE
+./scripts/fetch-angle.sh           # macOS/Windows: GLES3 via ANGLE
 ./scripts/build.sh examples/dodge  # -> build/dodge
 ```
 
@@ -236,7 +228,8 @@ about `libwebaudio.a`) rather than anything self-explanatory.
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE) and
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 Every dependency below is permissively licensed and nothing linked into the
 output binary imposes a copyleft obligation.
@@ -258,28 +251,20 @@ and the rest are worked around here.
 | **Function overloads** in the dialect | worked around. `drawImage` handles its three spec arities with a rest parameter; `addEventListener` cannot, so `KeyboardEvent` and `MouseEvent` are one record. See [docs/WRITING-GAMES.md](docs/WRITING-GAMES.md) |
 | A **framework** spelling in `system_libraries` | worked around. Entries become `-l<name>`, so macOS frameworks ride in as Mach-O `LC_LINKER_OPTION` load commands compiled into the archive |
 
-## Credits
-
-This project is assembled from other people's work. Each of these does the heavy
-lifting for one part of the stack.
+## Dependencies
 
 | Project | Role here | License |
 | --- | --- | --- |
-| **[scriptc](https://github.com/vercel-labs/scriptc)** <br><sub>vercel-labs</sub> | Compiles ordinary TypeScript and JavaScript to small, fast native executables, with no Node, V8, or JS engine in the binary. **The compiler this whole project is built on.** Its `--ffi` manifest is how TypeScript reaches C. | Apache-2.0 |
-| **[jsgamelauncher](https://github.com/monteslu/jsgamelauncher)** <br><sub>monteslu</sub> | Runs web games without a browser or Electron, on cheap retro handhelds and desktops. **The design this project follows**: game directory as web root, entry resolution by convention, and the "just develop your game for the browser" contract. | MIT |
-| **[@napi-rs/canvas](https://github.com/Brooooooklyn/canvas)** <br><sub>Brooooooklyn</sub> | Canvas for Node.js with a Skia backend. Its `skia_c.hpp` C surface is what our Canvas 2D binds to directly (skipping N-API and Rust), and its rendering is the **golden reference** our conformance suite compares against pixel-for-pixel. | MIT |
-| **[webaudio-node](https://github.com/monteslu/webaudio-node)** <br><sub>monteslu</sub> | A full Web Audio API for Node.js. Its C++ graph engine (15 node types, params, FFT, mixer, resampler) is compiled **natively** here and driven from an SDL audio thread. Used byte-identical to upstream. | ISC |
-| **[gamepad-node](https://github.com/monteslu/gamepad-node)** <br><sub>monteslu</sub> | The browser Gamepad API for Node.js over native SDL2. Reference for our Standard Gamepad mapping and the polling model behind `navigator.getGamepads()`. | ISC |
-| **[node-sdl](https://github.com/kmamal/node-sdl)** <br><sub>kmamal</sub> | SDL bindings for Node.js. Prior art for how a JS runtime drives SDL windows, events and audio. We bind SDL's C ABI directly, but the shape of the problem was mapped here first. | MIT |
-| **[three.js](https://threejs.org)** <br><sub>mrdoob and contributors</sub> | The library that made 3D on the web approachable, and **the API threeTS-lite borrows**: `Scene`, `Mesh`, `PerspectiveCamera`, materials, lights, the whole vocabulary. Twenty years of design work we are standing on. threeTS-lite exists only because three.js cannot compile under a static AOT compiler *yet*; it is a stopgap, and the intended end state is running real three.js here. Also our behavioral reference: `test/threetest.ts` checks our math against real three values. | MIT |
-| **[webgl-node](https://github.com/monteslu/webgl-node)** <br><sub>monteslu</sub> | A WebGL2 implementation for Node.js on top of native-gles. Its semantics layer is the owned, debugged reference our WebGL2 tier ports from. | MIT |
-| **[native-gles](https://github.com/monteslu/native-gles)** <br><sub>monteslu</sub> | OpenGL ES 3.0 bindings via EGL, native on Linux/ARM and ANGLE on macOS/Windows. Establishes the link shape (`-lEGL -lGLESv2`) the 3D tier uses, the pinned ANGLE build macOS needs, and the N-API-free EGL context our `SG_HEADLESS` path is modelled on. | MIT |
-| **[wasmcart](https://github.com/monteslu/wasmcart)** <br><sub>monteslu</sub> | A WASM cartridge host for sandboxed `.wasm` game carts. **A future compile target:** the same web-shaped source could emit a cart instead of a native binary. | MIT |
-
-Also relied on:
-
-| Project | Role here | License |
-| --- | --- | --- |
+| [scriptc](https://github.com/vercel-labs/scriptc) | TypeScript/JavaScript AOT compiler and FFI linker | Apache-2.0 |
+| [jsgamelauncher](https://github.com/monteslu/jsgamelauncher) | Browser-compatible game layout reference | MIT |
+| [@napi-rs/canvas](https://github.com/Brooooooklyn/canvas) | Canvas reference renderer and `skia_c.hpp` ABI | MIT |
+| [webaudio-node](https://github.com/monteslu/webaudio-node) | Native Web Audio graph | ISC |
+| [gamepad-node](https://github.com/monteslu/gamepad-node) | Standard Gamepad mapping reference | ISC |
+| [node-sdl](https://github.com/kmamal/node-sdl) | SDL integration reference | MIT |
+| [three.js](https://threejs.org) | threeTS-lite API and behavior reference | MIT |
+| [webgl-node](https://github.com/monteslu/webgl-node) | WebGL2 semantics reference | MIT |
+| [native-gles](https://github.com/monteslu/native-gles) | EGL/GLES integration reference | MIT |
+| [wasmcart](https://github.com/monteslu/wasmcart) | Possible future build target | MIT |
 | **[SDL2](https://libsdl.org)** | Window, input, audio device, controller database | zlib |
 | **[Skia](https://skia.org)** | The rasterizer behind Canvas 2D | BSD-3 |
 | **[build-libcanvas](https://github.com/monteslu/build-libcanvas)** | Pre-built static Skia + `skia_c.hpp` per platform, pinned by `CANVAS_VERSION` | (build tooling) |

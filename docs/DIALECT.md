@@ -3,8 +3,8 @@
 Game code and the runtime library compile in scriptc's **static tier**. That
 tier is a strict, statically-compilable dialect of TypeScript. This document
 is the working list of fences that matter for game code, each with the
-rewrite pattern, so that neither humans nor developers rediscover them one
-compile error at a time. The authoritative source is always `scriptc build`
+rewrite pattern, so the same compile errors do not have to be rediscovered.
+The authoritative source is always `scriptc build`
 itself: every rejection is an SC-coded diagnostic with a rewrite hint, and
 the compiler is newer than this page.
 

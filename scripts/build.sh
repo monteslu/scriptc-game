@@ -19,11 +19,11 @@ INPUT="${1:?usage: build.sh <gameDir|entry.ts> [target]}"
 TARGET="${2:-${SG_TARGET:-$(host_target)}}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
-# macOS GL builds need ANGLE (gen-ffi refuses without it). The fetched
+# macOS and Windows GL builds need ANGLE (gen-ffi refuses without it). The fetched
 # location is the only place it ever is locally, so export it rather than
 # make every shell do so; an explicit ANGLE_LIB still wins.
 case "$TARGET" in
-  macos-*)
+  macos-*|windows-*)
     if [ -z "${ANGLE_LIB:-}" ] && [ -d "$ROOT/vendor/$TARGET/angle/lib" ]; then
       export ANGLE_LIB="$ROOT/vendor/$TARGET/angle/lib"
     fi

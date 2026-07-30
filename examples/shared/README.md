@@ -36,10 +36,8 @@ Windows with "unsupported or corrupt", this is why: check whether
 
 ## craft_speederA.obj / .mtl
 
-A spaceship model by **Kenney** (https://kenney.nl), from the Space Kit,
-released under **CC0 1.0 Universal** (public domain dedication): no
-attribution is required and it may be used commercially. The credit here is
-courtesy, not obligation.
+A spaceship model from the [Kenney Space Kit](https://kenney.nl), released
+under CC0 1.0 Universal.
 
 The `.obj` is the SOURCE. `scripts/mesh-fixtures.sh` and the orbits build
 bake it into a `.sgm` with `codegen/bake-mesh.js`; the baked file is

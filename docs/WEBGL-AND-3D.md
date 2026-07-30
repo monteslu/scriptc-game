@@ -5,53 +5,34 @@
 
 ## Why threeTS-lite exists
 
-**It is a stopgap for three.js, not a replacement for it.**
+threeTS-lite exists because three.js does not compile under scriptc today.
+three.js uses dynamic JavaScript patterns that a static AOT compiler cannot
+resolve, including `any`, string-keyed material access, prototype extension
+points, and sparse semantics.
 
-[three.js](https://threejs.org) is the reason 3D on the web is approachable
-at all. It is twenty years of accumulated work by
-[mrdoob](https://github.com/mrdoob) and hundreds of contributors, it is the
-library essentially every web 3D developer already knows, and its API is so
-well shaped that copying it is the highest-value thing a small library can
-do. Everything good about the ergonomics here was designed by them. We are
-borrowing a vocabulary that took a very long time to get right.
-
-The only reason this library exists is that **three.js cannot compile under
-scriptc today**. Not because of any deficiency in three: it is plain
-JavaScript written for a JIT, and it uses exactly the dynamic patterns a
-static AOT compiler cannot see through (`any` throughout, string-keyed
-uniform and material access, prototype extension points, sparse semantics).
-The dialect fences those. That is a limitation on our side of the fence,
-not theirs.
-
-So threeTS-lite implements the slice of three's API that games actually
-use, with the same names and the same composition, so that:
+threeTS-lite implements the part of the three.js API used by these games,
+with compatible names and composition, so that:
 
 - code written against it reads like three code, and a three developer is
   productive immediately;
 - the same game source runs in a browser, where it can be pointed at real
   three.js instead;
-- **when scriptc can compile three.js, this tier should be replaced by it.**
-  That is the intended end state, not a fallback. Every deliberate
-  divergence from three's API is a future migration cost, which is why the
-  compatibility bar is held as hard as it is and why layout changes that
-  would be faster but would break `mesh.position.set(...)` are refused.
+- when scriptc can compile three.js, this tier can be replaced by it.
 
 Where the benchmarks below show this tier ahead of three.js on some
-configurations, that is a narrow AOT-versus-JIT result on one scene, not a
-claim of superiority. three.js does vastly more than this library does:
+configurations, that is an AOT-versus-JIT result for one scene. three.js does
+more than this library:
 shadow maps, skinning and animation, post-processing, IBL, a loader
 ecosystem, WebGPU, and an editor. The comparison exists to size the gap and
-find our own bottlenecks, and the honest summary of the browser numbers
-further down is that the same source in a page is faster than we are.
+find bottlenecks.
 
-three.js is MIT licensed and credited in the README's Credits table. Its
-source plus `@types/three` are the behavioral reference this library is
+three.js is MIT licensed. Its source plus `@types/three` are the behavioral reference this library is
 checked against: `test/threetest.ts` verifies our math against real three
 values, and `test/three-bench/reference.mjs` runs the benchmark scene
-through actual three.js rather than against remembered numbers.
+through actual three.js.
 
 No three.js code is copied into this repository. What is borrowed is the
-API shape, deliberately and with credit.
+API shape.
 
 Two stacked phases, added after the v0.1 (2D) plan:
 

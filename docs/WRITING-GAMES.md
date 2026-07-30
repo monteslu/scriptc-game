@@ -1,9 +1,7 @@
 # Writing games
 
-**Develop your game for the browser.** That is the whole instruction, and it is
-borrowed wholesale from
-[jsgamelauncher](https://github.com/monteslu/jsgamelauncher)'s own guide, because
-the contract here is the same one.
+**Develop your game for the browser.** The contract is the same one used by
+[jsgamelauncher](https://github.com/monteslu/jsgamelauncher).
 
 Your game uses `document`, `requestAnimationFrame`, `new Image()`, `fetch`, Web
 Audio and `navigator.getGamepads()`. It gets compiled to a native binary. The
