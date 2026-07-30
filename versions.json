@@ -1,6 +1,6 @@
 {
   "scriptc": {
-    "version": "0.0.17",
+    "version": "0.0.20",
     "source": "fork",
     "fork": "https://github.com/monteslu/scriptc",
     "branch": "game-integration",
