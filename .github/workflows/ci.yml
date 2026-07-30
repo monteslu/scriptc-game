@@ -1,6 +1,7 @@
 name: ci
 
-# Build every example and run the full suite on each target platform.
+# Build every example and run the native suite on each target platform.
+# Browser compatibility is checked with the same full-stack game everywhere.
 #
 # Each target builds on its OWN runner rather than cross-compiling. scriptc
 # can cross-compile via SCRIPTC_CC=zigcc, but the FFI archives cannot: Skia,
@@ -221,6 +222,7 @@ jobs:
           SG_TARGET: ${{ matrix.target }}
           SCRIPTC_CC: ${{ matrix.scriptc_cc }}
           SCRIPTC_TARGET: ${{ matrix.scriptc_target }}
+          SG_BROWSER_EXAMPLE: station
         run: |
           # Headless: SDL's dummy drivers, and xvfb on Linux for the browser
           # proof (Firefox headless still wants a display on some runners).

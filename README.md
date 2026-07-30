@@ -1,5 +1,9 @@
 # scriptc-game
 
+[![CI](https://github.com/monteslu/scriptc-game/actions/workflows/ci.yml/badge.svg)](https://github.com/monteslu/scriptc-game/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Native: Linux, macOS, Windows](https://img.shields.io/badge/native-Linux%20%7C%20macOS%20%7C%20Windows-2ea44f.svg)](docs/BUILD-AND-CI.md)
+
 **Write a browser game. Compile it to a NATIVE binary.**
 **No chromium, No Electron, No node.js, No bun, No JIT, No V8**
 
