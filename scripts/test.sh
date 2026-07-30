@@ -105,7 +105,7 @@ fi
 # Skips loudly when firefox/geckodriver are absent.
 echo
 echo "==> browser proof"
-if "$ROOT/browser/test.sh"; then
+if "$ROOT/browser/test.sh" "${SG_BROWSER_EXAMPLE:-}"; then
   echo "    PASS"
 else
   echo "    FAIL"
