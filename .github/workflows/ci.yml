@@ -24,8 +24,55 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # The browser proof runs the SAME game source against box3d-wasm, so the
+  # matrix needs its dist. Built ONCE here (wasm is platform independent)
+  # at the commit versions.json pins, and shared as an artifact -- five
+  # emsdk installs would buy nothing but wall clock.
+  box3d-wasm-dist:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Read pin
+        id: pin
+        shell: bash
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          v = json.load(open("versions.json"))
+          print(f"commit={v['box3d']['wasm_commit']}")
+          PY
+
+      - name: Checkout box3d-wasm
+        uses: actions/checkout@v7
+        with:
+          repository: monteslu/box3d-wasm
+          ref: ${{ steps.pin.outputs.commit }}
+          path: box3d-wasm
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 4.0.18
+
+      - name: Build (standard flavour)
+        working-directory: box3d-wasm
+        run: |
+          npm ci --no-audit --no-fund
+          npm run fetch-deps
+          FLAVOURS=standard ./scripts/build.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: box3d-wasm-dist
+          path: box3d-wasm/dist
+
   build:
     name: ${{ matrix.target }}
+    needs: box3d-wasm-dist
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false          # one platform's breakage must not hide another's
@@ -215,10 +262,18 @@ jobs:
           npm install --no-audit --no-fund "$GITHUB_WORKSPACE/webgl-node" \
             || echo "reference unavailable; the parity gate will SKIP"
 
+      # The browser proof's physics half: box3d-wasm's dist, built once by
+      # the box3d-wasm-dist job at the pinned commit.
+      - uses: actions/download-artifact@v4
+        with:
+          name: box3d-wasm-dist
+          path: box3d-wasm/dist
+
       - name: Test suite
         shell: bash
         env:
           SCRIPTC_BIN: ${{ github.workspace }}/scriptc/packages/cli/dist/main.js
+          B3_WASM_DIST: ${{ github.workspace }}/box3d-wasm/dist
           SG_TARGET: ${{ matrix.target }}
           SCRIPTC_CC: ${{ matrix.scriptc_cc }}
           SCRIPTC_TARGET: ${{ matrix.scriptc_target }}
