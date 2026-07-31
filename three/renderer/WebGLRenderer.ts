@@ -513,6 +513,16 @@ export class WebGLRenderer {
        * is. */
       s += "  base.rgb = mix(base.rgb, fogColor, clamp(fogFactor, 0.0, 1.0));\n";
     }
+    /* Ordered dither, +/- half an 8-bit step. Long fog and lighting
+     * gradients quantise into visible bands on an 8-bit target; adding
+     * sub-LSB Bayer noise makes the rounding alternate per pixel, which
+     * the eye fuses into a smooth ramp. A 4x4 Bayer matrix rather than a
+     * hash: integer math is bit-identical on every driver, so golden
+     * comparisons stay meaningful. 3825 = 15 * 255. */
+    s += "  ivec2 dp = ivec2(gl_FragCoord.xy) % 4;\n";
+    s += "  const mat4 bayer = mat4(0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0,\n";
+    s += "                          3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0);\n";
+    s += "  base.rgb += (bayer[dp.x][dp.y] - 7.5) / 3825.0;\n";
     s += "  fragColor = base;\n";
     s += "}\n";
     return s;
