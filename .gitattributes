@@ -1,0 +1,4 @@
+# The vendored box3d frontend is hash-pinned (versions.json) against the
+# byte-identical file in box3d-wasm; a CRLF checkout on Windows must not
+# change its bytes.
+web/box3d/frontend.ts eol=lf

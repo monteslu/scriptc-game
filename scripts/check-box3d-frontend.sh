@@ -8,11 +8,14 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 WANT=$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).box3d.frontend_sha256)' "$ROOT/versions.json")
-# GNU boxes have sha256sum; macOS ships shasum instead.
+# GNU boxes have sha256sum; macOS ships shasum instead. CRs are stripped
+# before hashing: a Windows checkout can rewrite line endings (belt: the
+# .gitattributes eol=lf pin; braces: this), and a CRLF copy is a git
+# artifact, not content drift.
 if command -v sha256sum >/dev/null 2>&1; then
-  GOT=$(sha256sum "$ROOT/web/box3d/frontend.ts" | awk '{print $1}')
+  GOT=$(tr -d '\r' < "$ROOT/web/box3d/frontend.ts" | sha256sum | awk '{print $1}')
 else
-  GOT=$(shasum -a 256 "$ROOT/web/box3d/frontend.ts" | awk '{print $1}')
+  GOT=$(tr -d '\r' < "$ROOT/web/box3d/frontend.ts" | shasum -a 256 | awk '{print $1}')
 fi
 
 if [ "$WANT" != "$GOT" ]; then
