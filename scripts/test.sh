@@ -40,6 +40,7 @@ for entry in test/conformance.ts test/readbackprobe.ts test/inputtest.ts test/pa
   ./scripts/build.sh "$entry" "$TARGET" >/dev/null || { echo "build failed: $entry"; exit 1; }
 done
 
+run "box3d frontend pin"  ./scripts/check-box3d-frontend.sh
 run "canvas conformance" ./scripts/conformance.sh
 run "pixel readback"     env SDL_VIDEODRIVER=dummy ./build/readbackprobe
 run "input + gamepads"   env SDL_VIDEODRIVER=dummy ./build/inputtest

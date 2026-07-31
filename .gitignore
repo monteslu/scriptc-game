@@ -50,3 +50,7 @@ test/mesh-fixtures/*.sgm
 # Baked meshes: regenerated from the .obj sources in examples/shared/ by
 # codegen/bake-mesh.js, so a stale one cannot pass against a changed baker.
 examples/*/public/*.sgm
+
+# Box3D upstream checkout (scripts/build-box3d.sh fetches at the pinned
+# SHA; versions.json is the record, the clone is disposable).
+.deps/

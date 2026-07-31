@@ -90,6 +90,8 @@ const shimSrc = [
    * the WebGL layer declares. */
   "shim/sg_gl_gen.cpp",
   "shim/sg_gl_extra.cpp",
+  /* The box3d seam's native half (web/box3d.ts declares these). */
+  "shim/sg_box3d.c",
 ]
   .filter((f) => existsSync(join(root, f)))
   .map((f) => readFileSync(join(root, f), "utf8"))
@@ -171,8 +173,12 @@ function reachableFiles(start) {
     }
     seen.add(file);
     // Relative specifiers only: bare ones are node builtins, which cannot
-    // contain FFI declarations.
-    const importRe = /from\s+["'](\.[^"']*)["']/g;
+    // contain FFI declarations. TWO forms: `from "./x.js"` and the
+    // side-effect `import "./x.js"` -- the generated entry pulls the game
+    // module in with the second, so matching only `from` walks the host
+    // chain but never the game's own imports (found when the box3d seam's
+    // declarations silently missed the manifest).
+    const importRe = /(?:from|import)\s+["'](\.[^"']*)["']/g;
     for (let m; (m = importRe.exec(text)); ) {
       // Source imports are written ".js" (ESM style) but resolve to ".ts".
       const spec = m[1].replace(/\.js$/, ".ts");
@@ -402,6 +408,9 @@ function windowsSdl2Lib() {
 /* Does this program reach the GL bindings? gen-ffi already walks the entry
  * file's import graph, so the answer is just whether gl-ffi.ts is in it. */
 const usesGl = declFiles.some((f) => f.endsWith("gl-ffi.ts"));
+/* Same detection for the physics seam: only a program that imports
+ * web/box3d.ts links the engine. */
+const usesBox3d = declFiles.some((f) => f.endsWith("box3d/backend.ts"));
 
 const manifest = {
   ffi_format: 1,
@@ -423,6 +432,11 @@ const manifest = {
       : []),
     `${vendor}/libsggfx.a`,
     `${vendor}/libwebaudio.a`,
+    /* The physics seam: the flat shim, then the engine it calls into.
+     * Built by scripts/build-box3d.sh at box3d-wasm's pinned SHA. */
+    ...(usesBox3d
+      ? [`${vendor}/box3d/libsgbox3d.a`, `${vendor}/box3d/libbox3d.a`]
+      : []),
     ...(target.startsWith("macos") ? [sdl2DylibPath()] : []),
     ...(target.startsWith("windows") ? [windowsSdl2Lib()] : []),
   ],

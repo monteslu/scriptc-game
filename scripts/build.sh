@@ -78,6 +78,21 @@ if grep -q 'libsggl\.a' "$ROOT/ffi/core.ffi.json" 2>/dev/null; then
   rm -f "$GL_LOG"
 fi
 
+# The physics seam, same trigger pattern: gen-ffi names the archive only
+# when the program imports web/box3d.ts.
+if grep -q 'libsgbox3d\.a' "$ROOT/ffi/core.ffi.json" 2>/dev/null &&
+   [ ! -f "$ROOT/vendor/$TARGET/box3d/libsgbox3d.a" -o \
+     "$ROOT/shim/sg_box3d.c" -nt "$ROOT/vendor/$TARGET/box3d/libsgbox3d.a" ]; then
+  B3_LOG="$(mktemp)"
+  if ! "$ROOT/scripts/build-box3d.sh" "$TARGET" > "$B3_LOG" 2>&1; then
+    echo "build-box3d.sh failed (target=$TARGET):" >&2
+    tail -30 "$B3_LOG" >&2
+    rm -f "$B3_LOG"
+    exit 1
+  fi
+  rm -f "$B3_LOG"
+fi
+
 # Bake any shared models the game asks for. Sources are .glb in
 # examples/shared/models/; the .sgm output is gitignored, so a clean clone
 # must generate it or the game loads nothing and silently shows

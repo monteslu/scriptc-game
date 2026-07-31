@@ -3293,12 +3293,194 @@
         "i32"
       ],
       "returns": "u32"
+    },
+    {
+      "name": "sgB3WorldCreate",
+      "symbol": "sg_b3_world_create",
+      "params": [
+        "f64",
+        "f64",
+        "f64",
+        "u8",
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "sgB3WorldStep",
+      "symbol": "sg_b3_world_step",
+      "params": [
+        "u32",
+        "f64",
+        "i32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "sgB3WorldSetGravity",
+      "symbol": "sg_b3_world_set_gravity",
+      "params": [
+        "u32",
+        "f64",
+        "f64",
+        "f64"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "sgB3WorldDestroy",
+      "symbol": "sg_b3_world_destroy",
+      "params": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "sgB3WorldExplode",
+      "symbol": "sg_b3_world_explode",
+      "params": [
+        "u32",
+        "f64",
+        "f64",
+        "f64",
+        "f64",
+        "f64",
+        "f64"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "sgB3BodyCreate",
+      "symbol": "sg_b3_body_create",
+      "params": [
+        "u32",
+        "i32",
+        "f64",
+        "f64",
+        "f64",
+        "f64",
+        "f64",
+        "f64",
+        "f64"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "sgB3BodyDestroy",
+      "symbol": "sg_b3_body_destroy",
+      "params": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "sgB3BodyRead",
+      "symbol": "sg_b3_body_read",
+      "params": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "sgB3BodyTeleport",
+      "symbol": "sg_b3_body_teleport",
+      "params": [
+        "u32",
+        "f64",
+        "f64",
+        "f64",
+        "f64",
+        "f64",
+        "f64",
+        "f64"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "sgB3BodyConfig",
+      "symbol": "sg_b3_body_config",
+      "params": [
+        "u32",
+        "f64",
+        "u8"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "sgB3Getf",
+      "symbol": "sg_b3_getf",
+      "params": [
+        "i32"
+      ],
+      "returns": "f64"
+    },
+    {
+      "name": "sgB3BodySetVelocity",
+      "symbol": "sg_b3_body_set_velocity",
+      "params": [
+        "u32",
+        "f64",
+        "f64",
+        "f64"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "sgB3BodySetAngularVelocity",
+      "symbol": "sg_b3_body_set_angular_velocity",
+      "params": [
+        "u32",
+        "f64",
+        "f64",
+        "f64"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "sgB3BodyImpulse",
+      "symbol": "sg_b3_body_impulse",
+      "params": [
+        "u32",
+        "f64",
+        "f64",
+        "f64",
+        "u8"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "sgB3ShapeBox",
+      "symbol": "sg_b3_shape_box",
+      "params": [
+        "u32",
+        "f64",
+        "f64",
+        "f64",
+        "f64",
+        "f64",
+        "f64"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "sgB3ShapeSphere",
+      "symbol": "sg_b3_shape_sphere",
+      "params": [
+        "u32",
+        "f64",
+        "f64",
+        "f64",
+        "f64"
+      ],
+      "returns": "u32"
     }
   ],
   "libraries": [
     "../vendor/linux-x86_64/libsggl.a",
     "../vendor/linux-x86_64/libsggfx.a",
-    "../vendor/linux-x86_64/libwebaudio.a"
+    "../vendor/linux-x86_64/libwebaudio.a",
+    "../vendor/linux-x86_64/box3d/libsgbox3d.a",
+    "../vendor/linux-x86_64/box3d/libbox3d.a"
   ],
   "system_libraries": [
     "SDL2",

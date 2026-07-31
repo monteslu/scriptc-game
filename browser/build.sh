@@ -59,6 +59,26 @@ mkdir -p "$OUT/browser"
 cp "$ROOT/browser/globals.js" "$OUT/browser/globals.js"
 cp "$ROOT/browser/webgl-constants.js" "$OUT/browser/webgl-constants.js"
 
+# The physics seam. When the game imports web/box3d.js, the page satisfies
+# that specifier with box3d-wasm's iso entry (the SHARED frontend over the
+# wasm backend), so both worlds run the same engine at the same pin.
+# The dist comes from a local box3d-wasm checkout (B3_WASM_DIST overrides).
+B3_MAP=""
+if grep -qs 'web/box3d\.js' "$GAMEDIR"/*.ts; then
+  B3_DIST="${B3_WASM_DIST:-$ROOT/../box3d-wasm/dist}"
+  [ -f "$B3_DIST/iso.mjs" ] || {
+    echo "game imports web/box3d.js but $B3_DIST/iso.mjs is missing;" >&2
+    echo "build box3d-wasm (or set B3_WASM_DIST)" >&2; exit 1; }
+  mkdir -p "$OUT/box3d"
+  cp "$B3_DIST"/iso.mjs "$B3_DIST"/frontend.js "$B3_DIST"/backend.js \
+     "$B3_DIST"/box3d.mjs "$B3_DIST"/box3d.wasm "$OUT/box3d/"
+  # deluxe is optional: iso.mjs only imports it when threads are usable.
+  cp "$B3_DIST"/box3d.deluxe.mjs "$B3_DIST"/box3d.deluxe.wasm "$OUT/box3d/" 2>/dev/null || true
+  B3_MAP=',
+    "../../web/box3d.js": "./box3d/iso.mjs",
+    "../web/box3d.js": "./box3d/iso.mjs"'
+fi
+
 # Assets: the game directory IS the web root, same rule as native.
 if [ -d "$GAMEDIR/public" ]; then
   cp -rL "$GAMEDIR/public/." "$OUT/"
@@ -94,7 +114,7 @@ cat > "$OUT/index.html" <<HTML
     "../../web/globals.js": "./browser/globals.js",
     "../web/globals.js": "./browser/globals.js",
     "../../web/webgl/constants.js": "./browser/webgl-constants.js",
-    "../web/webgl/constants.js": "./browser/webgl-constants.js"
+    "../web/webgl/constants.js": "./browser/webgl-constants.js"$B3_MAP
   }
 }
 </script>

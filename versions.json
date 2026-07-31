@@ -21,6 +21,13 @@
     "version": "2.32.10",
     "source": "system libsdl2-dev"
   },
+  "box3d": {
+    "sha": "29bf523ce7bc4590aba9f17c9db791cdc5c4397e",
+    "source": "https://github.com/erincatto/box3d (fetched by scripts/build-box3d.sh)",
+    "note": "MUST equal box3d-wasm's scripts/versions.json pin: the browser side of the seam runs box3d-wasm, and isomorphic means the same engine bytes in both worlds. Bump the two together.",
+    "frontend_sha256": "4e14060785452c673f25efd564a6603b9dc933f8b7e8c65d8a20a6fbacdad0cc",
+    "frontend_note": "sha256 of web/box3d/frontend.ts, which is a byte-identical vendored copy of box3d-wasm src/frontend.ts (the shared binding personality). scripts/test.sh verifies it; on a box3d-wasm frontend change, re-copy the file and update this hash."
+  },
   "webaudio": {
     "version": "0.8.2",
     "source": "https://github.com/monteslu/webaudio-node",
