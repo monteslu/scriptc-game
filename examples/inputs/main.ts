@@ -83,11 +83,15 @@ window.addEventListener("load", () => {
       const pads = navigator.getGamepads();
       const p = pads.length > 0 ? pads[0] : null;
       if (p !== null && p.connected) {
-        p.vibrationActuator.playEffect("dual-rumble", {
-          duration: 300,
-          weakMagnitude: 0.6,
-          strongMagnitude: 0.9,
-        });
+        /* vibrationActuator is optional per spec (Firefox omits it). */
+        const va = p.vibrationActuator;
+        if (va !== undefined) {
+          va.playEffect("dual-rumble", {
+            duration: 300,
+            weakMagnitude: 0.6,
+            strongMagnitude: 0.9,
+          });
+        }
       }
     }
 
@@ -189,7 +193,9 @@ window.addEventListener("load", () => {
     ctx.fillStyle = "#7fd1ff";
     ctx.fillText(`slot ${pad.index}: ${pad.id}`, x, y + 14);
     ctx.fillStyle = "#5b6672";
-    const canRumble = pad.vibrationActuator.effects.length > 0;
+    /* Optional per spec: absent entirely in Firefox. */
+    const va = pad.vibrationActuator;
+    const canRumble = va !== undefined && va.effects.length > 0;
     ctx.fillText(canRumble ? "rumble: yes" : "rumble: no", x, y + 30);
 
     for (let b = 0; b < BUTTON_COUNT; b++) {

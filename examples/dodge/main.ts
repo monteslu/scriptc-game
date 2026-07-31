@@ -163,10 +163,12 @@ window.addEventListener("load", () => {
   function rumble(weak: number, strong: number, ms: number): void {
     const p = pad();
     if (p === null) return;
-    /* The spec form: an object literal, and `effects` is how a page checks
-     * support. playEffect resolves "complete" on a pad with no motors, so
-     * the check is a courtesy rather than a guard. */
-    p.vibrationActuator.playEffect("dual-rumble", {
+    /* The spec form: an object literal. The actuator itself is optional
+     * (Firefox omits it), so existence IS the support check; playEffect
+     * resolves "complete" on a pad with no motors. */
+    const va = p.vibrationActuator;
+    if (va === undefined) return;
+    va.playEffect("dual-rumble", {
       duration: ms,
       weakMagnitude: weak,
       strongMagnitude: strong,

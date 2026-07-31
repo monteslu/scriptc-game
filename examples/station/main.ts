@@ -19,10 +19,13 @@
  *                travel the corridor.
  *
  * Controls:
- *   W/S, up/down, d-pad up/down, left stick   walk
- *   A/D, left/right, d-pad left/right          turn
- *   Q/E, L1/R1                                 strafe
- *   SHIFT                                      run
+ *   W/S, up/down, d-pad up/down, left stick Y  forward / back
+ *   A/D, left/right, d-pad left/right          turn (keyboard) / strafe (pad)
+ *   Q/E, left stick X                          strafe
+ *   right stick                                yaw + pitch
+ *   R1/L1                                      climb / dive
+ *   RT, Z, or A/X                              fire
+ *   SHIFT / LT                                 boost
  *   ENTER / START                              restart
  */
 import {
@@ -42,17 +45,19 @@ import { BoxGeometry } from "../../three/geometries/BoxGeometry.js";
 import { BufferGeometry } from "../../three/core/BufferGeometry.js";
 import { BufferAttribute } from "../../three/core/BufferAttribute.js";
 import {
-  MeshLambertMaterial, MeshBasicMaterial, PointsMaterial, SpriteMaterial,
-  AdditiveBlending,
+  MeshLambertMaterial, MeshBasicMaterial, MeshStandardMaterial,
+  PointsMaterial, SpriteMaterial, AdditiveBlending,
 } from "../../three/materials/Material.js";
 import {
-  AmbientLight, DirectionalLight, PointLight,
+  DirectionalLight, PointLight, HemisphereLight,
 } from "../../three/lights/Light.js";
 import { WebGLRenderer } from "../../three/renderer/WebGLRenderer.js";
 import { SGMLoader } from "../../three/loaders/SGMLoader.js";
 import { Fog } from "../../three/scenes/Fog.js";
 import { Texture, NearestFilter } from "../../three/textures/Texture.js";
 import { Matrix4 } from "../../three/math/Matrix4.js";
+import { Color } from "../../three/math/Color.js";
+import Box3D, { Body } from "../../web/box3d.js";
 import { Quaternion } from "../../three/math/Quaternion.js";
 import { Vector3 } from "../../three/math/Vector3.js";
 
@@ -98,6 +103,7 @@ const EYE = FLOOR_TOP + 1.65;
 
 /* Standard Gamepad button indices. The spec names no constants. */
 const BTN_START = 9;
+const BTN_SELECT = 8;
 const BTN_A = 0;
 const BTN_L1 = 4;
 const BTN_X = 2;
@@ -120,6 +126,12 @@ class Piece {
    * flushed into the mesh once it does. */
   pending: Matrix4[] = [];
 }
+
+/* Physics: Erin Catto's Box3D, through the isomorphic seam. In a page the
+ * import resolves to box3d-wasm; natively it is the same shared frontend
+ * over the engine linked as a static library. Top-level await, so by the
+ * time `load` fires the surface exists in both worlds. */
+const b3 = await Box3D();
 
 window.addEventListener("load", () => {
   const canvas = document.getElementById("game-canvas");
@@ -169,8 +181,22 @@ window.addEventListener("load", () => {
   atlas.magFilter = NearestFilter;
   atlas.minFilter = NearestFilter;
 
-  const stationMat = new MeshLambertMaterial(0xffffff);
+  /* Standard, not Lambert: the specular lobe is what lets the travelling
+   * lamps and the headlight GLINT off the kit as they move. Mid roughness
+   * keeps the highlight broad -- painted metal, not chrome. */
+  const stationMat = new MeshStandardMaterial(0xffffff);
   stationMat.map = atlas;
+  stationMat.roughness = 0.6;
+  stationMat.metalness = 0.25;
+
+  /* The screen and switch pieces on their own material with a faint
+   * emissive: powered surfaces should read through the fog when the
+   * lighting alone would swallow them. Same atlas, so still one texture. */
+  const screenMat = new MeshStandardMaterial(0xffffff);
+  screenMat.map = atlas;
+  screenMat.roughness = 0.35;
+  screenMat.metalness = 0.1;
+  screenMat.emissive.setHex(0x101a28);
 
   const glowTex = makeGlowTexture();
 
@@ -241,6 +267,17 @@ window.addEventListener("load", () => {
   cellBurst.colorFrom.setHex(0xd8ffe8);
   cellBurst.colorTo.setHex(0x2fbf7a);
 
+  /* Bolt impacts: hot, fast, short. The bolt's own colour at birth so the
+   * explosion reads as the bolt bursting rather than a separate effect. */
+  const impactBurst = new BurstOptions();
+  impactBurst.speed = 10;
+  impactBurst.life = 0.55;
+  impactBurst.size = 0.22;
+  impactBurst.gravity = 2;
+  impactBurst.drag = 0.25;
+  impactBurst.colorFrom.setHex(0xffd2a8);
+  impactBurst.colorTo.setHex(0xff3050);
+
   /* ---- HUD ----
    *
    * A 2D canvas uploaded as a texture on a quad pinned to the camera. The
@@ -268,7 +305,11 @@ window.addEventListener("load", () => {
    * A station interior wants to feel enclosed and artificial: a low
    * ambient so nothing is pure black, one cool overhead fill, and warm
    * point lights that actually travel the corridor. */
-  scene.add(new AmbientLight(0x39456b, 1));
+  /* Hemisphere rather than flat ambient: cool from above (space through
+   * the hull windows), a warm floor bounce from below. Shadowed faces get
+   * a gradient across them instead of one uniform grey, which is most of
+   * what "flat ambient" looks like. */
+  scene.add(new HemisphereLight(0x46598c, 0x453727, 1.05));
   const fill = new DirectionalLight(0x7f9fd8, 0.32);
   fill.position.set(0.3, 1, 0.25);
   scene.add(fill);
@@ -299,7 +340,7 @@ window.addEventListener("load", () => {
    * A branching three-level map cannot be lit by a handful of travelling
    * lamps: wherever the player actually is would be dark. This is the
    * headlight, and it is what makes a tunnel readable while flying it. */
-  const headlight = new PointLight(0xbfd8ff, 5.5, 60, 1);
+  const headlight = new PointLight(0xbfd8ff, 4.0, 60, 1);
   scene.add(headlight);
 
   /* Engine ports: two additive quads sitting ON the exhausts.
@@ -343,6 +384,15 @@ window.addEventListener("load", () => {
   let camX = shipX;
   let camY = shipY + 2.4;
   let camZ = shipZ + 7.5;
+  /* The aim point is DAMPED separately from the camera position: the ship
+   * rotates against the frame first and the view direction follows a beat
+   * later. A look direction slaved rigidly to the nose gives no visual
+   * feedback that a rotation happened at all -- the world slides, the hull
+   * stays glued to the same pixels, and pitch reads as arbitrary/inverted
+   * whichever sign it has. Star Fox-class chase cams all lag the aim. */
+  let aimX = shipX;
+  let aimY = shipY;
+  let aimZ = shipZ - 20;
 
   /* ---- laser bolts ----
    *
@@ -388,6 +438,22 @@ window.addEventListener("load", () => {
     boltLife.push(0);
   }
 
+  /* A bolt ends in an EXPLOSION, never a fade-through: burst at the point
+   * of impact, then retire the bolt. The crates it hit stay -- they take
+   * the momentum and keep the dent in the pyramid. */
+  function boltExplode(i: number): void {
+    sparks.burst(boltX[i], boltY[i], boltZ[i], 30, impactBurst);
+    /* A REAL blast, not a nudge: Box3D's radial explosion hits every body
+     * in range by exposed area, so a shot into the stack throws the whole
+     * neighbourhood, exactly like the web demo's explosions. The direct
+     * per-crate impulse below still adds the directional kick. */
+    world3d.explode({ position: { x: boltX[i], y: boltY[i], z: boltZ[i] },
+                      radius: 3.5, falloff: 2.5, impulsePerArea: 2 });
+    boltLife[i] = 0;
+    boltMesh[i].visible = false;
+    boltLight[i].intensity = 0;
+  }
+
   let boltCursor = 0;
   let fireCooldown = 0;
   /** Throttles exhaust emission; a per-frame burst floods the pool. */
@@ -430,10 +496,11 @@ window.addEventListener("load", () => {
   const loader = new SGMLoader();
   const pieces: Piece[] = [];
 
-  function piece(name: string, capacity: number): Piece {
+  function piece(name: string, capacity: number,
+                 mat: MeshStandardMaterial): Piece {
     const p = new Piece();
     const m = new InstancedMesh(new BoxGeometry(0.001, 0.001, 0.001),
-                               stationMat, capacity);
+                               mat, capacity);
     m.count = 0;
     p.capacity = capacity;
     p.mesh = m;
@@ -473,37 +540,46 @@ window.addEventListener("load", () => {
     _scl.set(s * SCALE, s * SCALE, s * SCALE);
     const m = new Matrix4().compose(_pos, _rot, _scl);
     p.pending.push(m);
-    if (p.mesh !== null) p.mesh.setMatrixAt(p.count, m);
+    if (p.mesh !== null) {
+      p.mesh.setMatrixAt(p.count, m);
+      /* Baked ambient occlusion, per INSTANCE. Per-vertex AO is off the
+       * table for a kit -- every copy shares the model's vertices -- but
+       * the placement knows which grid cell it serves, and how boxed-in
+       * that cell is IS its occlusion. Junctions stay bright, dead ends
+       * and pockets sink, and a second term grounds each course by
+       * darkening toward the floor. Baked once here: zero per-frame cost. */
+      p.mesh.setColorAt(p.count, stationAO(x, y, z));
+    }
     p.count += 1;
     if (p.mesh !== null && p.mesh.geometry.position !== null) {
       p.mesh.count = p.count;
     }
   }
 
-  const floor = piece("floor", 900);
-  const ceiling = piece("floor", 900);
-  const floorDetail = piece("floor-detail", 260);
-  const wall = piece("wall", 2200);
-  const wallWindow = piece("wall-window", 600);
-  const wallPillar = piece("wall-pillar", 700);
-  const wallBanner = piece("wall-banner", 200);
-  const container = piece("container", 60);
-  const containerTall = piece("container-tall", 40);
-  const computerWide = piece("computer-wide", 30);
-  const tableDisplay = piece("table-display-planet", 20);
-  const chair = piece("chair", 30);
-  const railPiece = piece("rail", 80);
-  const pipeRing = piece("pipe-ring-colored", 80);
+  const floor = piece("floor", 900, stationMat);
+  const ceiling = piece("floor", 900, stationMat);
+  const floorDetail = piece("floor-detail", 260, stationMat);
+  const wall = piece("wall", 2200, stationMat);
+  const wallWindow = piece("wall-window", 600, stationMat);
+  const wallPillar = piece("wall-pillar", 700, stationMat);
+  const wallBanner = piece("wall-banner", 200, screenMat);
+  const container = piece("container", 60, stationMat);
+  const containerTall = piece("container-tall", 40, stationMat);
+  const computerWide = piece("computer-wide", 30, stationMat);
+  const tableDisplay = piece("table-display-planet", 20, stationMat);
+  const chair = piece("chair", 30, stationMat);
+  const railPiece = piece("rail", 80, stationMat);
+  const pipeRing = piece("pipe-ring-colored", 80, stationMat);
   /* Variety pieces. A corridor built from ONE wall model reads as a
    * texture repeat however good the texture is; the eye needs silhouette
    * changes to believe a place was built rather than tiled. */
-  const wallDetail = piece("wall-detail", 500);
-  const displayWall = piece("display-wall", 200);
-  const displayWide = piece("display-wall-wide", 120);
-  const wallDoor = piece("wall-door", 120);
-  const wallSwitch = piece("wall-switch", 100);
-  const pipeBend = piece("pipe-bend", 120);
-  const pipeEnd = piece("pipe-end-colored", 120);
+  const wallDetail = piece("wall-detail", 500, stationMat);
+  const displayWall = piece("display-wall", 200, screenMat);
+  const displayWide = piece("display-wall-wide", 120, screenMat);
+  const wallDoor = piece("wall-door", 120, stationMat);
+  const wallSwitch = piece("wall-switch", 100, screenMat);
+  const pipeBend = piece("pipe-bend", 120, stationMat);
+  const pipeEnd = piece("pipe-end-colored", 120, stationMat);
 
   /* Deterministic layout: the same station every run, so a screenshot is
    * reproducible and a visual change is a real change. */
@@ -534,6 +610,34 @@ window.addEventListener("load", () => {
   function isOpen(x: number, y: number, z: number): boolean {
     if (x < 0 || x >= GX || y < 0 || y >= GY || z < 0 || z >= GZ) return false;
     return open[idx(x, y, z)];
+  }
+
+  /* Baked per-instance AO (see placeRolled). World position -> grid cell,
+   * then two terms: how many of the cell's six neighbours are open (a
+   * junction is bright, a pocket is dark), and height within the level
+   * (the wall meets the floor in shadow). The .5-cell wall offsets land on
+   * their OPEN cell because Math.round breaks ties upward. Scratch Color:
+   * setColorAt copies the values out. */
+  const _ao = new Color(0xffffff);
+  function stationAO(x: number, y: number, z: number): Color {
+    const cx = Math.round(x / CELL) + MID;
+    const cy = Math.floor(y / LEVEL_H + 0.01);
+    const cz = Math.round(-z / CELL);
+    let n = 0;
+    if (isOpen(cx - 1, cy, cz)) n += 1;
+    if (isOpen(cx + 1, cy, cz)) n += 1;
+    if (isOpen(cx, cy - 1, cz)) n += 1;
+    if (isOpen(cx, cy + 1, cz)) n += 1;
+    if (isOpen(cx, cy, cz - 1)) n += 1;
+    if (isOpen(cx, cy, cz + 1)) n += 1;
+    const openness = 0.8 + 0.2 * Math.min(1, n / 4);
+    let h = (y - cy * LEVEL_H) / LEVEL_H;
+    if (h < 0) h = 0;
+    if (h > 1) h = 1;
+    const grounded = 0.9 + 0.1 * h;
+    const v = openness * grounded;
+    _ao.setRGB(v, v, v);
+    return _ao;
   }
   function carve(x: number, y: number, z: number): void {
     if (x < 0 || x >= GX || y < 0 || y >= GY || z < 0 || z >= GZ) return;
@@ -687,6 +791,168 @@ window.addEventListener("load", () => {
     }
   }
 
+  /* ---- loose cargo (box3d) ----
+   *
+   * Dynamic crates in the main spine, simulated by Box3D through the
+   * isomorphic seam. The corridor the crates live in is fenced by six
+   * static slabs matched to the spine's real geometry (walls at the
+   * half-cell boundary, floor top where the floor pieces sit), so the
+   * physics and the visible tunnel cannot disagree by more than the
+   * models' own trim. A bolt that hits a crate transfers its momentum,
+   * which is the whole point: the guns finally push on the world. */
+  const CRATE_COUNT = 650;  // the pyramid: 12x12 down to a single cap
+  /** Model scale: the skip (the kit's one genuinely BOX-shaped cargo
+   * piece; every "container" is an octagonal canister) is 0.7 x 0.5 x 1.2
+   * in model units, so this makes a bin ~1.3m wide and ~2.2m long. */
+  const CRATE_SCL = 0.9;
+  const crateMesh = new InstancedMesh(new BoxGeometry(0.001, 0.001, 0.001),
+                                      stationMat, CRATE_COUNT);
+  crateMesh.count = 0;   // raised when the model arrives and bodies exist
+  scene.add(crateMesh);
+
+
+  const world3d = new b3.World({ gravity: { x: 0, y: -9, z: 0 }, workerCount: 4 });
+
+  const SPINE_FLOOR = LEVEL_H + 0.3 * SCALE;   // top of the level-1 floor pieces
+
+  /* THE MAZE, as static collision: one slab per closed face of every open
+   * cell -- the exact loop the visible geometry was built from, so the
+   * simulation and the level cannot disagree. Floors and ceilings sit at
+   * the models' real surfaces (the floor piece is 0.3*SCALE thick); walls
+   * sit at the half-cell boundary. This replaces every hand-rolled
+   * collision check the ship used to do. */
+  function slab(px: number, py: number, pz: number,
+                hx: number, hy: number, hz: number): void {
+    const s = world3d.createBody({ type: "static", position: { x: px, y: py, z: pz } });
+    s.createBox({ halfExtents: { x: hx, y: hy, z: hz }, friction: 0.6 });
+  }
+  const FLOOR_T = 0.3 * SCALE;
+  const HC = CELL / 2;
+  for (let gy = 0; gy < GY; gy++) {
+    for (let gz = 0; gz < GZ; gz++) {
+      for (let gx = 0; gx < GX; gx++) {
+        if (!isOpen(gx, gy, gz)) continue;
+        const wx = cellX(gx);
+        const wy = cellY(gy);
+        const wz = cellZ(gz);
+        if (!isOpen(gx, gy - 1, gz)) slab(wx, wy + FLOOR_T / 2, wz, HC, FLOOR_T / 2, HC);
+        if (!isOpen(gx, gy + 1, gz)) slab(wx, wy + LEVEL_H - FLOOR_T / 2, wz, HC, FLOOR_T / 2, HC);
+        if (!isOpen(gx - 1, gy, gz)) slab(wx - HC - 0.1, wy + LEVEL_H / 2, wz, 0.1, LEVEL_H / 2, HC);
+        if (!isOpen(gx + 1, gy, gz)) slab(wx + HC + 0.1, wy + LEVEL_H / 2, wz, 0.1, LEVEL_H / 2, HC);
+        if (!isOpen(gx, gy, gz - 1)) slab(wx, wy + LEVEL_H / 2, wz + HC + 0.1, HC, LEVEL_H / 2, 0.1);
+        if (!isOpen(gx, gy, gz + 1)) slab(wx, wy + LEVEL_H / 2, wz - HC - 0.1, HC, LEVEL_H / 2, 0.1);
+      }
+    }
+  }
+
+  /* The SHIP is a real dynamic body: Box3D owns every collision in the
+   * game now. Zero gravity scale (it flies), all rotation locked (the
+   * game's yaw/pitch are cosmetic flight attitude, not solver state), and
+   * the flight model talks to it in VELOCITY -- thrust and drag are
+   * gameplay, contact resolution is physics. Plowing into the stack
+   * scatters it; clipping a doorway shaves your speed instead of the old
+   * grid bounce. */
+  const shipBody = world3d.createBody({
+    type: "dynamic",
+    position: { x: shipX, y: shipY, z: shipZ },
+    gravityScale: 0,
+    motionLocks: { angularX: true, angularY: true, angularZ: true },
+  });
+  shipBody.createBox({ halfExtents: { x: 1.0, y: 0.6, z: 1.2 },
+                       density: 2, friction: 0.1 });
+
+  const crateBodies: Body[] = [];
+  const crateX: number[] = [];
+  const crateY: number[] = [];
+  const crateZ: number[] = [];
+  /* Spawn positions, kept so restart() can rebuild the pyramid. */
+  const crateHomeX: number[] = [];
+  const crateHomeY: number[] = [];
+  const crateHomeZ: number[] = [];
+
+  /* The colliders are built FROM THE MODEL, after it loads.
+   *
+   * Two facts about the kit made the first pass wrong in every visible
+   * way: the models keep their origin at the BASE (y runs 0..h), so a
+   * center-of-mass body renders its mesh half a crate too high -- the
+   * "floating" look -- and a guessed cube collider twice the mesh's size
+   * makes every reaction read wrong because the thing you see is not the
+   * thing being simulated. So: measure the loaded geometry, RE-CENTER it
+   * (shift the positions so the origin is the bbox center, matching a
+   * rigid body's frame), and hand the measured half extents to Box3D.
+   * The web demo builds its colliders from the geometry too; this is the
+   * same discipline. */
+  loader.load("skip.sgm")
+    .then((geo) => {
+      const pos = geo.position;
+      if (pos === null) return;
+      const a = pos.array;
+      let minX = 1e9, minY = 1e9, minZ = 1e9;
+      let maxX = -1e9, maxY = -1e9, maxZ = -1e9;
+      for (let i = 0; i < a.length; i += 3) {
+        if (a[i] < minX) minX = a[i];
+        if (a[i] > maxX) maxX = a[i];
+        if (a[i + 1] < minY) minY = a[i + 1];
+        if (a[i + 1] > maxY) maxY = a[i + 1];
+        if (a[i + 2] < minZ) minZ = a[i + 2];
+        if (a[i + 2] > maxZ) maxZ = a[i + 2];
+      }
+      const cx = (minX + maxX) / 2;
+      const cy = (minY + maxY) / 2;
+      const cz = (minZ + maxZ) / 2;
+      for (let i = 0; i < a.length; i += 3) {
+        a[i] = a[i] - cx;
+        a[i + 1] = a[i + 1] - cy;
+        a[i + 2] = a[i + 2] - cz;
+      }
+      crateMesh.geometry = geo;
+
+      const hx = (maxX - minX) / 2 * CRATE_SCL;
+      const hy = (maxY - minY) / 2 * CRATE_SCL;
+      const hz = (maxZ - minZ) / 2 * CRATE_SCL;
+
+      function spawnCrate(px: number, py: number, pz: number): void {
+        const cb = world3d.createBody({
+          type: "dynamic",
+          position: { x: px, y: py, z: pz },
+        });
+        cb.createBox({ halfExtents: { x: hx, y: hy, z: hz },
+                       density: 0.4, friction: 0.5, restitution: 0.3 });
+        crateBodies.push(cb);
+        crateX.push(px); crateY.push(py); crateZ.push(pz);
+        crateHomeX.push(px); crateHomeY.push(py); crateHomeZ.push(pz);
+      }
+
+      /* The PYRAMID: 3x3, 2x2, 1 at the far end of the hall -- a target
+       * worth flying the whole spine for: 12x12 down to a single cap,
+       * 650 bins. Spawned
+       * exactly stacked (each
+       * layer one crate-height up, centres inset half a step) so it
+       * settles asleep and stands until a bolt arrives. Spacing is a hair
+       * over the crate size; perfectly touching hulls wake each other
+       * over and over. */
+      const PYR_Z = -35 * CELL;
+      const STEP_X = hx * 2 + 0.04;
+      const STEP_Y = hy * 2 + 0.04;
+      const STEP_Z = hz * 2 + 0.04;   // the bin is oblong; each axis steps its own size
+      for (let layer = 0; layer < 12; layer++) {
+        const n = 12 - layer;
+        const y = SPINE_FLOOR + hy + layer * STEP_Y;
+        const offX = (n - 1) * 0.5 * STEP_X;
+        const offZ = (n - 1) * 0.5 * STEP_Z;
+        for (let ix = 0; ix < n; ix++) {
+          for (let iz = 0; iz < n; iz++) {
+            spawnCrate(ix * STEP_X - offX, y, PYR_Z + iz * STEP_Z - offZ);
+          }
+        }
+      }
+
+      crateMesh.count = crateBodies.length;
+
+    })
+    .catch(() => { console.log("station: skip.sgm did not load"); });
+  const _crateM = new Matrix4();
+
   /* ---- power cells ----
    *
    * Spread down the corridor, alternating sides so the run zig-zags: a
@@ -838,27 +1104,9 @@ window.addEventListener("load", () => {
   }
 
   /* Clearance, in metres, kept between the hull and a wall.
-   *
-   * 1.5 was catastrophic: a 1.5m sphere in a 3m cell spans TWO cells on
-   * every axis at almost any position, so if either was closed ALL motion
-   * stopped -- the ship froze solid anywhere near a wall while its
-   * velocity kept reading 7 m/s. Testing the CENTRE plus a small skin
-   * lets it fly the tunnel and still not clip through. */
-  const SHIP_R = 0.55;
-  function flyable(x: number, y: number, z: number): boolean {
-    /* The centre cell must be open, and each axis is probed one skin
-     * width out. That is six lookups instead of up to twenty-seven, and
-     * it cannot wedge on a diagonal the way a full box test does. */
-    if (!cellOpenAt(x, y, z)) return false;
-    if (!cellOpenAt(x - SHIP_R, y, z)) return false;
-    if (!cellOpenAt(x + SHIP_R, y, z)) return false;
-    if (!cellOpenAt(x, y - SHIP_R, z)) return false;
-    if (!cellOpenAt(x, y + SHIP_R, z)) return false;
-    if (!cellOpenAt(x, y, z - SHIP_R)) return false;
-    if (!cellOpenAt(x, y, z + SHIP_R)) return false;
-    return true;
-  }
-
+   * (Flight collision itself is Box3D's job now; this grid query serves
+   * the camera pull-in and the bolt-vs-wall check, which are view and
+   * vfx concerns rather than simulation.) */
   function cellOpenAt(x: number, y: number, z: number): boolean {
     return isOpen(Math.floor(x / CELL + MID + 0.5),
                   Math.floor(y / LEVEL_H),
@@ -880,6 +1128,16 @@ window.addEventListener("load", () => {
     shipYaw = Math.PI;
     shipPitch = 0;
     bank = 0;
+    shipBody.setPosition({ x: shipX, y: shipY, z: shipZ });
+    shipBody.setLinearVelocity({ x: 0, y: 0, z: 0 });
+    /* The pyramid stands back up: a reset that leaves the arena wrecked
+     * is half a reset. Teleports, so nothing sweeps through the maze. */
+    for (let i = 0; i < crateBodies.length; i++) {
+      crateBodies[i].setTransform({ x: crateHomeX[i], y: crateHomeY[i], z: crateHomeZ[i] },
+                                  { x: 0, y: 0, z: 0, w: 1 });
+      crateBodies[i].setLinearVelocity({ x: 0, y: 0, z: 0 });
+      crateBodies[i].setAngularVelocity({ x: 0, y: 0, z: 0 });
+    }
     camX = shipX; camY = shipY + 2.4; camZ = shipZ + 7.5;
     for (let i = 0; i < CELL_COUNT; i++) {
       cellAlive[i] = true;
@@ -915,7 +1173,7 @@ window.addEventListener("load", () => {
      * this is what makes a vertical shaft flyable. */
     let lift = 0;
     let firing = false;
-    const run = down("Shift") ? 2.1 : 1;
+    let run = down("Shift") ? 2.1 : 1;
 
     if (down("w") || down("W") || down("ArrowUp")) fwd += 1;
     if (down("s") || down("S") || down("ArrowDown")) fwd -= 1;
@@ -941,28 +1199,30 @@ window.addEventListener("load", () => {
       const ly = pad.axes[1];
       const rx = pad.axes[2];
       if (ly > DEADZONE || ly < -DEADZONE) { fwd -= ly; touring = false; }
-      /* Left stick X TURNS the ship. Spaceships do not strafe sideways
-       * down a corridor: they point where they are going and the camera
-       * follows the nose. Strafe is still available on the shoulders for
-       * fine adjustment. */
-      if (lx > DEADZONE || lx < -DEADZONE) { turn -= lx; touring = false; }
+      /* Left stick X STRAFES; the right stick owns the nose. Splitting
+       * movement (left) from aim (right) is the twin-stick convention
+       * every FPS and Overload's gamepad default use — the old scheme had
+       * both stick X axes turning, which fought the right stick and made
+       * a corridor weave where it should slide. */
+      if (lx > DEADZONE || lx < -DEADZONE) { strafe += lx; touring = false; }
       if (rx > DEADZONE || rx < -DEADZONE) { turn -= rx; touring = false; }
-      /* Right stick Y pitches the nose. Positive is DOWN on a gamepad, and
-       * pitching the nose UP when the stick goes up is the inverted
-       * convention flight games use. */
+      /* Right stick Y pitches the nose: stick up looks up, the dual-stick
+       * standard. Both signs were tried while the camera's look direction
+       * was rigid, and BOTH read as inverted -- the real problem was the
+       * camera (see the damped aim point), not the mapping. */
       const ry = pad.axes.length > 3 ? pad.axes[3] : 0;
       if (ry > DEADZONE || ry < -DEADZONE) { pitch -= ry; touring = false; }
 
-      /* Triggers climb and dive. A vertical shaft needs an axis that does
-       * not depend on where the nose is pointing. */
+      /* RIGHT TRIGGER fires. This is the one binding with a genuine
+       * standard behind it: Overload's gamepad default and every modern
+       * shooter put primary fire on RT, and the analog value lets a
+       * feather-touch register. Left trigger is boost — the pad's Shift. */
       if (pad.buttons.length > BTN_R2) {
-        const lt = pad.buttons[BTN_L2].value;
-        const rt = pad.buttons[BTN_R2].value;
-        if (rt > 0.1) { lift += rt; touring = false; }
-        if (lt > 0.1) { lift -= lt; touring = false; }
+        if (pad.buttons[BTN_R2].value > 0.25) { firing = true; touring = false; }
+        if (pad.buttons[BTN_L2].value > 0.25) { run = 2.1; touring = false; }
       }
 
-      // A or X fires.
+      // A or X also fires, for anyone with face-button muscle memory.
       if (pad.buttons.length > BTN_X &&
           (pad.buttons[BTN_A].pressed || pad.buttons[BTN_X].pressed)) {
         firing = true;
@@ -975,6 +1235,18 @@ window.addEventListener("load", () => {
        * Edge-triggered on the button going down: held across the frame
        * where the run ends, a level-triggered restart would fire
        * immediately and the player would never see the result screen. */
+      /* SELECT restarts from ANYWHERE -- stuck, lost in the maze, or just
+       * wanting a fresh pyramid. Edge-triggered on the same latch as the
+       * result-screen restart so holding it cannot restart twice. */
+      const selectDown = pad.buttons.length > BTN_SELECT &&
+                         pad.buttons[BTN_SELECT].pressed;
+      if (selectDown && !restartHeld) {
+        restartHeld = true;
+        restart();
+        break;
+      }
+      if (!selectDown && !(won || lost)) restartHeld = false;
+
       if (won || lost) {
         const startDown = pad.buttons.length > BTN_START &&
                           pad.buttons[BTN_START].pressed;
@@ -1003,11 +1275,14 @@ window.addEventListener("load", () => {
         if (pad.buttons[BTN_DPAD_RIGHT].pressed) { turn -= 1; touring = false; }
       }
 
-      /* Shoulders also strafe, for players who prefer the stick for
-       * movement and want a quick sidestep. */
+      /* Bumpers climb and dive — the Descent-community consensus slot for
+       * slide up/down. Vertical thrust is an on/off decision in a shaft,
+       * so digital buttons fit it better than the analog triggers the old
+       * scheme spent here (and freeing the triggers is what lets RT be
+       * fire). R1 up, L1 down: same vertical polarity as the triggers had. */
       if (pad.buttons.length > BTN_R1) {
-        if (pad.buttons[BTN_L1].pressed) { strafe -= 1; touring = false; }
-        if (pad.buttons[BTN_R1].pressed) { strafe += 1; touring = false; }
+        if (pad.buttons[BTN_R1].pressed) { lift += 1; touring = false; }
+        if (pad.buttons[BTN_L1].pressed) { lift -= 1; touring = false; }
       }
       break;
     }
@@ -1029,10 +1304,12 @@ window.addEventListener("load", () => {
       glowLevel = 1;
 
       /* The attract mode shoots too, so an unattended demo shows the
-       * weapon rather than a ship drifting silently. */
+       * weapon rather than a ship drifting silently -- but it HOLDS FIRE
+       * in the back half of the hall, or an idle demo dismantles the
+       * crate pyramid before any player ever sees it standing. */
       const cpT = Math.cos(shipPitch);
       fireCooldown -= dt;
-      if (fireCooldown <= 0) {
+      if (fireCooldown <= 0 && shipZ > -55) {
         fireCooldown = 0.22;
         fire(Math.sin(shipYaw) * cpT, Math.sin(shipPitch),
              Math.cos(shipYaw) * cpT, -Math.cos(shipYaw), Math.sin(shipYaw));
@@ -1086,15 +1363,11 @@ window.addEventListener("load", () => {
         velX *= k; velY *= k; velZ *= k;
       }
 
-      /* Move one axis at a time and cancel that axis on a hit: sliding
-       * along a wall instead of stopping dead is the difference between a
-       * tunnel that is fun to fly and one that snags on every corner. */
-      const nx = shipX + velX * dt;
-      if (flyable(nx, shipY, shipZ)) shipX = nx; else velX = -velX * 0.25;
-      const ny = shipY + velY * dt;
-      if (flyable(shipX, ny, shipZ)) shipY = ny; else velY = -velY * 0.25;
-      const nz = shipZ + velZ * dt;
-      if (flyable(shipX, shipY, nz)) shipZ = nz; else velZ = -velZ * 0.25;
+      /* Hand the frame's velocity to the body; the solver does the rest.
+       * Position and velocity come BACK from the step (below), so a wall
+       * contact clips exactly the velocity component into the wall --
+       * free sliding, no axis-by-axis probing. */
+      shipBody.setLinearVelocity({ x: velX, y: velY, z: velZ });
 
       /* A HINT of bank, not a barrel roll.
        *
@@ -1157,7 +1430,13 @@ window.addEventListener("load", () => {
     _portOff.set(0, -HULL_HALF, 0).applyQuaternion(playerShip.quaternion);
     playerShip.position.set(shipX + _portOff.x, shipY + _portOff.y,
                             shipZ + _portOff.z);
-    playerShip.quaternion.setFromEuler(-shipPitch, shipYaw + Math.PI, 0);
+    /* +shipPitch, NOT -shipPitch. The model's nose is local -Z (hence the
+     * +PI yaw), and rotX(+p) lifts -Z by +sin(p) -- the same +sin(p) the
+     * flight basis and the guns use. The old negation pitched the VISIBLE
+     * hull opposite to both travel and fire, which made every pitch
+     * mapping feel inverted no matter which sign the stick had, and made
+     * the guns look like they fired away from the nose. */
+    playerShip.quaternion.setFromEuler(shipPitch, shipYaw + Math.PI, 0);
     _bankQ.setFromAxisAngle(_fwdAxis, bank);
     playerShip.quaternion.multiply(_bankQ);
 
@@ -1268,7 +1547,7 @@ window.addEventListener("load", () => {
       if (camClear(fitX, fitY, fitZ)) break;
     }
 
-    const follow = Math.min(1, dt * 10);
+    const follow = Math.min(1, dt * 8);
     camX += (fitX - camX) * follow;
     camY += (fitY - camY) * follow;
     camZ += (fitZ - camZ) * follow;
@@ -1287,8 +1566,11 @@ window.addEventListener("load", () => {
     /* Straight down the flight axis, with only a small lift. Aiming
      * well above it pitches the camera down and fills the frame with the
      * floor immediately ahead instead of the tunnel. */
-    _look.set(shipX - camBackX * 20, shipY - camBackY * 20 + 0.9,
-              shipZ - camBackZ * 20);
+    const aimFollow = Math.min(1, dt * 6);
+    aimX += (shipX - camBackX * 20 - aimX) * aimFollow;
+    aimY += (shipY - camBackY * 20 + 0.9 - aimY) * aimFollow;
+    aimZ += (shipZ - camBackZ * 20 - aimZ) * aimFollow;
+    _look.set(aimX, aimY, aimZ);
     camera.lookAt(_look);
 
     /* Lamps travel the corridor at a constant spacing, so the walker is
@@ -1404,7 +1686,66 @@ window.addEventListener("load", () => {
       const f = boltLife[i] / 0.85;
       boltLight[i].position.set(boltX[i], boltY[i], boltZ[i]);
       boltLight[i].intensity = 3.4 * f;
+
+      /* A bolt that reaches a crate hands over its momentum and explodes.
+       * Positions are last frame's cache -- one frame of lag at bolt
+       * speed is invisible, and it keeps this loop free of physics
+       * reads. */
+      let exploded = false;
+      for (let c = 0; c < crateBodies.length; c++) {
+        const dxc = boltX[i] - crateX[c];
+        const dyc = boltY[i] - crateY[c];
+        const dzc = boltZ[i] - crateZ[c];
+        if (dxc * dxc + dyc * dyc + dzc * dzc < 1.6) {
+          const inv = 1 / Math.max(0.001, bs);
+          crateBodies[c].applyLinearImpulseToCenter(
+            { x: boltVX[i] * inv * 10,
+              y: boltVY[i] * inv * 10 + 2,
+              z: boltVZ[i] * inv * 10 }, true);
+          boltExplode(i);
+          exploded = true;
+          break;
+        }
+      }
+
+      /* Walls end a bolt too: the same open-cell grid the ship collides
+       * against, so a bolt can never detonate somewhere the ship could
+       * not fly. */
+      if (!exploded && !cellOpenAt(boltX[i], boltY[i], boltZ[i])) {
+        boltExplode(i);
+      }
     }
+
+    /* ---- loose cargo ----
+     *
+     * Step the world, then write every crate's transform into the
+     * instanced mesh. The read also refreshes the position cache the
+     * bolt loop above tests against. */
+    /* Attract mode and the result screen script the ship directly, so
+     * the body teleports along and carries no velocity into contacts. */
+    if (touring || won || lost) {
+      shipBody.setPosition({ x: shipX, y: shipY, z: shipZ });
+      shipBody.setLinearVelocity({ x: 0, y: 0, z: 0 });
+    }
+    world3d.step(Math.min(dt, 0.05), 4);
+    if (!touring && !won && !lost) {
+      const sbp = shipBody.getPosition();
+      const sbv = shipBody.getLinearVelocity();
+      shipX = sbp.x; shipY = sbp.y; shipZ = sbp.z;
+      velX = sbv.x; velY = sbv.y; velZ = sbv.z;
+    }
+    for (let i = 0; i < crateBodies.length; i++) {
+      const bp = crateBodies[i].getPosition();
+      const bq = crateBodies[i].getRotation();
+      crateX[i] = bp.x; crateY[i] = bp.y; crateZ[i] = bp.z;
+      _pos.set(bp.x, bp.y, bp.z);
+      _rot.set(bq.x, bq.y, bq.z, bq.w);
+      _scl.set(CRATE_SCL, CRATE_SCL, CRATE_SCL);
+      _crateM.compose(_pos, _rot, _scl);
+      crateMesh.setMatrixAt(i, _crateM);
+
+    }
+    crateMesh.instanceMatrix.needsUpdate = true;
 
     sparks.update(dt);
 

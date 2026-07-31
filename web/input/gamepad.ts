@@ -184,8 +184,13 @@ export class Gamepad {
    * spec and used by games to detect a pad that has stopped reporting. */
   timestamp = 0;
 
-  /** The web's `gamepad.vibrationActuator`. */
-  vibrationActuator = new GamepadHapticActuator(0);
+  /** The web's `gamepad.vibrationActuator`. Typed OPTIONAL because that is
+   * the web truth: the spec allows a UA to omit it and Firefox does, so a
+   * game that dereferences it unguarded works natively and in Chrome, then
+   * throws in Firefox the moment a pad connects (found by the browser
+   * proof, with a real pad, mid-run). Natively it is always present; the
+   * type refuses to promise more than a page delivers. */
+  vibrationActuator: GamepadHapticActuator | undefined = new GamepadHapticActuator(0);
 
   constructor(index: number) {
     this.index = index;
@@ -224,7 +229,8 @@ export function pollGamepads(): void {
         // character running into a wall forever.
         pad.connected = false;
         pad.id = "";
-        pad.vibrationActuator.effects = [];
+        /* Always present natively; the optional type serves the page. */
+        if (pad.vibrationActuator !== undefined) pad.vibrationActuator.effects = [];
         pad.timestamp = 0;
         for (let i = 0; i < AXIS_COUNT; i++) pad.axes[i] = 0;
         for (let i = 0; i < BUTTON_COUNT; i++) {
@@ -243,8 +249,10 @@ export function pollGamepads(): void {
       /* The spec discovers haptics through the actuator's effect list, so
        * SDL's "has rumble" answer populates that rather than a bespoke
        * boolean. */
-      pad.vibrationActuator.effects =
-        ffi.padHasRumble(slot) !== 0 ? ["dual-rumble"] : [];
+      if (pad.vibrationActuator !== undefined) {
+        pad.vibrationActuator.effects =
+          ffi.padHasRumble(slot) !== 0 ? ["dual-rumble"] : [];
+      }
     }
 
     pad.timestamp = ffi.ticks();

@@ -75,10 +75,17 @@ function main(): void {
   for (let i = 0; i < pads.length; i++) {
     const p = pads[i];
     if (p === null) continue;
-    check(p.vibrationActuator.effects.length >= 0,
-          "vibrationActuator.effects is readable (the spec support check)");
-    p.vibrationActuator.playEffect("dual-rumble", { duration: 0 });
-    check(true, "playEffect takes an object literal");
+    /* The actuator is optional per spec (Firefox omits it); presence is
+     * the support check. The NATIVE surface always provides it, so its
+     * absence here is a failure. */
+    const va = p.vibrationActuator;
+    check(va !== undefined, "vibrationActuator is present on the native surface");
+    if (va !== undefined) {
+      check(va.effects.length >= 0,
+            "vibrationActuator.effects is readable (the spec support check)");
+      va.playEffect("dual-rumble", { duration: 0 });
+      check(true, "playEffect takes an object literal");
+    }
   }
 
   /* 4. The remaining globals, in their spec spellings. Each call is the
