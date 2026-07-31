@@ -407,10 +407,16 @@ function windowsSdl2Lib() {
  * member order. */
 /* Does this program reach the GL bindings? gen-ffi already walks the entry
  * file's import graph, so the answer is just whether gl-ffi.ts is in it. */
-const usesGl = declFiles.some((f) => f.endsWith("gl-ffi.ts"));
+/* Windows resolves these paths with backslashes; a pattern containing a
+ * forward slash silently never matches there, which is not hypothetical:
+ * the box3d declares reached the manifest while the libraries did not,
+ * and every sg_b3_ symbol came up undefined at link -- only on the
+ * Windows lane. Normalise before testing. */
+const declPaths = declFiles.map((f) => f.split("\\").join("/"));
+const usesGl = declPaths.some((f) => f.endsWith("gl-ffi.ts"));
 /* Same detection for the physics seam: only a program that imports
  * web/box3d.ts links the engine. */
-const usesBox3d = declFiles.some((f) => f.endsWith("box3d/backend.ts"));
+const usesBox3d = declPaths.some((f) => f.endsWith("box3d/backend.ts"));
 
 const manifest = {
   ffi_format: 1,

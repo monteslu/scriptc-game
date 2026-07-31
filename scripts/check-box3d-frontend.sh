@@ -8,7 +8,12 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 WANT=$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).box3d.frontend_sha256)' "$ROOT/versions.json")
-GOT=$(sha256sum "$ROOT/web/box3d/frontend.ts" | awk '{print $1}')
+# GNU boxes have sha256sum; macOS ships shasum instead.
+if command -v sha256sum >/dev/null 2>&1; then
+  GOT=$(sha256sum "$ROOT/web/box3d/frontend.ts" | awk '{print $1}')
+else
+  GOT=$(shasum -a 256 "$ROOT/web/box3d/frontend.ts" | awk '{print $1}')
+fi
 
 if [ "$WANT" != "$GOT" ]; then
   echo "web/box3d/frontend.ts drifted from the box3d-wasm frontend pin:" >&2
